@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
-import { users, type User, type UserRole } from '../data/mock-data';
+import { type User, type UserRole } from '../data/mock-data';
+import { api } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
 }
@@ -14,12 +15,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
 
   const login = (username: string, password: string) => {
-    const found = users.find((u) => u.username === username && u.password === password);
-    if (found) {
-      setUser(found);
-      return true;
-    }
-    return false;
+    return api.login(username, password).then((found) => {
+      if (found) {
+        setUser(found);
+        return true;
+      }
+      return false;
+    });
   };
 
   const logout = () => setUser(null);

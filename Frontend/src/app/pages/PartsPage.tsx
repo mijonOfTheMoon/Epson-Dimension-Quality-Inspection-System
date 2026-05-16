@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { partTypes, type PartType } from '../data/mock-data';
 import { Package, Plus, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useParts } from '../hooks/useParts';
 
 export function PartsPage() {
+  const partTypes = useParts();
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (

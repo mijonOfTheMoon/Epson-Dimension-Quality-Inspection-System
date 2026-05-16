@@ -1,7 +1,6 @@
-import { useState, Fragment } from 'react';
+import { useMemo, useState, Fragment, type ElementType } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
-  qualityTrackingRecords,
   type QualityTrackingRecord,
   type RequestStatus,
 } from '../data/mock-data';
@@ -15,10 +14,12 @@ import {
   Circle,
   AlertTriangle,
 } from 'lucide-react';
+import { api } from '../services/api';
+import { useQualityRecords } from '../hooks/useQualityRecords';
 
 const STATUS_CONFIG: Record<
   RequestStatus,
-  { label: string; color: string; bg: string; icon: React.ElementType }
+  { label: string; color: string; bg: string; icon: ElementType }
 > = {
   not_requested: { label: 'Not Requested', color: 'text-gray-600', bg: 'bg-gray-100', icon: Circle },
   requested: { label: 'Requested', color: 'text-blue-700', bg: 'bg-blue-100', icon: Send },
@@ -31,9 +32,7 @@ export function QualityTrackingPage() {
   const { user } = useAuth();
   const role = user?.role;
 
-  const [records, setRecords] = useState<QualityTrackingRecord[]>(() =>
-    JSON.parse(JSON.stringify(qualityTrackingRecords))
-  );
+  const [records, setRecords] = useQualityRecords();
   const [search, setSearch] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [filterVendor, setFilterVendor] = useState('');
@@ -45,19 +44,45 @@ export function QualityTrackingPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const vendors = [...new Set(records.map((r) => r.vendor))];
-  const dates = [...new Set(records.map((r) => r.date))].sort().reverse();
+  const { vendors, dates, filtered, totalScannedToday, totalNGToday, avgNGRate, pendingRequests } = useMemo(() => {
+    const vendorSet = new Set<string>();
+    const dateSet = new Set<string>();
+    let totalScanned = 0;
+    let totalNG = 0;
+    let pending = 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const lowerSearch = search.toLowerCase();
+    const nextFiltered: QualityTrackingRecord[] = [];
 
-  const filtered = records.filter((r) => {
-    const matchSearch =
-      !search ||
-      r.partName.toLowerCase().includes(search.toLowerCase()) ||
-      r.partCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.vendor.toLowerCase().includes(search.toLowerCase());
-    const matchDate = !filterDate || r.date === filterDate;
-    const matchVendor = !filterVendor || r.vendor === filterVendor;
-    return matchSearch && matchDate && matchVendor;
-  });
+    for (const r of records) {
+      vendorSet.add(r.vendor);
+      dateSet.add(r.date);
+      if (r.date === today) {
+        totalScanned += r.totalScanned;
+        totalNG += r.ngCount;
+      }
+      if (r.requestStatus === 'requested' || r.requestStatus === 'in_progress') pending += 1;
+
+      const matchSearch =
+        !lowerSearch ||
+        r.partName.toLowerCase().includes(lowerSearch) ||
+        r.partCode.toLowerCase().includes(lowerSearch) ||
+        r.vendor.toLowerCase().includes(lowerSearch);
+      const matchDate = !filterDate || r.date === filterDate;
+      const matchVendor = !filterVendor || r.vendor === filterVendor;
+      if (matchSearch && matchDate && matchVendor) nextFiltered.push(r);
+    }
+
+    return {
+      vendors: [...vendorSet],
+      dates: [...dateSet].sort().reverse(),
+      filtered: nextFiltered,
+      totalScannedToday: totalScanned,
+      totalNGToday: totalNG,
+      avgNGRate: totalScanned > 0 ? ((totalNG / totalScanned) * 100).toFixed(1) : '0.0',
+      pendingRequests: pending,
+    };
+  }, [records, search, filterDate, filterVendor]);
 
   const canRequest = role === 'engineering' || role === 'admin';
   const canUpdateVendor = role === 'vendor' || role === 'admin';
@@ -80,11 +105,15 @@ export function QualityTrackingPage() {
         };
       })
     );
+    api.updateQualityStatus(recordId, newStatus, user?.name || 'Unknown').then((record) => {
+      if (!record) return;
+      setRecords((prev) => prev.map((item) => item.id === record.id ? record : item));
+    });
     showToast(`Status berhasil diubah ke "${STATUS_CONFIG[newStatus].label}"`);
   };
 
   const getActions = (r: QualityTrackingRecord) => {
-    const actions: { label: string; status: RequestStatus; icon: React.ElementType }[] = [];
+    const actions: { label: string; status: RequestStatus; icon: ElementType }[] = [];
     const s = r.requestStatus;
     if (canRequest) {
       if (s === 'not_requested') actions.push({ label: 'Kirim Request ke Vendor', status: 'requested', icon: Send });
@@ -96,14 +125,6 @@ export function QualityTrackingPage() {
     }
     return actions;
   };
-
-  // Summary stats
-  const todayStr = '2026-04-09';
-  const todayRecords = records.filter((r) => r.date === todayStr);
-  const totalScannedToday = todayRecords.reduce((s, r) => s + r.totalScanned, 0);
-  const totalNGToday = todayRecords.reduce((s, r) => s + r.ngCount, 0);
-  const avgNGRate = totalScannedToday > 0 ? ((totalNGToday / totalScannedToday) * 100).toFixed(1) : '0.0';
-  const pendingRequests = records.filter((r) => r.requestStatus === 'requested' || r.requestStatus === 'in_progress').length;
 
   return (
     <div className="space-y-5">

@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+coverage
+.cache
+.vite
+.env
+.env.*
+*.log
+Dockerfile
+README.md
+.git
+.gitignore

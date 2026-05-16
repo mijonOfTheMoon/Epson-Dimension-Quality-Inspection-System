@@ -1,45 +1,71 @@
-import { inspectionResults, partTypes } from '../data/mock-data';
+import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts';
-import { CheckCircle, XCircle, Activity, TrendingDown, Package } from 'lucide-react';
+import { CheckCircle, XCircle, Activity, TrendingDown } from 'lucide-react';
+import { useInspections } from '../hooks/useInspections';
+import { useParts } from '../hooks/useParts';
+import type { InspectionResult } from '../data/mock-data';
 
 export function DashboardPage() {
-  const total = inspectionResults.length;
-  const ok = inspectionResults.filter((r) => r.status === 'OK').length;
-  const ng = inspectionResults.filter((r) => r.status === 'NG').length;
-  const ngRate = ((ng / total) * 100).toFixed(1);
+  const inspectionResults = useInspections(1000);
+  const partTypes = useParts();
+  const { total, ok, ng, ngRate, ngByPart, dailyTrend, shiftData, pieData, recentNG } = useMemo(() => {
+    let okCount = 0;
+    let ngCount = 0;
+    const dailyMap = new Map<string, { date: string; ok: number; ng: number }>();
+    const partMap = new Map<string, { name: string; ok: number; ng: number }>(partTypes.map((pt) => [pt.partCode, { name: pt.partName, ok: 0, ng: 0 }]));
+    const shiftMap = new Map<string, { shift: string; total: number; ng: number }>(['A', 'B', 'C'].map((shift) => [shift, { shift: `Shift ${shift}`, total: 0, ng: 0 }]));
+    const latestNg: InspectionResult[] = [];
 
-  // NG by part type
-  const ngByPart = partTypes.map((pt) => {
-    const partResults = inspectionResults.filter((r) => r.partCode === pt.partCode);
-    const partNG = partResults.filter((r) => r.status === 'NG').length;
-    return { name: pt.partName, ng: partNG, ok: partResults.length - partNG };
-  });
+    for (const result of inspectionResults) {
+      const isNg = result.status === 'NG';
+      if (isNg) {
+        ngCount += 1;
+        if (latestNg.length < 5) latestNg.push(result);
+      } else {
+        okCount += 1;
+      }
 
-  // Daily trend
-  const dailyMap = new Map<string, { date: string; ok: number; ng: number }>();
-  inspectionResults.forEach((r) => {
-    const d = r.timestamp.slice(0, 10);
-    if (!dailyMap.has(d)) dailyMap.set(d, { date: d, ok: 0, ng: 0 });
-    const entry = dailyMap.get(d)!;
-    if (r.status === 'OK') entry.ok++;
-    else entry.ng++;
-  });
-  const dailyTrend = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      const date = result.timestamp.slice(0, 10);
+      let daily = dailyMap.get(date);
+      if (!daily) {
+        daily = { date, ok: 0, ng: 0 };
+        dailyMap.set(date, daily);
+      }
+      if (isNg) daily.ng += 1;
+      else daily.ok += 1;
 
-  // By shift
-  const shiftData = ['A', 'B', 'C'].map((s) => {
-    const sr = inspectionResults.filter((r) => r.shift === s);
-    return { shift: `Shift ${s}`, total: sr.length, ng: sr.filter((r) => r.status === 'NG').length };
-  });
+      let part = partMap.get(result.partCode);
+      if (!part) {
+        part = { name: result.partName, ok: 0, ng: 0 };
+        partMap.set(result.partCode, part);
+      }
+      if (isNg) part.ng += 1;
+      else part.ok += 1;
 
-  // Pie data
-  const pieData = [
-    { name: 'OK', value: ok, color: '#22c55e' },
-    { name: 'NG', value: ng, color: '#ef4444' },
-  ];
+      const shift = shiftMap.get(result.shift);
+      if (shift) {
+        shift.total += 1;
+        if (isNg) shift.ng += 1;
+      }
+    }
 
-  // Recent NG
-  const recentNG = inspectionResults.filter((r) => r.status === 'NG').slice(0, 5);
+    const totalCount = okCount + ngCount;
+
+    return {
+      total: totalCount,
+      ok: okCount,
+      ng: ngCount,
+      ngRate: totalCount > 0 ? ((ngCount / totalCount) * 100).toFixed(1) : '0.0',
+      ngByPart: [...partMap.values()],
+      dailyTrend: [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+      shiftData: [...shiftMap.values()],
+      pieData: [
+        { name: 'OK', value: okCount, color: '#22c55e' },
+        { name: 'NG', value: ngCount, color: '#ef4444' },
+      ],
+      recentNG: latestNg,
+    };
+  }, [inspectionResults, partTypes]);
 
   const cards = [
     { label: 'Total Inspeksi', value: total, icon: Activity, color: 'blue' },
@@ -62,7 +88,6 @@ export function DashboardPage() {
         <p className="text-[var(--muted-foreground)] text-sm mt-1">Overview kualitas inspeksi dimensi real-time</p>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
           <div key={c.label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
@@ -77,9 +102,7 @@ export function DashboardPage() {
         ))}
       </div>
 
-      {/* Charts Row */}
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* NG Rate Trend */}
         <div className="lg:col-span-2 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <h3 className="mb-4">Tren Inspeksi Harian</h3>
           <ResponsiveContainer width="100%" height={280}>
@@ -95,7 +118,6 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Pie */}
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <h3 className="mb-4">Distribusi Status</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -119,9 +141,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Second Row */}
       <div className="grid lg:grid-cols-2 gap-4">
-        {/* By Part Type */}
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <h3 className="mb-4">NG per Tipe Part</h3>
           <ResponsiveContainer width="100%" height={220}>
@@ -136,7 +156,6 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* By Shift */}
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <h3 className="mb-4">Inspeksi per Shift</h3>
           <ResponsiveContainer width="100%" height={220}>
@@ -153,7 +172,6 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent NG */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
         <h3 className="mb-4">Part NG Terbaru</h3>
         <div className="overflow-x-auto">

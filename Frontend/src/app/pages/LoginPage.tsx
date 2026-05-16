@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { ScanLine, Eye, EyeOff } from 'lucide-react';
@@ -11,9 +11,9 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (login(username, password)) {
+    if (await login(username, password)) {
       navigate('/dashboard');
     } else {
       setError('Username atau password salah');

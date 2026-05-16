@@ -1,5 +1,5 @@
-import { users } from '../data/mock-data';
 import { UserPlus, Shield, Edit, Trash2 } from 'lucide-react';
+import { useUsers } from '../hooks/useUsers';
 
 const roleBadge: Record<string, string> = {
   operator: 'bg-blue-100 text-blue-700',
@@ -20,6 +20,8 @@ const roleLabels: Record<string, string> = {
 };
 
 export function UsersPage() {
+  const users = useUsers();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

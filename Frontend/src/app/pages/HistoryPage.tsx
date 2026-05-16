@@ -1,8 +1,11 @@
 import { useState, useMemo } from 'react';
-import { inspectionResults, partTypes } from '../data/mock-data';
-import { Search, Filter, Download, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { useInspections } from '../hooks/useInspections';
+import { useParts } from '../hooks/useParts';
 
 export function HistoryPage() {
+  const inspectionResults = useInspections(1000);
+  const partTypes = useParts();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'OK' | 'NG'>('all');
   const [partFilter, setPartFilter] = useState('all');
@@ -20,7 +23,7 @@ export function HistoryPage() {
       }
       return true;
     });
-  }, [search, statusFilter, partFilter]);
+  }, [inspectionResults, search, statusFilter, partFilter]);
 
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
