@@ -33,7 +33,6 @@ services:
       HOST: 0.0.0.0
       PORT: 4000
       LOG_LEVEL: info
-      # CORS tidak dibutuhkan lagi karena semua request lewat proxy (same-origin)
       CORS_ORIGIN: "http://localhost"
       STORAGE_DRIVER: postgres
       DATABASE_URL: postgresql://diminspect:diminspect@postgres:5432/diminspect
@@ -45,7 +44,6 @@ services:
       MQTT_TOPIC_PREFIX: diminspect
       MQTT_QOS: 1
       EVENT_REPLAY_LIMIT: 100
-    # Port backend tidak perlu di-expose ke host — hanya diakses lewat proxy
     expose:
       - "4000"
 
@@ -54,7 +52,6 @@ services:
       context: ./Frontend
       dockerfile: Dockerfile
       args:
-        # Relative URL: request keluar dari browser ke same-origin (/api/...) lalu proxy forward ke backend
         VITE_API_URL: /api
         VITE_WS_URL: /ws
     image: diminspect-frontend:latest
@@ -63,7 +60,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    # Port frontend juga tidak perlu di-expose ke host — hanya diakses lewat proxy
     expose:
       - "8080"
 
