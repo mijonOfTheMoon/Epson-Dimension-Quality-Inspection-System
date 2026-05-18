@@ -2,21 +2,27 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { ScanLine, Eye, EyeOff } from 'lucide-react';
+import { getErrorMessage } from '../services/api';
 
 export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await login(username, password)) {
-      navigate('/dashboard');
-    } else {
-      setError('Username atau password salah');
+    setLoading(true);
+    setError('');
+    try {
+      if (await login(username, password)) navigate('/dashboard');
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -65,21 +71,9 @@ export function LoginPage() {
             </div>
           </div>
 
-          <button type="submit" className="w-full mt-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            Masuk
+          <button disabled={loading} type="submit" className="w-full mt-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60">
+            {loading ? 'Memproses...' : 'Masuk'}
           </button>
-
-          <div className="mt-6 p-3 bg-gray-50 rounded-lg text-xs text-gray-500">
-            <div style={{ fontWeight: 500 }} className="mb-1">Demo Accounts:</div>
-            <div className="grid grid-cols-2 gap-1">
-              <span>operator1 / pass</span>
-              <span>qc1 / pass</span>
-              <span>supervisor1 / pass</span>
-              <span>eng1 / pass</span>
-              <span>admin / admin</span>
-              <span>vendor1 / pass</span>
-            </div>
-          </div>
         </form>
       </div>
     </div>

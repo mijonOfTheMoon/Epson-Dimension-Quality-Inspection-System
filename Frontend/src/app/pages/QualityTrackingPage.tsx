@@ -1,9 +1,6 @@
 import { useMemo, useState, Fragment, type ElementType } from 'react';
 import { useAuth } from '../context/AuthContext';
-import {
-  type QualityTrackingRecord,
-  type RequestStatus,
-} from '../data/mock-data';
+import type { QualityTrackingRecord, RequestStatus } from '../types/api';
 import {
   Search,
   ChevronDown,
@@ -14,7 +11,7 @@ import {
   Circle,
   AlertTriangle,
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api, getErrorMessage } from '../services/api';
 import { useQualityRecords } from '../hooks/useQualityRecords';
 
 const STATUS_CONFIG: Record<
@@ -32,7 +29,9 @@ export function QualityTrackingPage() {
   const { user } = useAuth();
   const role = user?.role;
 
-  const [records, setRecords] = useQualityRecords();
+  const qualityRecords = useQualityRecords();
+  const records = qualityRecords.data;
+  const setRecords = qualityRecords.setData;
   const [search, setSearch] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [filterVendor, setFilterVendor] = useState('');
@@ -88,28 +87,12 @@ export function QualityTrackingPage() {
   const canUpdateVendor = role === 'vendor' || role === 'admin';
 
   const handleStatusChange = (recordId: string, newStatus: RequestStatus) => {
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (r.id !== recordId) return r;
-        return {
-          ...r,
-          requestStatus: newStatus,
-          statusHistory: [
-            ...r.statusHistory,
-            {
-              status: newStatus,
-              timestamp: new Date().toISOString(),
-              changedBy: user?.name || 'Unknown',
-            },
-          ],
-        };
-      })
-    );
     api.updateQualityStatus(recordId, newStatus, user?.name || 'Unknown').then((record) => {
-      if (!record) return;
       setRecords((prev) => prev.map((item) => item.id === record.id ? record : item));
+      showToast(`Status berhasil diubah ke "${STATUS_CONFIG[newStatus].label}"`);
+    }).catch((err) => {
+      showToast(getErrorMessage(err));
     });
-    showToast(`Status berhasil diubah ke "${STATUS_CONFIG[newStatus].label}"`);
   };
 
   const getActions = (r: QualityTrackingRecord) => {
@@ -140,6 +123,19 @@ export function QualityTrackingPage() {
           Monitoring NG ratio harian per part & manajemen permintaan part ke vendor
         </p>
       </div>
+
+      {qualityRecords.error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+          <span>{qualityRecords.error}</span>
+          <button onClick={qualityRecords.reload} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+        </div>
+      )}
+
+      {qualityRecords.loading && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
+          Memuat quality records dari backend...
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

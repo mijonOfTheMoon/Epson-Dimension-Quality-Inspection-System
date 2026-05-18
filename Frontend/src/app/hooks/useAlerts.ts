@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AsyncData, InspectionResult } from '../types/api';
-import { api, getErrorMessage, normalizeInspectionEvent } from '../services/api';
+import type { AsyncData, QualityAlertEvent } from '../types/api';
+import { api, getErrorMessage } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 
-export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
-  const [data, setData] = useState<InspectionResult[]>([]);
+export function useAlerts(limit = 50): AsyncData<QualityAlertEvent[]> {
+  const [data, setData] = useState<QualityAlertEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -12,9 +12,8 @@ export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
 
   useEffect(() => {
     let active = true;
-
     setLoading(true);
-    api.getInspections({ limit })
+    api.getAlerts(limit)
       .then((next) => {
         if (!active) return;
         setData(next);
@@ -28,11 +27,10 @@ export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
       });
 
     const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType !== 'inspection.created') return;
-      const next = normalizeInspectionEvent(event);
+      if (event.eventType !== 'quality.alert') return;
       setData((current) => {
-        if (current.some((item) => item.id === next.id)) return current;
-        return [next, ...current].slice(0, limit);
+        if (current.some((item) => item.eventId === event.eventId)) return current;
+        return [event, ...current].slice(0, limit);
       });
       setError(null);
     });

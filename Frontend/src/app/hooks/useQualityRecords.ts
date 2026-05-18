@@ -1,19 +1,35 @@
-import { useEffect, useState } from 'react';
-import { qualityTrackingRecords, type QualityTrackingRecord } from '../data/mock-data';
-import { api } from '../services/api';
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import type { AsyncData, QualityTrackingRecord } from '../types/api';
+import { api, getErrorMessage } from '../services/api';
 
-export function useQualityRecords() {
-  const [records, setRecords] = useState<QualityTrackingRecord[]>(() => JSON.parse(JSON.stringify(qualityTrackingRecords)));
+export function useQualityRecords(): AsyncData<QualityTrackingRecord[]> & {
+  setData: Dispatch<SetStateAction<QualityTrackingRecord[]>>;
+} {
+  const [data, setData] = useState<QualityTrackingRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion((current) => current + 1), []);
 
   useEffect(() => {
     let active = true;
-    api.getQualityRecords().then((data) => {
-      if (active) setRecords(data);
-    });
+    setLoading(true);
+    api.getQualityRecords()
+      .then((next) => {
+        if (!active) return;
+        setData(next);
+        setError(null);
+      })
+      .catch((err) => {
+        if (active) setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [version]);
 
-  return [records, setRecords] as const;
+  return { data, setData, loading, error, reload };
 }

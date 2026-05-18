@@ -1,19 +1,33 @@
-import { useEffect, useState } from 'react';
-import { partTypes, type PartType } from '../data/mock-data';
-import { api } from '../services/api';
+import { useCallback, useEffect, useState } from 'react';
+import type { AsyncData, PartType } from '../types/api';
+import { api, getErrorMessage } from '../services/api';
 
-export function useParts() {
-  const [parts, setParts] = useState<PartType[]>(partTypes);
+export function useParts(): AsyncData<PartType[]> {
+  const [data, setData] = useState<PartType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion((current) => current + 1), []);
 
   useEffect(() => {
     let active = true;
-    api.getParts().then((data) => {
-      if (active) setParts(data);
-    });
+    setLoading(true);
+    api.getParts()
+      .then((next) => {
+        if (!active) return;
+        setData(next);
+        setError(null);
+      })
+      .catch((err) => {
+        if (active) setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [version]);
 
-  return parts;
+  return { data, loading, error, reload };
 }

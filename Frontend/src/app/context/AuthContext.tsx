@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
-import { type User, type UserRole } from '../data/mock-data';
+import type { User, UserRole } from '../types/api';
 import { api } from '../services/api';
 
 interface AuthContextType {
@@ -14,14 +14,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
 
-  const login = (username: string, password: string) => {
-    return api.login(username, password).then((found) => {
-      if (found) {
-        setUser(found);
-        return true;
-      }
-      return false;
-    });
+  const login = async (username: string, password: string) => {
+    const found = await api.login(username, password);
+    setUser(found);
+    return true;
   };
 
   const logout = () => setUser(null);

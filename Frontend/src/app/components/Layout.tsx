@@ -5,7 +5,7 @@ import {
   Bell, Menu, X, Package, ChevronDown, Video
 } from 'lucide-react';
 import { useState } from 'react';
-import { notifications } from '../data/mock-data';
+import { useAlerts } from '../hooks/useAlerts';
 import Logo from '../../assets/Logo.png';
 
 const roleLabels: Record<string, string> = {
@@ -22,7 +22,8 @@ export function Layout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const alerts = useAlerts(50);
+  const unreadCount = alerts.data.filter((a) => a.severity === 'critical' || a.severity === 'warning').length;
 
   const handleLogout = () => { logout(); navigate('/'); };
 
@@ -106,11 +107,16 @@ export function Layout() {
                 <div className="p-3 border-b border-[var(--border)]">
                   <h4 className="text-sm">Notifikasi</h4>
                 </div>
-                {notifications.map((n) => (
-                  <div key={n.id} className={`p-3 border-b border-[var(--border)] text-sm ${!n.read ? 'bg-blue-50' : ''}`}>
-                    <div style={{ fontWeight: 500 }}>{n.title}</div>
-                    <div className="text-[var(--muted-foreground)] mt-0.5 text-xs">{n.message}</div>
-                    <div className="text-[10px] text-[var(--muted-foreground)] mt-1">{new Date(n.timestamp).toLocaleString('id-ID')}</div>
+                {alerts.data.length === 0 && (
+                  <div className="p-4 text-center text-[var(--muted-foreground)] text-sm">
+                    Belum ada notifikasi dari backend.
+                  </div>
+                )}
+                {alerts.data.map((a) => (
+                  <div key={a.eventId} className={`p-3 border-b border-[var(--border)] text-sm ${a.severity === 'critical' ? 'bg-red-50' : a.severity === 'warning' ? 'bg-yellow-50' : ''}`}>
+                    <div style={{ fontWeight: 500 }}>{a.severity.toUpperCase()}</div>
+                    <div className="text-[var(--muted-foreground)] mt-0.5 text-xs">{a.message}</div>
+                    <div className="text-[10px] text-[var(--muted-foreground)] mt-1">{new Date(a.timestamp).toLocaleString('id-ID')}</div>
                   </div>
                 ))}
               </div>

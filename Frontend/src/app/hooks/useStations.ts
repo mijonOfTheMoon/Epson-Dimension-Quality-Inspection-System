@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AsyncData, InspectionResult } from '../types/api';
-import { api, getErrorMessage, normalizeInspectionEvent } from '../services/api';
+import type { AsyncData, StationStatusEvent } from '../types/api';
+import { api, getErrorMessage } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 
-export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
-  const [data, setData] = useState<InspectionResult[]>([]);
+export function useStations(): AsyncData<StationStatusEvent[]> {
+  const [data, setData] = useState<StationStatusEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -12,9 +12,8 @@ export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
 
   useEffect(() => {
     let active = true;
-
     setLoading(true);
-    api.getInspections({ limit })
+    api.getStations()
       .then((next) => {
         if (!active) return;
         setData(next);
@@ -28,11 +27,10 @@ export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
       });
 
     const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType !== 'inspection.created') return;
-      const next = normalizeInspectionEvent(event);
+      if (event.eventType !== 'station.status') return;
       setData((current) => {
-        if (current.some((item) => item.id === next.id)) return current;
-        return [next, ...current].slice(0, limit);
+        const withoutCurrent = current.filter((item) => item.stationId !== event.stationId);
+        return [event, ...withoutCurrent].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
       });
       setError(null);
     });
@@ -41,7 +39,7 @@ export function useInspections(limit = 1000): AsyncData<InspectionResult[]> {
       active = false;
       unsubscribe();
     };
-  }, [limit, version]);
+  }, [version]);
 
   return { data, loading, error, reload };
 }

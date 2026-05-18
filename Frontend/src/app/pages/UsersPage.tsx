@@ -34,6 +34,19 @@ export function UsersPage() {
         </button>
       </div>
 
+      {users.error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+          <span>{users.error}</span>
+          <button onClick={users.reload} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+        </div>
+      )}
+
+      {users.loading && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
+          Memuat user dari backend...
+        </div>
+      )}
+
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-[var(--accent)]">
@@ -45,7 +58,7 @@ export function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {users.data.map((u) => (
               <tr key={u.id} className="border-b border-[var(--border)]">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -69,6 +82,13 @@ export function UsersPage() {
                 </td>
               </tr>
             ))}
+            {!users.loading && users.data.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
+                  Belum ada user dari backend.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

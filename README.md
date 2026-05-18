@@ -6,7 +6,7 @@ DimInspect adalah sistem quality inspection dimensi dengan agent vision, backend
 
 - **Agent**: Python OpenCV, publish event inspeksi via MQTT, fallback HTTP, buffer offline JSONL.
 - **Backend**: Fastify TypeScript, REST API, WebSocket realtime, MQTT subscriber, PostgreSQL storage.
-- **Frontend**: React Vite dashboard, REST initial load, WebSocket realtime, mock fallback.
+- **Frontend**: React Vite dashboard, REST initial load, WebSocket realtime.
 
 ## Struktur
 

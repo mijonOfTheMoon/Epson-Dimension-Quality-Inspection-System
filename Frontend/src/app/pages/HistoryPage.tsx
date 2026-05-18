@@ -4,8 +4,12 @@ import { useInspections } from '../hooks/useInspections';
 import { useParts } from '../hooks/useParts';
 
 export function HistoryPage() {
-  const inspectionResults = useInspections(1000);
-  const partTypes = useParts();
+  const inspections = useInspections(1000);
+  const parts = useParts();
+  const inspectionResults = inspections.data;
+  const partTypes = parts.data;
+  const loading = inspections.loading || parts.loading;
+  const error = inspections.error || parts.error;
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'OK' | 'NG'>('all');
   const [partFilter, setPartFilter] = useState('all');
@@ -52,6 +56,19 @@ export function HistoryPage() {
           <Download className="w-4 h-4" /> Export CSV
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <button onClick={() => { inspections.reload(); parts.reload(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
+          Memuat riwayat inspeksi dari backend...
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -152,6 +169,13 @@ export function HistoryPage() {
                   )}
                 </>
               ))}
+              {!loading && paginated.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
+                    {inspectionResults.length === 0 ? 'Belum ada data inspeksi dari backend.' : 'Tidak ada data yang cocok dengan filter.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

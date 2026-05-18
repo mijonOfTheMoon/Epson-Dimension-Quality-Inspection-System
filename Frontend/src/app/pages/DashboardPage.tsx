@@ -3,11 +3,15 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { CheckCircle, XCircle, Activity, TrendingDown } from 'lucide-react';
 import { useInspections } from '../hooks/useInspections';
 import { useParts } from '../hooks/useParts';
-import type { InspectionResult } from '../data/mock-data';
+import type { InspectionResult } from '../types/api';
 
 export function DashboardPage() {
-  const inspectionResults = useInspections(1000);
-  const partTypes = useParts();
+  const inspections = useInspections(1000);
+  const parts = useParts();
+  const inspectionResults = inspections.data;
+  const partTypes = parts.data;
+  const loading = inspections.loading || parts.loading;
+  const error = inspections.error || parts.error;
   const { total, ok, ng, ngRate, ngByPart, dailyTrend, shiftData, pieData, recentNG } = useMemo(() => {
     let okCount = 0;
     let ngCount = 0;
@@ -87,6 +91,25 @@ export function DashboardPage() {
         <h1>Dashboard Monitoring</h1>
         <p className="text-[var(--muted-foreground)] text-sm mt-1">Overview kualitas inspeksi dimensi real-time</p>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <button onClick={() => { inspections.reload(); parts.reload(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
+          Memuat data dashboard dari backend...
+        </div>
+      )}
+
+      {!loading && !error && inspectionResults.length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl p-4 text-sm">
+          Belum ada data inspeksi. Jalankan Agent atau kirim event inspeksi ke backend untuk mengisi dashboard.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
@@ -203,6 +226,13 @@ export function DashboardPage() {
                   </td>
                 </tr>
               ))}
+              {recentNG.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-[var(--muted-foreground)]">
+                    Belum ada part NG dari backend.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

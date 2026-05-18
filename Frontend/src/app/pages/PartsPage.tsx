@@ -3,7 +3,8 @@ import { Package, Plus, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-reac
 import { useParts } from '../hooks/useParts';
 
 export function PartsPage() {
-  const partTypes = useParts();
+  const parts = useParts();
+  const partTypes = parts.data;
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
@@ -17,6 +18,19 @@ export function PartsPage() {
           <Plus className="w-4 h-4" /> Tambah Part
         </button>
       </div>
+
+      {parts.error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+          <span>{parts.error}</span>
+          <button onClick={parts.reload} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+        </div>
+      )}
+
+      {parts.loading && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
+          Memuat konfigurasi part dari backend...
+        </div>
+      )}
 
       <div className="space-y-3">
         {partTypes.map((pt) => (
@@ -73,6 +87,11 @@ export function PartsPage() {
             )}
           </div>
         ))}
+        {!parts.loading && partTypes.length === 0 && (
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-8 text-center text-[var(--muted-foreground)] text-sm">
+            Belum ada konfigurasi part dari backend.
+          </div>
+        )}
       </div>
     </div>
   );

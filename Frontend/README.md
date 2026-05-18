@@ -33,4 +33,3 @@ VITE_WS_URL=ws://localhost:4000/ws
 
 - REST untuk initial data.
 - WebSocket untuk realtime update.
-- Mock fallback aktif jika backend belum tersedia.
