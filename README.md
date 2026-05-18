@@ -68,6 +68,7 @@ cd Agent
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 python computer_vision.py
 ```
 
@@ -141,6 +142,8 @@ MQTT_PORT=1883
 MQTT_TOPIC_PREFIX=diminspect
 HTTP_FALLBACK_URL=http://localhost:4000/api/inspections
 ```
+
+Agent membaca konfigurasi dari `Agent/.env`.
 
 ## Validation
 

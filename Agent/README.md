@@ -8,6 +8,7 @@ Agent menjalankan pipeline OpenCV untuk inspeksi dimensi dan mengirim event ke b
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 python computer_vision.py
 ```
 
@@ -26,6 +27,8 @@ MQTT_QOS=1
 HTTP_FALLBACK_URL=http://localhost:4000/api/inspections
 BUFFER_FILE=agent_buffer.jsonl
 ```
+
+Agent membaca konfigurasi dari `.env` di folder `Agent`.
 
 ## Output event
 
