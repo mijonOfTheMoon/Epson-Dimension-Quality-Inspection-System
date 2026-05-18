@@ -142,7 +142,28 @@ FRAME_QUALITY=70
 SHOW_PREVIEW=false
 ```
 
-`AGENT_TOKEN` di Agent **wajib sama** dengan `AGENT_TOKEN` di Backend.
+### Identitas vs Otorisasi Agent
+
+| Variabel       | Fungsi                                                                | Unik per agent? |
+|----------------|-----------------------------------------------------------------------|------------------|
+| `STATION_ID`   | Identitas logis agent (mis. `station-1`, `station-cnc-a`)             | **Ya** — wajib unik |
+| `AGENT_TOKEN`  | Shared secret untuk otorisasi koneksi WS agent → backend              | **Tidak** — sama untuk semua agent |
+
+`AGENT_TOKEN` **bukan** identifier per agent. Ia hanya shared bearer secret: agent manapun yang tahu token bisa connect dengan `stationId` apapun. Cukup untuk MVP di LAN/VPN. Untuk multi-tenant atau jaringan kurang terpercaya, upgrade ke per-agent token (JWT signed per `stationId` atau row di tabel `agent_tokens`) — belum diimplementasikan.
+
+### Generate Secrets
+
+`AGENT_TOKEN` dan `JWT_SECRET` adalah string random yang Anda buat sendiri. Buat sekali, set di kedua sisi.
+
+```bash
+# Linux / macOS / Git Bash
+openssl rand -hex 32
+
+# Windows PowerShell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Salin output ke `Backend/.env` (`AGENT_TOKEN=...`, `JWT_SECRET=...`) dan ke `Agent/.env` (`AGENT_TOKEN=...` saja — harus sama persis dengan backend). `STATION_ID` di-set berbeda untuk setiap agent.
 
 ## Database Migration
 
