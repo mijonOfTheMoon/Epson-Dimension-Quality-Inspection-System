@@ -9,7 +9,7 @@ export class EventBus {
 
   publish(event: IngestEvent) {
     this.events.push(event);
-    if (this.events.length > this.limit) this.events.splice(0, this.events.length - this.limit);
+    while (this.events.length > this.limit) this.events.shift();
     this.emitter.emit('event', event);
   }
 

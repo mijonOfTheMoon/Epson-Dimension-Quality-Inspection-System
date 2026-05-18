@@ -18,7 +18,9 @@ export function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      if (await login(username, password)) navigate('/dashboard');
+      const ok = await login(username, password);
+      if (ok) navigate('/dashboard');
+      else setError('Username atau password salah');
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

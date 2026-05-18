@@ -1,6 +1,6 @@
 # DimInspect Backend
 
-Backend menyediakan REST API, WebSocket realtime, dan MQTT ingestion untuk agent inspeksi.
+Fastify TypeScript yang menerima koneksi outbound dari Agent local via WebSocket, mengelola REST API + WebSocket realtime untuk Frontend, dan menyimpan event ke PostgreSQL. Auth pakai JWT (HS256) + bcrypt.
 
 ## Run local
 
@@ -22,7 +22,12 @@ npm start
 
 ```bash
 docker build -t diminspect-backend .
-docker run --rm -p 4000:4000 -e DATABASE_URL=postgresql://user:password@host.docker.internal:5432/diminspect -e DATABASE_SSL=false diminspect-backend
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL=postgresql://user:password@host.docker.internal:5432/diminspect \
+  -e DATABASE_SSL=false \
+  -e JWT_SECRET=ganti-secret-panjang \
+  -e AGENT_TOKEN=ganti-token-agent \
+  diminspect-backend
 ```
 
 ## Environment
@@ -30,69 +35,88 @@ docker run --rm -p 4000:4000 -e DATABASE_URL=postgresql://user:password@host.doc
 ```text
 HOST=0.0.0.0
 PORT=4000
+LOG_LEVEL=info
+CORS_ORIGIN=*
 DATABASE_URL=postgresql://diminspect:diminspect@localhost:5432/diminspect
 DATABASE_SSL=false
 DATABASE_POOL_MAX=10
-MQTT_ENABLED=false
-MQTT_URL=mqtt://localhost:1883
-MQTT_TOPIC_PREFIX=diminspect
+JWT_SECRET=change-me-in-production-please-use-long-secret
+JWT_EXPIRES_IN=7d
+BCRYPT_ROUNDS=10
+AGENT_TOKEN=change-me-agent-shared-token
+EVENT_REPLAY_LIMIT=100
 ```
 
-Supabase:
+## Database Migration
 
-```text
-DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
+Migration otomatis saat startup (`store.init()`). Manual:
+
+```bash
+npm run migrate          # via tsx (development)
+npm run migrate:prod     # setelah npm run build
+```
+
+Migration dicatat di table `schema_migrations`. Idempotent.
+
+### Migrate ke Supabase
+
+| Pooler                      | Port | Cocok untuk          |
+|-----------------------------|------|----------------------|
+| Session Pooler              | 5432 | **Migrate** + runtime |
+| Transaction Pooler          | 6543 | Runtime hemat koneksi |
+
+```bash
+DATABASE_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
-DATABASE_POOL_MAX=10
-```
-
-## Database migration
-
-Migration otomatis berjalan saat backend startup. Untuk menjalankan manual:
-
-```bash
 npm run migrate
 ```
 
-Local PostgreSQL:
+## Default Credentials
 
-```bash
-copy .env.example .env
-npm run migrate
-```
+Hash bcrypt (cost 10) di kolom `users.password`. Plaintext di tabel ini cuma untuk login pertama:
 
-Supabase:
+| Username     | Password   | Role        |
+|--------------|------------|-------------|
+| `admin`      | `admin123` | admin       |
+| `supervisor` | `super123` | supervisor  |
+| `qc1`        | `qc123`    | qc          |
+| `operator1`  | `op123`    | operator    |
+| `vendor1`    | `ven123`   | vendor      |
 
-```bash
-copy .env.example .env
-npm run migrate
-```
-
-Untuk Supabase, isi `.env` dengan pooler `DATABASE_URL` dari Supabase dan `DATABASE_SSL=true`. Migration dicatat di table `schema_migrations`.
-
-Production build:
-
-```bash
-npm run build
-npm run migrate:prod
-```
+Migration v3 menghapus user lama yang masih plaintext (kolom `password` tidak diawali `$2`). Seed berikutnya selalu di-hash bcrypt.
 
 ## Protocol
 
-- Agent publish event lewat MQTT topic `diminspect/{stationId}/inspection`
-- Frontend baca data awal lewat REST
-- Frontend menerima update realtime lewat WebSocket `/ws`
+### Agent → Backend (`/ws/agent?stationId=<id>&token=<AGENT_TOKEN>`)
+- **Binary message**: JPEG frame (forward ke FrameBus).
+- **Text message**: JSON event (`inspection.created`, `station.status`, `quality.alert`).
 
-## API
+### Backend → Agent (sama socket)
+- **Text JSON**: `{"type":"start"}` atau `{"type":"stop"}` untuk control kamera capture.
 
-- `GET /health`
-- `GET /api/dashboard/summary`
-- `GET /api/inspections`
+### Backend → Frontend
+- `GET /ws` — event broadcast (snapshot + new event).
+- `GET /ws/frames` — frame broadcast binary, format: `[2-byte BE stationId length][stationId UTF-8][JPEG]`.
+
+## REST API
+
+Auth:
+- `POST /api/auth/login` → `{ user, token }`
+- `GET  /api/auth/me` (Bearer) → user
+- `POST /api/auth/logout` → 204
+
+Data:
+- `GET  /health`
+- `GET  /api/dashboard/summary`
+- `GET  /api/inspections`
 - `POST /api/inspections`
-- `GET /api/stations`
-- `GET /api/alerts`
-- `GET /api/parts`
-- `GET /api/users`
-- `POST /api/auth/login`
-- `GET /api/quality-records`
-- `PATCH /api/quality-records/:id/status`
+- `GET  /api/stations`
+- `GET  /api/alerts`
+- `GET  /api/parts`
+- `GET  /api/users`
+- `GET  /api/quality-records`
+- `PATCH /api/quality-records/:id/status` (Bearer)
+
+Agent control:
+- `GET  /api/agents` → daftar agent online + running flag
+- `POST /api/agents/:stationId/command` body `{"command":"start"|"stop"}` (Bearer)

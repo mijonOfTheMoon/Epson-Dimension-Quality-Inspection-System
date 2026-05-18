@@ -29,7 +29,8 @@ export interface DataStore {
   listAlerts(limit: number): Promise<QualityAlertEvent[]>;
   listParts(): Promise<PartType[]>;
   listUsers(): Promise<Omit<User, 'password'>[]>;
-  login(username: string, password: string): Promise<User | null>;
+  findUserByUsername(username: string): Promise<User | null>;
+  findUserById(id: string): Promise<User | null>;
   listQualityRecords(): Promise<QualityTrackingRecord[]>;
   updateQualityRecordStatus(id: string, status: RequestStatus, changedBy: string): Promise<QualityTrackingRecord | null>;
   getDashboardSummary(): Promise<DashboardSummary>;

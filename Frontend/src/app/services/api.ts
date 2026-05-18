@@ -1,4 +1,6 @@
 import type {
+  AgentInfo,
+  AuthLoginResponse,
   DashboardSummary,
   InspectionCreatedEvent,
   InspectionResult,
@@ -12,6 +14,21 @@ import type {
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 export const API_BASE_URL = env?.VITE_API_URL ?? 'http://localhost:4000';
+
+const TOKEN_KEY = 'diminspect_auth_token';
+export const AUTH_LOGOUT_EVENT = 'auth:logout';
+
+export const tokenStorage = {
+  get(): string | null {
+    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  },
+  set(token: string) {
+    try { localStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
+  },
+  clear() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+  },
+};
 
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -27,18 +44,27 @@ export function getErrorMessage(error: unknown) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-  });
+  const token = tokenStorage.get();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> ?? {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+
+  if (response.status === 401) {
+    tokenStorage.clear();
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+  }
+
   if (!response.ok) {
     let message = `Request gagal (${response.status})`;
     try {
       const body = await response.json() as { message?: string };
       if (body.message) message = body.message;
-    } catch {}
+    } catch { /* ignore */ }
     throw new ApiRequestError(message, response.status);
   }
+
+  if (response.status === 204) return undefined as T;
   return await response.json() as T;
 }
 
@@ -64,10 +90,16 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
 
 export const api = {
   login(username: string, password: string) {
-    return request<User>('/api/auth/login', {
+    return request<AuthLoginResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
+  },
+  me() {
+    return request<User>('/api/auth/me');
+  },
+  logout() {
+    return request<void>('/api/auth/logout', { method: 'POST' });
   },
   getUsers() {
     return request<User[]>('/api/users');
@@ -101,5 +133,20 @@ export const api = {
   },
   getDashboardSummary() {
     return request<DashboardSummary>('/api/dashboard/summary');
+  },
+  getAgents() {
+    return request<AgentInfo[]>('/api/agents');
+  },
+  startAgent(stationId: string) {
+    return request<{ stationId: string; command: 'start'; delivered: true }>(
+      `/api/agents/${encodeURIComponent(stationId)}/command`,
+      { method: 'POST', body: JSON.stringify({ command: 'start' }) },
+    );
+  },
+  stopAgent(stationId: string) {
+    return request<{ stationId: string; command: 'stop'; delivered: true }>(
+      `/api/agents/${encodeURIComponent(stationId)}/command`,
+      { method: 'POST', body: JSON.stringify({ command: 'stop' }) },
+    );
   },
 };

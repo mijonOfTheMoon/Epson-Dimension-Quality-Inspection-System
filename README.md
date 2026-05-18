@@ -1,21 +1,39 @@
 # DimInspect
 
-DimInspect adalah sistem quality inspection dimensi dengan agent vision, backend ingestion, dan frontend monitoring realtime.
+Sistem quality inspection dimensi dengan agent computer vision di mesin local, backend + frontend di VPS, terhubung via WebSocket langsung (tanpa broker eksternal).
 
 ## Arsitektur
 
-- **Agent**: Python OpenCV, publish event inspeksi via MQTT broker (HiveMQ).
-- **Backend**: Fastify TypeScript, REST API, WebSocket realtime, MQTT subscriber, PostgreSQL storage.
-- **Frontend**: React Vite dashboard, REST initial load, WebSocket realtime.
-
-## Struktur
-
 ```text
-Agent/
-Backend/
-Frontend/
-docker-compose.yml
+[Operator PC: Agent (OpenCV)]  --outbound WSS-->  [VPS: Backend (Fastify)]
+                                                       |
+                                                       +-- /ws/agent      (Agent control + event + frame)
+                                                       +-- /ws            (Realtime event broadcast)
+                                                       +-- /ws/frames     (Frame broadcast ke viewer)
+                                                       +-- REST API       (Auth, agents, inspections, dst)
+                                                       |
+                                                  [PostgreSQL]
+                                                       |
+[Browser: Frontend (React)] <-- HTTPS + WSS --> [Backend]
 ```
+
+- **Agent (Python OpenCV)** berjalan di PC operator, persistent outbound WebSocket ke backend. Default state **idle** sampai menerima command `start` dari backend.
+- **Backend (Fastify TS)** menerima event + frame dari agent, broadcast ke viewer, expose REST + WebSocket.
+- **Frontend (React Vite)** punya tombol **Mulai/Hentikan Inspeksi** per station; menampilkan video tile live dari frame WebSocket.
+
+## Default Credentials
+
+Demo seed users. Password tersimpan sebagai hash bcrypt di DB (cost 10) — plaintext di tabel ini hanya untuk login pertama.
+
+| Username     | Password   | Role        | Nama              |
+|--------------|------------|-------------|-------------------|
+| `admin`      | `admin123` | admin       | Administrator     |
+| `supervisor` | `super123` | supervisor  | Budi Santoso      |
+| `qc1`        | `qc123`    | qc          | Sari Dewi         |
+| `operator1`  | `op123`    | operator    | Andi Pratama      |
+| `vendor1`    | `ven123`   | vendor      | PT. Maju Jaya     |
+
+Ganti password seed di production segera setelah login pertama (endpoint update password = roadmap berikut).
 
 ## Docker compose
 
@@ -25,24 +43,21 @@ docker compose up --build
 
 Akses:
 
-- Frontend: http://localhost:8080
-- Backend health: http://localhost:4000/health
-- WebSocket: ws://localhost:4000/ws
+- Frontend: http://localhost
+- Backend health: http://localhost/api/health (via nginx) atau http://localhost:4000/health (direct backend dalam network)
+- WebSocket realtime: ws://localhost/ws
+- WebSocket agent ingest: ws://localhost/ws/agent
+- WebSocket frame viewer: ws://localhost/ws/frames
 - PostgreSQL: localhost:5432
 
-Stop:
+Stop & reset data:
 
 ```bash
 docker compose down
-```
-
-Reset data volume:
-
-```bash
 docker compose down -v
 ```
 
-## Local development
+## Local Development
 
 Backend:
 
@@ -61,7 +76,7 @@ npm install
 npm run dev
 ```
 
-Agent:
+Agent (di mesin operator):
 
 ```bash
 cd Agent
@@ -74,54 +89,18 @@ python computer_vision.py
 
 ## Environment
 
-Backend utama:
+Backend (`Backend/.env`):
 
 ```text
 PORT=4000
-DATABASE_URL=postgresql://diminspect:diminspect@postgres:5432/diminspect
+DATABASE_URL=postgresql://diminspect:diminspect@localhost:5432/diminspect
 DATABASE_SSL=false
 DATABASE_POOL_MAX=10
-MQTT_ENABLED=false
-MQTT_URL=mqtt://host.docker.internal:1883
-MQTT_TOPIC_PREFIX=diminspect
-```
-
-Supabase:
-
-```text
-DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
-DATABASE_SSL=true
-DATABASE_POOL_MAX=10
-```
-
-## Database migration
-
-Backend menjalankan migration otomatis saat startup lewat `store.init()`. Migration bersifat idempotent dan dicatat di table `schema_migrations`.
-
-Local Docker PostgreSQL:
-
-```bash
-docker compose up -d postgres
-cd Backend
-copy .env.example .env
-npm run migrate
-```
-
-Supabase:
-
-```bash
-cd Backend
-copy .env.example .env
-npm run migrate
-```
-
-Untuk Supabase, isi `.env` backend dengan `DATABASE_URL` dari Supabase pooler dan `DATABASE_SSL=true` sebelum menjalankan migration.
-
-Production image:
-
-```bash
-npm run build
-npm run migrate:prod
+JWT_SECRET=change-me-in-production-please-use-long-secret
+JWT_EXPIRES_IN=7d
+BCRYPT_ROUNDS=10
+AGENT_TOKEN=change-me-agent-shared-token
+EVENT_REPLAY_LIMIT=100
 ```
 
 Frontend build args:
@@ -129,23 +108,58 @@ Frontend build args:
 ```text
 VITE_API_URL=http://localhost:4000
 VITE_WS_URL=ws://localhost:4000/ws
+VITE_FRAME_WS_URL=ws://localhost:4000/ws/frames
 ```
 
-Agent local ke compose:
+Agent (`Agent/.env`):
 
 ```text
-MQTT_ENABLED=true
-MQTT_HOST=broker.hivemq.com
-MQTT_PORT=1883
-MQTT_TOPIC_PREFIX=diminspect
+STATION_ID=station-1
+CAMERA_ID=camera-1
+CAMERA_INDEX=0
+MODEL_VERSION=vision-v1
+BACKEND_WS_URL=ws://vps-host:4000/ws/agent
+AGENT_TOKEN=change-me-agent-shared-token
+FRAME_FPS=10
+FRAME_QUALITY=70
+SHOW_PREVIEW=false
 ```
 
-Agent membaca konfigurasi dari `Agent/.env`.
+`AGENT_TOKEN` di Agent harus sama dengan `AGENT_TOKEN` di Backend.
+
+## Database Migration
+
+Backend menjalankan migration otomatis saat startup (`store.init()`). Idempotent, dicatat di table `schema_migrations`. Migrate manual:
+
+```bash
+cd Backend
+npm run migrate
+```
+
+### Migrate ke Supabase
+
+Supabase punya dua pooler:
+
+- **Session Pooler (port 5432)** — kompatibel penuh, prepared statements OK. **Gunakan untuk migrate.**
+- **Transaction Pooler (port 6543)** — untuk runtime hemat koneksi.
+
+Steps:
+
+```bash
+# Migrate sekali via session pooler
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+DATABASE_SSL=true
+npm run migrate
+
+# Untuk runtime (production), boleh switch ke transaction pooler
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+DATABASE_SSL=true
+```
 
 ## Validation
 
 ```bash
-cd Backend && npm run typecheck && npm run build
+cd Backend  && npm run typecheck && npm run build
 cd Frontend && npm run build
-cd Agent && python -m py_compile computer_vision.py config.py transport.py vision.py
+cd Agent    && python -m py_compile agent_link.py computer_vision.py config.py vision.py
 ```

@@ -1,8 +1,6 @@
 import { config } from './config/env.js';
 import { createStore } from './storage/index.js';
 
-
-
 const store = createStore(config);
 
 try {

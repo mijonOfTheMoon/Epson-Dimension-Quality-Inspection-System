@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { useInspections } from '../hooks/useInspections';
 import { useParts } from '../hooks/useParts';
@@ -121,8 +121,8 @@ export function HistoryPage() {
             </thead>
             <tbody>
               {paginated.map((r) => (
-                <>
-                  <tr key={r.id} className="border-b border-[var(--border)] hover:bg-[var(--accent)]/50">
+                <Fragment key={r.id}>
+                  <tr className="border-b border-[var(--border)] hover:bg-[var(--accent)]/50">
                     <td className="px-4 py-2.5" style={{ fontWeight: 500 }}>{r.id}</td>
                     <td className="px-4 py-2.5">
                       <div>{r.partName}</div>
@@ -143,7 +143,7 @@ export function HistoryPage() {
                     </td>
                   </tr>
                   {expandedId === r.id && (
-                    <tr key={`${r.id}-detail`}>
+                    <tr>
                       <td colSpan={9} className="px-4 py-3 bg-[var(--accent)]">
                         <div className="text-xs" style={{ fontWeight: 500 }}>Detail Pengukuran - Operator: {r.operatorName}</div>
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
@@ -159,11 +159,10 @@ export function HistoryPage() {
                             </div>
                           ))}
                         </div>
-
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
               {!loading && paginated.length === 0 && (
                 <tr>

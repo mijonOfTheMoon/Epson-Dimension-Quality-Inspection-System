@@ -1,6 +1,8 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { inspectionCreatedSchema, loginSchema, statusUpdateSchema } from '../domain/schemas.js';
+import type { AgentRegistry } from '../realtime/agent-registry.js';
+import type { AuthService } from '../services/auth-service.js';
 import type { IngestionService } from '../services/ingestion-service.js';
 import type { DataStore } from '../storage/store.js';
 
@@ -14,8 +16,43 @@ const alertQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
 
-export async function registerRoutes(app: FastifyInstance, store: DataStore, ingestion: IngestionService) {
+const agentCommandSchema = z.object({
+  command: z.enum(['start', 'stop']),
+});
+
+export interface RouteDeps {
+  store: DataStore;
+  ingestion: IngestionService;
+  auth: AuthService;
+  agentRegistry: AgentRegistry;
+}
+
+function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.auth) {
+    reply.code(401).send({ message: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
+  const { store, ingestion, auth, agentRegistry } = deps;
+
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
+  app.post('/api/auth/login', async (request, reply) => {
+    const body = loginSchema.parse(request.body);
+    const result = await auth.login(body.username, body.password);
+    if (!result) return reply.code(401).send({ message: 'Invalid credentials' });
+    return result;
+  });
+
+  app.get('/api/auth/me', async (request, reply) => {
+    if (!request.auth) return reply.code(401).send({ message: 'Unauthorized' });
+    return request.auth;
+  });
+
+  app.post('/api/auth/logout', async (_request, reply) => reply.code(204).send());
 
   app.get('/api/dashboard/summary', async () => store.getDashboardSummary());
 
@@ -40,21 +77,23 @@ export async function registerRoutes(app: FastifyInstance, store: DataStore, ing
 
   app.get('/api/parts', async () => store.listParts());
 
-  // Password is excluded at the store level — safe to return directly
   app.get('/api/users', async () => store.listUsers());
 
-  app.post('/api/auth/login', async (request, reply) => {
-    const body = loginSchema.parse(request.body);
-    const user = await store.login(body.username, body.password);
-    if (!user) return reply.code(401).send({ message: 'Invalid credentials' });
-    // Strip password before sending to client
-    const { password: _, ...safeUser } = user;
-    return safeUser;
+  app.get('/api/agents', async () => agentRegistry.list());
+
+  app.post('/api/agents/:stationId/command', async (request, reply) => {
+    if (!requireAuth(request, reply)) return;
+    const params = z.object({ stationId: z.string().min(1) }).parse(request.params);
+    const body = agentCommandSchema.parse(request.body);
+    const delivered = agentRegistry.send(params.stationId, { type: body.command });
+    if (!delivered) return reply.code(404).send({ message: 'Agent offline' });
+    return { stationId: params.stationId, command: body.command, delivered: true };
   });
 
   app.get('/api/quality-records', async () => store.listQualityRecords());
 
   app.patch('/api/quality-records/:id/status', async (request, reply) => {
+    if (!requireAuth(request, reply)) return;
     const params = z.object({ id: z.string().min(1) }).parse(request.params);
     const body = statusUpdateSchema.parse(request.body);
     const record = await store.updateQualityRecordStatus(params.id, body.status, body.changedBy);

@@ -1,8 +1,8 @@
 import { Outlet, NavLink, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutDashboard, ScanLine, History, AlertTriangle, Settings, Users, LogOut,
-  Bell, Menu, X, Package, ChevronDown, Video
+  LayoutDashboard, History, AlertTriangle, Users, LogOut,
+  Bell, Menu, Package, Video
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAlerts } from '../hooks/useAlerts';
@@ -25,7 +25,7 @@ export function Layout() {
   const alerts = useAlerts(50);
   const unreadCount = alerts.data.filter((a) => a.severity === 'critical' || a.severity === 'warning').length;
 
-  const handleLogout = () => { logout(); navigate('/'); };
+  const handleLogout = async () => { await logout(); navigate('/login', { replace: true }); };
 
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },

@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { Pool, type PoolClient } from 'pg';
 import type { AppConfig } from '../config/env.js';
 import type {
@@ -139,12 +140,23 @@ const migrations = [
   {
     version: 2,
     sql: `
-      -- Drop legacy payload columns that duplicated data already stored in typed columns
       ALTER TABLE event_log    DROP COLUMN IF EXISTS payload;
       ALTER TABLE inspections  DROP COLUMN IF EXISTS payload;
       ALTER TABLE stations     DROP COLUMN IF EXISTS payload;
       ALTER TABLE stations     DROP COLUMN IF EXISTS queue_size;
       ALTER TABLE alerts       DROP COLUMN IF EXISTS payload;
+    `,
+  },
+  {
+    version: 3,
+    sql: `
+      DELETE FROM users WHERE password IS NULL OR password NOT LIKE '$2%';
+    `,
+  },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE stations ADD COLUMN IF NOT EXISTS running boolean NOT NULL DEFAULT false;
     `,
   },
 ];
@@ -177,6 +189,7 @@ interface StationRow {
   timestamp: string | Date;
   state: 'online' | 'offline' | 'degraded';
   fps: number | null;
+  running: boolean | null;
   model_version: string | null;
   message: string | null;
 }
@@ -215,7 +228,7 @@ interface QualityRecordRow {
 export class PostgresStore implements DataStore {
   private readonly pool: Pool;
 
-  constructor(config: AppConfig) {
+  constructor(private readonly config: AppConfig) {
     if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required');
     this.pool = new Pool({
       connectionString: config.DATABASE_URL,
@@ -292,10 +305,18 @@ export class PostgresStore implements DataStore {
     return result.rows;
   }
 
-  async login(username: string, password: string) {
+  async findUserByUsername(username: string): Promise<User | null> {
     const result = await this.pool.query<User>(
-      'SELECT id, username, password, name, role, avatar FROM users WHERE username = $1 AND password = $2 LIMIT 1',
-      [username, password],
+      'SELECT id, username, password, name, role, avatar FROM users WHERE username = $1 LIMIT 1',
+      [username],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async findUserById(id: string): Promise<User | null> {
+    const result = await this.pool.query<User>(
+      'SELECT id, username, password, name, role, avatar FROM users WHERE id = $1 LIMIT 1',
+      [id],
     );
     return result.rows[0] ?? null;
   }
@@ -318,22 +339,24 @@ export class PostgresStore implements DataStore {
   }
 
   async getDashboardSummary(): Promise<DashboardSummary> {
-    const counts = await this.pool.query<{ status: InspectionStatus; count: string }>(
-      'SELECT status, COUNT(*)::bigint AS count FROM inspections GROUP BY status',
-    );
-    const trend = await this.pool.query<{ date: string; ok: string; ng: string }>(
-      `SELECT to_char(timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
-              COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
-              COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
-       FROM inspections
-       GROUP BY date
-       ORDER BY date ASC`,
-    );
-    const stations = await this.pool.query<{ total: string; active: string }>(
-      `SELECT COUNT(*)::bigint AS total,
-              COUNT(*) FILTER (WHERE state = 'online')::bigint AS active
-       FROM stations`,
-    );
+    const [counts, trend, stations] = await Promise.all([
+      this.pool.query<{ status: InspectionStatus; count: string }>(
+        'SELECT status, COUNT(*)::bigint AS count FROM inspections GROUP BY status',
+      ),
+      this.pool.query<{ date: string; ok: string; ng: string }>(
+        `SELECT to_char(timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+                COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
+         FROM inspections
+         GROUP BY date
+         ORDER BY date ASC`,
+      ),
+      this.pool.query<{ total: string; active: string }>(
+        `SELECT COUNT(*)::bigint AS total,
+                COUNT(*) FILTER (WHERE state = 'online')::bigint AS active
+         FROM stations`,
+      ),
+    ]);
 
     const ok = Number(counts.rows.find((row) => row.status === 'OK')?.count ?? 0);
     const ng = Number(counts.rows.find((row) => row.status === 'NG')?.count ?? 0);
@@ -376,11 +399,12 @@ export class PostgresStore implements DataStore {
     const userCount = await this.pool.query<{ count: string }>('SELECT COUNT(*)::bigint AS count FROM users');
     if (Number(userCount.rows[0]?.count ?? 0) === 0) {
       for (const user of SEED_USERS) {
+        const hashed = await bcrypt.hash(user.password, this.config.BCRYPT_ROUNDS);
         await this.pool.query(
           `INSERT INTO users (id, username, password, name, role, avatar)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (id) DO NOTHING`,
-          [user.id, user.username, user.password, user.name, user.role, user.avatar ?? null],
+          [user.id, user.username, hashed, user.name, user.role, user.avatar ?? null],
         );
       }
     }
@@ -462,14 +486,15 @@ export class PostgresStore implements DataStore {
 
   private async upsertStation(client: PoolClient, event: StationStatusEvent) {
     await client.query(
-      `INSERT INTO stations (station_id, event_id, camera_id, timestamp, state, fps, model_version, message)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO stations (station_id, event_id, camera_id, timestamp, state, fps, running, model_version, message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (station_id) DO UPDATE
        SET event_id      = EXCLUDED.event_id,
            camera_id     = EXCLUDED.camera_id,
            timestamp     = EXCLUDED.timestamp,
            state         = EXCLUDED.state,
            fps           = EXCLUDED.fps,
+           running       = EXCLUDED.running,
            model_version = EXCLUDED.model_version,
            message       = EXCLUDED.message`,
       [
@@ -479,6 +504,7 @@ export class PostgresStore implements DataStore {
         event.timestamp,
         event.state,
         event.fps ?? null,
+        event.running ?? false,
         event.modelVersion ?? null,
         event.message ?? null,
       ],
@@ -535,6 +561,7 @@ function mapStation(row: StationRow): StationStatusEvent {
     timestamp: iso(row.timestamp),
     state: row.state,
     fps: row.fps ?? undefined,
+    running: row.running ?? false,
     modelVersion: optional(row.model_version),
     message: optional(row.message),
   };

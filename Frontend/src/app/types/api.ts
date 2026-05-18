@@ -82,8 +82,21 @@ export interface StationStatusEvent {
   timestamp: string;
   state: 'online' | 'offline' | 'degraded';
   fps?: number;
+  running?: boolean;
   modelVersion?: string;
   message?: string;
+}
+
+export interface AgentInfo {
+  stationId: string;
+  online: boolean;
+  running: boolean;
+  connectedAt: string | null;
+}
+
+export interface AuthLoginResponse {
+  user: User;
+  token: string;
 }
 
 export interface QualityAlertEvent {

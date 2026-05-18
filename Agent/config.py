@@ -19,12 +19,11 @@ class AgentConfig:
     camera_id: str
     camera_index: int
     model_version: str
-    mqtt_host: str
-    mqtt_port: int
-    mqtt_username: str | None
-    mqtt_password: str | None
-    mqtt_topic_prefix: str
-    mqtt_qos: int
+    backend_ws_url: str
+    agent_token: str
+    frame_fps: int
+    frame_quality: int
+    show_preview: bool
 
 
 def load_config() -> AgentConfig:
@@ -33,10 +32,9 @@ def load_config() -> AgentConfig:
         camera_id=os.getenv("CAMERA_ID", "camera-1"),
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
         model_version=os.getenv("MODEL_VERSION", "vision-v1"),
-        mqtt_host=os.getenv("MQTT_HOST", "localhost"),
-        mqtt_port=int(os.getenv("MQTT_PORT", "1883")),
-        mqtt_username=os.getenv("MQTT_USERNAME") or None,
-        mqtt_password=os.getenv("MQTT_PASSWORD") or None,
-        mqtt_topic_prefix=os.getenv("MQTT_TOPIC_PREFIX", "diminspect"),
-        mqtt_qos=int(os.getenv("MQTT_QOS", "1")),
+        backend_ws_url=os.getenv("BACKEND_WS_URL", "ws://localhost:4000/ws/agent"),
+        agent_token=os.getenv("AGENT_TOKEN", "change-me-agent-shared-token"),
+        frame_fps=int(os.getenv("FRAME_FPS", "10")),
+        frame_quality=int(os.getenv("FRAME_QUALITY", "70")),
+        show_preview=_bool(os.getenv("SHOW_PREVIEW"), default=False),
     )

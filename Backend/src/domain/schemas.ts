@@ -42,7 +42,7 @@ export const stationStatusSchema = z.object({
   timestamp: z.string().datetime({ offset: true }),
   state: z.enum(['online', 'offline', 'degraded']),
   fps: z.number().nonnegative().optional(),
-
+  running: z.boolean().optional(),
   modelVersion: z.string().optional(),
   message: z.string().optional(),
 });
