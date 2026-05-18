@@ -13,6 +13,7 @@ mqttIngestion.start();
 const shutdown = async () => {
   await mqttIngestion.stop();
   await app.close();
+  await store.close?.();
 };
 
 process.on('SIGINT', shutdown);

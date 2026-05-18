@@ -23,6 +23,7 @@ export interface DashboardSummary {
 
 export interface DataStore {
   init(): Promise<void>;
+  close?(): Promise<void>;
   ingest(event: IngestEvent): Promise<IngestEvent | null>;
   listInspections(query: InspectionQuery): Promise<InspectionCreatedEvent[]>;
   listStations(): Promise<StationStatusEvent[]>;

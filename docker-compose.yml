@@ -1,4 +1,23 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: diminspect-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: diminspect
+      POSTGRES_USER: diminspect
+      POSTGRES_PASSWORD: diminspect
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diminspect -d diminspect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ./Backend
@@ -6,14 +25,19 @@ services:
     image: diminspect-backend:latest
     container_name: diminspect-backend
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4000
       LOG_LEVEL: info
       CORS_ORIGIN: "*"
-      STORAGE_DRIVER: json
-      DATA_FILE: /app/data/diminspect.json
+      STORAGE_DRIVER: postgres
+      DATABASE_URL: postgresql://diminspect:diminspect@postgres:5432/diminspect
+      DATABASE_SSL: "false"
+      DATABASE_POOL_MAX: 10
       MQTT_ENABLED: "false"
       MQTT_URL: mqtt://host.docker.internal:1883
       MQTT_CLIENT_ID: diminspect-backend
@@ -22,8 +46,6 @@ services:
       EVENT_REPLAY_LIMIT: 100
     ports:
       - "4000:4000"
-    volumes:
-      - backend-data:/app/data
 
   frontend:
     build:
@@ -42,4 +64,4 @@ services:
       - "8080:8080"
 
 volumes:
-  backend-data:
+  postgres-data:

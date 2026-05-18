@@ -10,7 +10,7 @@ from vision import get_camera, process_inspection
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return datetime.now(Asia/Jakarta).isoformat().replace("+00:00", "Z")
 
 
 def build_inspection_event(config: AgentConfig, inspection: dict) -> dict:

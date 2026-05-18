@@ -5,7 +5,7 @@ DimInspect adalah sistem quality inspection dimensi dengan agent vision, backend
 ## Arsitektur
 
 - **Agent**: Python OpenCV, publish event inspeksi via MQTT, fallback HTTP, buffer offline JSONL.
-- **Backend**: Fastify TypeScript, REST API, WebSocket realtime, MQTT subscriber, JSON storage.
+- **Backend**: Fastify TypeScript, REST API, WebSocket realtime, MQTT subscriber, PostgreSQL storage.
 - **Frontend**: React Vite dashboard, REST initial load, WebSocket realtime, mock fallback.
 
 ## Struktur
@@ -28,6 +28,7 @@ Akses:
 - Frontend: http://localhost:8080
 - Backend health: http://localhost:4000/health
 - WebSocket: ws://localhost:4000/ws
+- PostgreSQL: localhost:5432
 
 Stop:
 
@@ -48,6 +49,7 @@ Backend:
 ```bash
 cd Backend
 npm install
+copy .env.example .env
 npm run dev
 ```
 
@@ -75,11 +77,52 @@ Backend utama:
 
 ```text
 PORT=4000
-STORAGE_DRIVER=json
-DATA_FILE=/app/data/diminspect.json
+STORAGE_DRIVER=postgres
+DATABASE_URL=postgresql://diminspect:diminspect@postgres:5432/diminspect
+DATABASE_SSL=false
+DATABASE_POOL_MAX=10
 MQTT_ENABLED=false
 MQTT_URL=mqtt://host.docker.internal:1883
 MQTT_TOPIC_PREFIX=diminspect
+```
+
+Supabase:
+
+```text
+STORAGE_DRIVER=postgres
+DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
+DATABASE_SSL=true
+DATABASE_POOL_MAX=10
+```
+
+## Database migration
+
+Backend menjalankan migration otomatis saat startup lewat `store.init()`. Migration bersifat idempotent dan dicatat di table `schema_migrations`.
+
+Local Docker PostgreSQL:
+
+```bash
+docker compose up -d postgres
+cd Backend
+copy .env.example .env
+npm run migrate
+```
+
+Supabase:
+
+```bash
+cd Backend
+copy .env.example .env
+npm run migrate
+```
+
+Untuk Supabase, isi `.env` backend dengan `DATABASE_URL` dari Supabase pooler dan `DATABASE_SSL=true` sebelum menjalankan migration.
+
+Production image:
+
+```bash
+npm run build
+npm run migrate:prod
 ```
 
 Frontend build args:
