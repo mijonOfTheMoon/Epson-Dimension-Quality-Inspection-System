@@ -159,11 +159,7 @@ export function HistoryPage() {
                             </div>
                           ))}
                         </div>
-                        {r.ngAction && (
-                          <div className="mt-2 text-xs">
-                            Tindakan: <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{r.ngAction}</span>
-                          </div>
-                        )}
+
                       </td>
                     </tr>
                   )}

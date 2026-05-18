@@ -32,7 +32,7 @@ def build_inspection_event(config: AgentConfig, inspection: dict) -> dict:
     }
 
 
-def build_station_status(config: AgentConfig, fps: float, queue_size: int = 0) -> dict:
+def build_station_status(config: AgentConfig, fps: float) -> dict:
     return {
         "eventId": str(uuid4()),
         "eventType": "station.status",
@@ -41,7 +41,6 @@ def build_station_status(config: AgentConfig, fps: float, queue_size: int = 0) -
         "timestamp": now_iso(),
         "state": "online",
         "fps": round(fps, 2),
-        "queueSize": queue_size,
         "modelVersion": config.model_version,
     }
 
@@ -65,7 +64,7 @@ def main() -> None:
             elapsed = current - last_frame
             last_frame = current
             if elapsed > 0:
-                fps = (fps * 0.9) + ((1.0 / elapsed) * 0.1)
+                fps = 1.0 / elapsed if fps == 0.0 else (fps * 0.9) + ((1.0 / elapsed) * 0.1)
 
             result = process_inspection(frame)
 

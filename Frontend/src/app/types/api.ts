@@ -5,7 +5,6 @@ export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shi
 export interface User {
   id: string;
   username: string;
-  password: string;
   name: string;
   role: UserRole;
   avatar?: string;
@@ -54,7 +53,6 @@ export interface InspectionResult {
   confidenceScore: number;
   measurements: Measurement[];
   imageUrl?: string;
-  ngAction?: 'hold' | 'return' | 'rework' | 'sorting' | null;
 }
 
 export interface StatusHistoryEntry {
@@ -84,7 +82,6 @@ export interface StationStatusEvent {
   timestamp: string;
   state: 'online' | 'offline' | 'degraded';
   fps?: number;
-  queueSize?: number;
   modelVersion?: string;
   message?: string;
 }
@@ -119,11 +116,20 @@ export interface InspectionCreatedEvent {
   confidenceScore: number;
   measurements: Measurement[];
   imageUrl?: string;
-  ngAction?: 'hold' | 'return' | 'rework' | 'sorting' | null;
   modelVersion?: string;
 }
 
 export type RealtimeEvent = InspectionCreatedEvent | StationStatusEvent | QualityAlertEvent;
+
+export interface DashboardSummary {
+  total: number;
+  ok: number;
+  ng: number;
+  ngRate: number;
+  dailyTrend: { date: string; ok: number; ng: number }[];
+  stationCount: number;
+  activeStationCount: number;
+}
 
 export interface AsyncData<T> {
   data: T;

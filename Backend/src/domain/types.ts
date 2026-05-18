@@ -42,7 +42,6 @@ export interface StationStatusEvent {
   timestamp: string;
   state: 'online' | 'offline' | 'degraded';
   fps?: number;
-  queueSize?: number;
   modelVersion?: string;
   message?: string;
 }
@@ -109,13 +108,4 @@ export interface InspectionQuery {
   limit?: number;
   status?: InspectionStatus;
   partCode?: string;
-}
-
-export interface StoreState {
-  inspections: InspectionCreatedEvent[];
-  stations: StationStatusEvent[];
-  alerts: QualityAlertEvent[];
-  parts: PartType[];
-  users: User[];
-  qualityRecords: QualityTrackingRecord[];
 }

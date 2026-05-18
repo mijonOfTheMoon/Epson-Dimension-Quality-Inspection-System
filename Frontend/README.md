@@ -31,5 +31,5 @@ VITE_WS_URL=ws://localhost:4000/ws
 
 ## Data flow
 
-- REST untuk initial data.
+- REST untuk initial data dan dashboard summary aggregation (efisiensi network).
 - WebSocket untuk realtime update.

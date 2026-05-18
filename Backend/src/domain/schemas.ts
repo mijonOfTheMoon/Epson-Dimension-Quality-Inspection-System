@@ -17,7 +17,7 @@ export const inspectionCreatedSchema = z.object({
   eventType: z.literal('inspection.created'),
   stationId: z.string().min(1),
   cameraId: z.string().optional(),
-  timestamp: z.string().datetime(),
+  timestamp: z.string().datetime({ offset: true }),
   partId: z.string().optional(),
   partName: z.string().min(1),
   partCode: z.string().min(1),
@@ -39,10 +39,10 @@ export const stationStatusSchema = z.object({
   eventType: z.literal('station.status'),
   stationId: z.string().min(1),
   cameraId: z.string().optional(),
-  timestamp: z.string().datetime(),
+  timestamp: z.string().datetime({ offset: true }),
   state: z.enum(['online', 'offline', 'degraded']),
   fps: z.number().nonnegative().optional(),
-  queueSize: z.number().int().nonnegative().optional(),
+
   modelVersion: z.string().optional(),
   message: z.string().optional(),
 });

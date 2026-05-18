@@ -7,7 +7,6 @@ import type {
   QualityTrackingRecord,
   RequestStatus,
   StationStatusEvent,
-  StoreState,
   User,
 } from '../domain/types.js';
 
@@ -29,10 +28,9 @@ export interface DataStore {
   listStations(): Promise<StationStatusEvent[]>;
   listAlerts(limit: number): Promise<QualityAlertEvent[]>;
   listParts(): Promise<PartType[]>;
-  listUsers(): Promise<User[]>;
+  listUsers(): Promise<Omit<User, 'password'>[]>;
   login(username: string, password: string): Promise<User | null>;
   listQualityRecords(): Promise<QualityTrackingRecord[]>;
   updateQualityRecordStatus(id: string, status: RequestStatus, changedBy: string): Promise<QualityTrackingRecord | null>;
   getDashboardSummary(): Promise<DashboardSummary>;
-  snapshot(): Promise<StoreState>;
 }

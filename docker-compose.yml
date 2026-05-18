@@ -38,8 +38,8 @@ services:
       DATABASE_URL: postgresql://diminspect:diminspect@postgres:5432/diminspect
       DATABASE_SSL: "false"
       DATABASE_POOL_MAX: 10
-      MQTT_ENABLED: "false"
-      MQTT_URL: mqtt://host.docker.internal:1883
+      MQTT_ENABLED: "true"
+      MQTT_URL: mqtt://broker.hivemq.com:1883
       MQTT_CLIENT_ID: diminspect-backend
       MQTT_TOPIC_PREFIX: diminspect
       MQTT_QOS: 1

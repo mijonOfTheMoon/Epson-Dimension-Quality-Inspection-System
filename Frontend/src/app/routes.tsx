@@ -8,9 +8,9 @@ import { QualityTrackingPage } from './pages/QualityTrackingPage';
 import { PartsPage } from './pages/PartsPage';
 import { UsersPage } from './pages/UsersPage';
 
-// V5: Removed InspectionPage, replaced DiscrepancyPage with QualityTrackingPage
 export const router = createBrowserRouter([
-  { path: '/', Component: LoginPage },
+  { path: '/login', Component: LoginPage },
+  { path: '/', element: <Navigate to="/login" replace /> },
   {
     path: '/',
     Component: Layout,
@@ -23,5 +23,5 @@ export const router = createBrowserRouter([
       { path: 'users', Component: UsersPage },
     ],
   },
-  { path: '*', element: <Navigate to="/" /> },
+  { path: '*', element: <Navigate to="/login" /> },
 ]);

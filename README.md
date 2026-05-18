@@ -4,7 +4,7 @@ DimInspect adalah sistem quality inspection dimensi dengan agent vision, backend
 
 ## Arsitektur
 
-- **Agent**: Python OpenCV, publish event inspeksi via MQTT, fallback HTTP, buffer offline JSONL.
+- **Agent**: Python OpenCV, publish event inspeksi via MQTT broker (HiveMQ).
 - **Backend**: Fastify TypeScript, REST API, WebSocket realtime, MQTT subscriber, PostgreSQL storage.
 - **Frontend**: React Vite dashboard, REST initial load, WebSocket realtime.
 
@@ -78,7 +78,6 @@ Backend utama:
 
 ```text
 PORT=4000
-STORAGE_DRIVER=postgres
 DATABASE_URL=postgresql://diminspect:diminspect@postgres:5432/diminspect
 DATABASE_SSL=false
 DATABASE_POOL_MAX=10
@@ -90,7 +89,6 @@ MQTT_TOPIC_PREFIX=diminspect
 Supabase:
 
 ```text
-STORAGE_DRIVER=postgres
 DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
 DATABASE_SSL=true
 DATABASE_POOL_MAX=10
@@ -137,10 +135,9 @@ Agent local ke compose:
 
 ```text
 MQTT_ENABLED=true
-MQTT_HOST=localhost
+MQTT_HOST=broker.hivemq.com
 MQTT_PORT=1883
 MQTT_TOPIC_PREFIX=diminspect
-HTTP_FALLBACK_URL=http://localhost:4000/api/inspections
 ```
 
 Agent membaca konfigurasi dari `Agent/.env`.
@@ -150,5 +147,5 @@ Agent membaca konfigurasi dari `Agent/.env`.
 ```bash
 cd Backend && npm run typecheck && npm run build
 cd Frontend && npm run build
-cd Agent && python -m py_compile computer_vision.py config.py event_buffer.py transport.py vision.py
+cd Agent && python -m py_compile computer_vision.py config.py transport.py vision.py
 ```

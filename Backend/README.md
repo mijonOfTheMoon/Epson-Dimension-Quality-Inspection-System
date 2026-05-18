@@ -22,7 +22,7 @@ npm start
 
 ```bash
 docker build -t diminspect-backend .
-docker run --rm -p 4000:4000 -e STORAGE_DRIVER=postgres -e DATABASE_URL=postgresql://user:password@host.docker.internal:5432/diminspect -e DATABASE_SSL=false diminspect-backend
+docker run --rm -p 4000:4000 -e DATABASE_URL=postgresql://user:password@host.docker.internal:5432/diminspect -e DATABASE_SSL=false diminspect-backend
 ```
 
 ## Environment
@@ -30,7 +30,6 @@ docker run --rm -p 4000:4000 -e STORAGE_DRIVER=postgres -e DATABASE_URL=postgres
 ```text
 HOST=0.0.0.0
 PORT=4000
-STORAGE_DRIVER=postgres
 DATABASE_URL=postgresql://diminspect:diminspect@localhost:5432/diminspect
 DATABASE_SSL=false
 DATABASE_POOL_MAX=10
@@ -42,7 +41,6 @@ MQTT_TOPIC_PREFIX=diminspect
 Supabase:
 
 ```text
-STORAGE_DRIVER=postgres
 DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
 DATABASE_SSL=true
 DATABASE_POOL_MAX=10
@@ -88,6 +86,7 @@ npm run migrate:prod
 ## API
 
 - `GET /health`
+- `GET /api/dashboard/summary`
 - `GET /api/inspections`
 - `POST /api/inspections`
 - `GET /api/stations`

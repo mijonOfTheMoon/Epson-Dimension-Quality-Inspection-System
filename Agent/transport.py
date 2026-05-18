@@ -1,16 +1,9 @@
 import json
-from typing import Any, Protocol
+from typing import Any
 
-import requests
 from paho.mqtt import client as mqtt
 
 from config import AgentConfig
-from event_buffer import EventBuffer
-
-
-class Publisher(Protocol):
-    def publish(self, event: dict[str, Any]) -> bool: ...
-    def close(self) -> None: ...
 
 
 class MqttPublisher:
@@ -39,60 +32,5 @@ class MqttPublisher:
         self.client.disconnect()
 
 
-class HttpPublisher:
-    def __init__(self, url: str) -> None:
-        self.url = url
-
-    def publish(self, event: dict[str, Any]) -> bool:
-        response = requests.post(self.url, json=event, timeout=3)
-        return 200 <= response.status_code < 300
-
-    def close(self) -> None:
-        return None
-
-
-class ReliablePublisher:
-    def __init__(self, publishers: list[Publisher], buffer: EventBuffer) -> None:
-        self.publishers = publishers
-        self.buffer = buffer
-
-    def publish(self, event: dict[str, Any]) -> bool:
-        queued = self.buffer.read_all()
-        if queued:
-            remaining: list[dict[str, Any]] = []
-            for item in queued:
-                if not self._send(item):
-                    remaining.append(item)
-            if remaining:
-                remaining.append(event)
-                self.buffer.replace(remaining)
-                return False
-            self.buffer.clear()
-
-        if self._send(event):
-            return True
-
-        self.buffer.append(event)
-        return False
-
-    def close(self) -> None:
-        for publisher in self.publishers:
-            publisher.close()
-
-    def _send(self, event: dict[str, Any]) -> bool:
-        for publisher in self.publishers:
-            try:
-                if publisher.publish(event):
-                    return True
-            except Exception:
-                continue
-        return False
-
-
-def create_publisher(config: AgentConfig) -> ReliablePublisher:
-    publishers: list[Publisher] = []
-    if config.mqtt_enabled:
-        publishers.append(MqttPublisher(config))
-    if config.http_fallback_url:
-        publishers.append(HttpPublisher(config.http_fallback_url))
-    return ReliablePublisher(publishers, EventBuffer(config.buffer_file))
+def create_publisher(config: AgentConfig) -> MqttPublisher:
+    return MqttPublisher(config)

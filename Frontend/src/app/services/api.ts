@@ -1,4 +1,5 @@
 import type {
+  DashboardSummary,
   InspectionCreatedEvent,
   InspectionResult,
   PartType,
@@ -10,7 +11,7 @@ import type {
 } from '../types/api';
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const API_BASE_URL = env?.VITE_API_URL ?? 'http://localhost:4000';
+export const API_BASE_URL = env?.VITE_API_URL ?? 'http://localhost:4000';
 
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -58,7 +59,6 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
     confidenceScore: event.confidenceScore ?? 0,
     measurements: event.measurements ?? [],
     imageUrl: event.imageUrl,
-    ngAction: event.ngAction ?? null,
   };
 }
 
@@ -98,5 +98,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status, changedBy }),
     });
+  },
+  getDashboardSummary() {
+    return request<DashboardSummary>('/api/dashboard/summary');
   },
 };

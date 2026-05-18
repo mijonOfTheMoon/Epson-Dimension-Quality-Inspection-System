@@ -12,8 +12,6 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGIN: z.string().default('*'),
-  STORAGE_DRIVER: z.enum(['memory', 'json', 'postgres']).default('postgres'),
-  DATA_FILE: z.string().default('./data/diminspect.json'),
   DATABASE_URL: z.string().optional(),
   DATABASE_SSL: booleanSchema.default(false),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),

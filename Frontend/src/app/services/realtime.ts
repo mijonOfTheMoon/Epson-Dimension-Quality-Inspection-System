@@ -1,8 +1,9 @@
 import type { RealtimeEvent } from '../types/api';
+import { API_BASE_URL } from './api';
+
+const defaultWsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/ws';
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const apiUrl = env?.VITE_API_URL ?? 'http://localhost:4000';
-const defaultWsUrl = apiUrl.replace(/^http/, 'ws') + '/ws';
 const WS_URL = env?.VITE_WS_URL ?? defaultWsUrl;
 
 export function subscribeRealtime(onEvent: (event: RealtimeEvent) => void) {

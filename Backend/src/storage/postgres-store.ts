@@ -10,11 +10,40 @@ import type {
   QualityTrackingRecord,
   RequestStatus,
   StationStatusEvent,
-  StoreState,
   User,
 } from '../domain/types.js';
-import { seedState } from './seed.js';
 import type { DashboardSummary, DataStore } from './store.js';
+
+const SEED_USERS: User[] = [
+  { id: 'u-001', username: 'admin', password: 'admin123', name: 'Administrator', role: 'admin' },
+  { id: 'u-002', username: 'supervisor', password: 'super123', name: 'Budi Santoso', role: 'supervisor' },
+  { id: 'u-003', username: 'qc1', password: 'qc123', name: 'Sari Dewi', role: 'qc' },
+  { id: 'u-004', username: 'operator1', password: 'op123', name: 'Andi Pratama', role: 'operator' },
+  { id: 'u-005', username: 'vendor1', password: 'ven123', name: 'PT. Maju Jaya', role: 'vendor' },
+];
+
+const SEED_PARTS = [
+  {
+    id: 'p-001',
+    partName: 'Rotor Disc Brake',
+    partCode: 'RDB-001',
+    vendor: 'PT. Maju Jaya',
+    dimensions: [
+      { id: 'd-001', name: 'Diameter', nominal: 280, upperLimit: 280.5, lowerLimit: 279.5, unit: 'mm' },
+      { id: 'd-002', name: 'Thickness', nominal: 22, upperLimit: 22.3, lowerLimit: 21.7, unit: 'mm' },
+    ],
+  },
+  {
+    id: 'p-002',
+    partName: 'Brake Pad Set',
+    partCode: 'BPS-002',
+    vendor: 'PT. Maju Jaya',
+    dimensions: [
+      { id: 'd-003', name: 'Width', nominal: 55, upperLimit: 55.4, lowerLimit: 54.6, unit: 'mm' },
+      { id: 'd-004', name: 'Height', nominal: 42, upperLimit: 42.3, lowerLimit: 41.7, unit: 'mm' },
+    ],
+  },
+];
 
 const migrations = [
   {
@@ -24,8 +53,7 @@ const migrations = [
         event_id text PRIMARY KEY,
         event_type text NOT NULL,
         station_id text NOT NULL,
-        timestamp timestamptz NOT NULL,
-        payload jsonb NOT NULL
+        timestamp timestamptz NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS users (
@@ -63,8 +91,7 @@ const migrations = [
         confidence_score double precision NOT NULL,
         measurements jsonb NOT NULL,
         image_url text,
-        model_version text,
-        payload jsonb NOT NULL
+        model_version text
       );
 
       CREATE TABLE IF NOT EXISTS stations (
@@ -74,10 +101,8 @@ const migrations = [
         timestamp timestamptz NOT NULL,
         state text NOT NULL CHECK (state IN ('online', 'offline', 'degraded')),
         fps double precision,
-        queue_size integer,
         model_version text,
-        message text,
-        payload jsonb NOT NULL
+        message text
       );
 
       CREATE TABLE IF NOT EXISTS alerts (
@@ -87,8 +112,7 @@ const migrations = [
         severity text NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
         message text NOT NULL,
         inspection_id text,
-        part_code text,
-        payload jsonb NOT NULL
+        part_code text
       );
 
       CREATE TABLE IF NOT EXISTS quality_records (
@@ -110,6 +134,17 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_inspections_status_part ON inspections(status, part_code);
       CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_quality_records_date ON quality_records(date DESC);
+    `,
+  },
+  {
+    version: 2,
+    sql: `
+      -- Drop legacy payload columns that duplicated data already stored in typed columns
+      ALTER TABLE event_log    DROP COLUMN IF EXISTS payload;
+      ALTER TABLE inspections  DROP COLUMN IF EXISTS payload;
+      ALTER TABLE stations     DROP COLUMN IF EXISTS payload;
+      ALTER TABLE stations     DROP COLUMN IF EXISTS queue_size;
+      ALTER TABLE alerts       DROP COLUMN IF EXISTS payload;
     `,
   },
 ];
@@ -142,7 +177,6 @@ interface StationRow {
   timestamp: string | Date;
   state: 'online' | 'offline' | 'degraded';
   fps: number | null;
-  queue_size: number | null;
   model_version: string | null;
   message: string | null;
 }
@@ -182,7 +216,7 @@ export class PostgresStore implements DataStore {
   private readonly pool: Pool;
 
   constructor(config: AppConfig) {
-    if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required when STORAGE_DRIVER=postgres');
+    if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required');
     this.pool = new Pool({
       connectionString: config.DATABASE_URL,
       max: config.DATABASE_POOL_MAX,
@@ -251,8 +285,10 @@ export class PostgresStore implements DataStore {
     return result.rows.map(mapPart);
   }
 
-  async listUsers() {
-    const result = await this.pool.query<User>('SELECT id, username, password, name, role, avatar FROM users ORDER BY name ASC');
+  async listUsers(): Promise<Omit<User, 'password'>[]> {
+    const result = await this.pool.query<Omit<User, 'password'>>(
+      'SELECT id, username, name, role, avatar FROM users ORDER BY name ASC',
+    );
     return result.rows;
   }
 
@@ -314,26 +350,6 @@ export class PostgresStore implements DataStore {
     };
   }
 
-  async snapshot(): Promise<StoreState> {
-    const [inspections, stations, alerts, parts, users, qualityRecords] = await Promise.all([
-      this.pool.query<InspectionRow>('SELECT * FROM inspections ORDER BY timestamp DESC'),
-      this.pool.query<StationRow>('SELECT * FROM stations ORDER BY timestamp DESC'),
-      this.pool.query<AlertRow>('SELECT * FROM alerts ORDER BY timestamp DESC'),
-      this.pool.query<PartRow>('SELECT * FROM parts ORDER BY part_code ASC'),
-      this.pool.query<User>('SELECT id, username, password, name, role, avatar FROM users ORDER BY name ASC'),
-      this.pool.query<QualityRecordRow>('SELECT * FROM quality_records ORDER BY date DESC, part_code ASC'),
-    ]);
-
-    return {
-      inspections: inspections.rows.map(mapInspection),
-      stations: stations.rows.map(mapStation),
-      alerts: alerts.rows.map(mapAlert),
-      parts: parts.rows.map(mapPart),
-      users: users.rows,
-      qualityRecords: qualityRecords.rows.map(mapQualityRecord),
-    };
-  }
-
   private async migrate() {
     const client = await this.pool.connect();
     try {
@@ -359,7 +375,7 @@ export class PostgresStore implements DataStore {
   private async seedStaticData() {
     const userCount = await this.pool.query<{ count: string }>('SELECT COUNT(*)::bigint AS count FROM users');
     if (Number(userCount.rows[0]?.count ?? 0) === 0) {
-      for (const user of seedState.users) {
+      for (const user of SEED_USERS) {
         await this.pool.query(
           `INSERT INTO users (id, username, password, name, role, avatar)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -371,7 +387,7 @@ export class PostgresStore implements DataStore {
 
     const partCount = await this.pool.query<{ count: string }>('SELECT COUNT(*)::bigint AS count FROM parts');
     if (Number(partCount.rows[0]?.count ?? 0) === 0) {
-      for (const part of seedState.parts) {
+      for (const part of SEED_PARTS) {
         await this.pool.query(
           `INSERT INTO parts (id, part_name, part_code, vendor, dimensions)
            VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -384,11 +400,11 @@ export class PostgresStore implements DataStore {
 
   private async insertEventLog(client: PoolClient, event: IngestEvent) {
     const result = await client.query(
-      `INSERT INTO event_log (event_id, event_type, station_id, timestamp, payload)
-       VALUES ($1, $2, $3, $4, $5::jsonb)
+      `INSERT INTO event_log (event_id, event_type, station_id, timestamp)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (event_id) DO NOTHING
        RETURNING event_id`,
-      [event.eventId, event.eventType, event.stationId, event.timestamp, JSON.stringify(event)],
+      [event.eventId, event.eventType, event.stationId, event.timestamp],
     );
     return result.rowCount === 1;
   }
@@ -397,8 +413,8 @@ export class PostgresStore implements DataStore {
     await client.query(
       `INSERT INTO inspections (
         event_id, station_id, camera_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
-        operator_id, operator_name, status, shift, line, confidence_score, measurements, image_url, model_version, payload
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19::jsonb)`,
+        operator_id, operator_name, status, shift, line, confidence_score, measurements, image_url, model_version
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18)`,
       [
         event.eventId,
         event.stationId,
@@ -418,27 +434,27 @@ export class PostgresStore implements DataStore {
         JSON.stringify(event.measurements),
         event.imageUrl ?? null,
         event.modelVersion ?? null,
-        JSON.stringify(event),
       ],
     );
 
+    const ngIncrement = event.status === 'NG' ? 1 : 0;
     await client.query(
       `INSERT INTO quality_records (id, date, part_code, part_name, vendor, total_scanned, ng_count, ng_rate, request_status, status_history)
        VALUES ($1, $2, $3, $4, $5, 1, $6, $7, 'not_requested', $8::jsonb)
        ON CONFLICT (date, part_code) DO UPDATE
        SET total_scanned = quality_records.total_scanned + 1,
-           ng_count = quality_records.ng_count + EXCLUDED.ng_count,
-           ng_rate = ROUND(((quality_records.ng_count + EXCLUDED.ng_count)::numeric * 100) / (quality_records.total_scanned + 1), 2),
-           part_name = EXCLUDED.part_name,
-           vendor = EXCLUDED.vendor`,
+           ng_count      = quality_records.ng_count + $6,
+           ng_rate       = ROUND(((quality_records.ng_count + $6)::numeric * 100) / (quality_records.total_scanned + 1), 2),
+           part_name     = EXCLUDED.part_name,
+           vendor        = EXCLUDED.vendor`,
       [
         `QT-${event.timestamp.slice(0, 10)}-${event.partCode}`,
         event.timestamp.slice(0, 10),
         event.partCode,
         event.partName,
         event.vendor ?? '-',
-        event.status === 'NG' ? 1 : 0,
-        event.status === 'NG' ? 100 : 0,
+        ngIncrement,
+        ngIncrement * 100,
         JSON.stringify([{ status: 'not_requested', timestamp: event.timestamp, changedBy: 'System' }]),
       ],
     );
@@ -446,18 +462,16 @@ export class PostgresStore implements DataStore {
 
   private async upsertStation(client: PoolClient, event: StationStatusEvent) {
     await client.query(
-      `INSERT INTO stations (station_id, event_id, camera_id, timestamp, state, fps, queue_size, model_version, message, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      `INSERT INTO stations (station_id, event_id, camera_id, timestamp, state, fps, model_version, message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (station_id) DO UPDATE
-       SET event_id = EXCLUDED.event_id,
-           camera_id = EXCLUDED.camera_id,
-           timestamp = EXCLUDED.timestamp,
-           state = EXCLUDED.state,
-           fps = EXCLUDED.fps,
-           queue_size = EXCLUDED.queue_size,
+       SET event_id      = EXCLUDED.event_id,
+           camera_id     = EXCLUDED.camera_id,
+           timestamp     = EXCLUDED.timestamp,
+           state         = EXCLUDED.state,
+           fps           = EXCLUDED.fps,
            model_version = EXCLUDED.model_version,
-           message = EXCLUDED.message,
-           payload = EXCLUDED.payload`,
+           message       = EXCLUDED.message`,
       [
         event.stationId,
         event.eventId,
@@ -465,18 +479,16 @@ export class PostgresStore implements DataStore {
         event.timestamp,
         event.state,
         event.fps ?? null,
-        event.queueSize ?? null,
         event.modelVersion ?? null,
         event.message ?? null,
-        JSON.stringify(event),
       ],
     );
   }
 
   private async insertAlert(client: PoolClient, event: QualityAlertEvent) {
     await client.query(
-      `INSERT INTO alerts (event_id, station_id, timestamp, severity, message, inspection_id, part_code, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+      `INSERT INTO alerts (event_id, station_id, timestamp, severity, message, inspection_id, part_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         event.eventId,
         event.stationId,
@@ -485,7 +497,6 @@ export class PostgresStore implements DataStore {
         event.message,
         event.inspectionId ?? null,
         event.partCode ?? null,
-        JSON.stringify(event),
       ],
     );
   }
@@ -524,7 +535,6 @@ function mapStation(row: StationRow): StationStatusEvent {
     timestamp: iso(row.timestamp),
     state: row.state,
     fps: row.fps ?? undefined,
-    queueSize: row.queue_size ?? undefined,
     modelVersion: optional(row.model_version),
     message: optional(row.message),
   };
@@ -582,5 +592,5 @@ function iso(value: string | Date) {
 }
 
 function dateOnly(value: string | Date) {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
 }

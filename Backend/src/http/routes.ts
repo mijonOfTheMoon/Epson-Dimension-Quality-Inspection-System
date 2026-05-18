@@ -40,13 +40,16 @@ export async function registerRoutes(app: FastifyInstance, store: DataStore, ing
 
   app.get('/api/parts', async () => store.listParts());
 
+  // Password is excluded at the store level — safe to return directly
   app.get('/api/users', async () => store.listUsers());
 
   app.post('/api/auth/login', async (request, reply) => {
     const body = loginSchema.parse(request.body);
     const user = await store.login(body.username, body.password);
     if (!user) return reply.code(401).send({ message: 'Invalid credentials' });
-    return user;
+    // Strip password before sending to client
+    const { password: _, ...safeUser } = user;
+    return safeUser;
   });
 
   app.get('/api/quality-records', async () => store.listQualityRecords());

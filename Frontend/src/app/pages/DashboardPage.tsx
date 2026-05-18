@@ -1,81 +1,56 @@
 import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { CheckCircle, XCircle, Activity, TrendingDown } from 'lucide-react';
+import { useDashboardSummary } from '../hooks/useDashboardSummary';
 import { useInspections } from '../hooks/useInspections';
 import { useParts } from '../hooks/useParts';
 import type { InspectionResult } from '../types/api';
 
 export function DashboardPage() {
-  const inspections = useInspections(1000);
+  const summary = useDashboardSummary();
+  const inspections = useInspections(200);
   const parts = useParts();
   const inspectionResults = inspections.data;
   const partTypes = parts.data;
-  const loading = inspections.loading || parts.loading;
-  const error = inspections.error || parts.error;
-  const { total, ok, ng, ngRate, ngByPart, dailyTrend, shiftData, pieData, recentNG } = useMemo(() => {
-    let okCount = 0;
-    let ngCount = 0;
-    const dailyMap = new Map<string, { date: string; ok: number; ng: number }>();
-    const partMap = new Map<string, { name: string; ok: number; ng: number }>(partTypes.map((pt) => [pt.partCode, { name: pt.partName, ok: 0, ng: 0 }]));
-    const shiftMap = new Map<string, { shift: string; total: number; ng: number }>(['A', 'B', 'C'].map((shift) => [shift, { shift: `Shift ${shift}`, total: 0, ng: 0 }]));
+  const loading = summary.loading;
+  const error = summary.error || inspections.error;
+
+  const { ngByPart, shiftData, recentNG } = useMemo(() => {
+    const partMap = new Map<string, { name: string; ok: number; ng: number }>(
+      partTypes.map((pt) => [pt.partCode, { name: pt.partName, ok: 0, ng: 0 }]),
+    );
+    const shiftMap = new Map<string, { shift: string; total: number; ng: number }>(
+      ['A', 'B', 'C'].map((s) => [s, { shift: `Shift ${s}`, total: 0, ng: 0 }]),
+    );
     const latestNg: InspectionResult[] = [];
 
     for (const result of inspectionResults) {
       const isNg = result.status === 'NG';
-      if (isNg) {
-        ngCount += 1;
-        if (latestNg.length < 5) latestNg.push(result);
-      } else {
-        okCount += 1;
-      }
-
-      const date = result.timestamp.slice(0, 10);
-      let daily = dailyMap.get(date);
-      if (!daily) {
-        daily = { date, ok: 0, ng: 0 };
-        dailyMap.set(date, daily);
-      }
-      if (isNg) daily.ng += 1;
-      else daily.ok += 1;
+      if (isNg && latestNg.length < 5) latestNg.push(result);
 
       let part = partMap.get(result.partCode);
-      if (!part) {
-        part = { name: result.partName, ok: 0, ng: 0 };
-        partMap.set(result.partCode, part);
-      }
-      if (isNg) part.ng += 1;
-      else part.ok += 1;
+      if (!part) { part = { name: result.partName, ok: 0, ng: 0 }; partMap.set(result.partCode, part); }
+      if (isNg) part.ng += 1; else part.ok += 1;
 
       const shift = shiftMap.get(result.shift);
-      if (shift) {
-        shift.total += 1;
-        if (isNg) shift.ng += 1;
-      }
+      if (shift) { shift.total += 1; if (isNg) shift.ng += 1; }
     }
 
-    const totalCount = okCount + ngCount;
-
     return {
-      total: totalCount,
-      ok: okCount,
-      ng: ngCount,
-      ngRate: totalCount > 0 ? ((ngCount / totalCount) * 100).toFixed(1) : '0.0',
       ngByPart: [...partMap.values()],
-      dailyTrend: [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
       shiftData: [...shiftMap.values()],
-      pieData: [
-        { name: 'OK', value: okCount, color: '#22c55e' },
-        { name: 'NG', value: ngCount, color: '#ef4444' },
-      ],
       recentNG: latestNg,
     };
   }, [inspectionResults, partTypes]);
+
+  const { total, ok, ng, ngRate, dailyTrend } = summary.data;
+  const ngRateStr = ngRate.toFixed(1);
 
   const cards = [
     { label: 'Total Inspeksi', value: total, icon: Activity, color: 'blue' },
     { label: 'Part OK', value: ok, icon: CheckCircle, color: 'green' },
     { label: 'Part NG', value: ng, icon: XCircle, color: 'red' },
-    { label: 'NG Rate', value: `${ngRate}%`, icon: TrendingDown, color: 'orange' },
+    { label: 'NG Rate', value: `${ngRateStr}%`, icon: TrendingDown, color: 'orange' },
   ];
 
   const colorMap: Record<string, string> = {
@@ -84,6 +59,11 @@ export function DashboardPage() {
     red: 'bg-red-50 text-red-600',
     orange: 'bg-orange-50 text-orange-600',
   };
+
+  const pieData = [
+    { name: 'OK', value: ok, color: '#22c55e' },
+    { name: 'NG', value: ng, color: '#ef4444' },
+  ];
 
   return (
     <div className="space-y-6">
@@ -95,7 +75,7 @@ export function DashboardPage() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
           <span>{error}</span>
-          <button onClick={() => { inspections.reload(); parts.reload(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+          <button onClick={() => { summary.reload(); inspections.reload(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
         </div>
       )}
 
@@ -105,9 +85,9 @@ export function DashboardPage() {
         </div>
       )}
 
-      {!loading && !error && inspectionResults.length === 0 && (
+      {!loading && !error && total === 0 && (
         <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl p-4 text-sm">
-          Belum ada data inspeksi. Jalankan Agent atau kirim event inspeksi ke backend untuk mengisi dashboard.
+          Belum ada data inspeksi. Jalankan Agent untuk mengisi dashboard.
         </div>
       )}
 
@@ -154,12 +134,8 @@ export function DashboardPage() {
             </PieChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-6 mt-2">
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-3 h-3 rounded-full bg-green-500" /> OK: {ok}
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-3 h-3 rounded-full bg-red-500" /> NG: {ng}
-            </div>
+            <div className="flex items-center gap-2 text-sm"><div className="w-3 h-3 rounded-full bg-green-500" /> OK: {ok}</div>
+            <div className="flex items-center gap-2 text-sm"><div className="w-3 h-3 rounded-full bg-red-500" /> NG: {ng}</div>
           </div>
         </div>
       </div>
@@ -206,7 +182,6 @@ export function DashboardPage() {
                 <th className="pb-2 pr-4">Batch</th>
                 <th className="pb-2 pr-4">Dimensi NG</th>
                 <th className="pb-2 pr-4">Waktu</th>
-                <th className="pb-2 pr-4">Tindakan</th>
               </tr>
             </thead>
             <tbody>
@@ -219,16 +194,11 @@ export function DashboardPage() {
                     {r.measurements.filter((m) => m.status === 'NG').map((m) => m.dimensionName).join(', ')}
                   </td>
                   <td className="py-2.5 pr-4 text-xs">{new Date(r.timestamp).toLocaleString('id-ID')}</td>
-                  <td className="py-2.5 pr-4">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.ngAction === 'hold' ? 'bg-yellow-100 text-yellow-700' : r.ngAction === 'return' ? 'bg-red-100 text-red-700' : r.ngAction === 'rework' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                      {r.ngAction}
-                    </span>
-                  </td>
                 </tr>
               ))}
               {recentNG.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={5} className="py-8 text-center text-[var(--muted-foreground)]">
                     Belum ada part NG dari backend.
                   </td>
                 </tr>
