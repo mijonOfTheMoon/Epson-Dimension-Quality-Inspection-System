@@ -20,6 +20,8 @@ npm start
 
 ## Docker
 
+Standalone container (port 4000 di-publish ke host):
+
 ```bash
 docker build -t diminspect-backend .
 docker run --rm -p 4000:4000 \
@@ -29,6 +31,8 @@ docker run --rm -p 4000:4000 \
   -e AGENT_TOKEN=ganti-token-agent \
   diminspect-backend
 ```
+
+Catatan: dalam orchestrasi `docker-compose.yml` di root repo, backend hanya `expose` port 4000 ke jaringan internal Docker. Akses publik **selalu** lewat nginx reverse proxy (`/api/*` dan `/ws*`). Port 4000 tidak terjangkau dari host.
 
 ## Environment
 
@@ -87,6 +91,8 @@ Migration v3 menghapus user lama yang masih plaintext (kolom `password` tidak di
 
 ## Protocol
 
+Path WS di bawah adalah path **di backend**. Saat di-deploy di docker-compose, nginx mem-proxy path yang sama (`/ws*`) ke `backend:4000` — Agent dan browser tidak perlu tahu port internal.
+
 ### Agent → Backend (`/ws/agent?stationId=<id>&token=<AGENT_TOKEN>`)
 - **Binary message**: JPEG frame (forward ke FrameBus).
 - **Text message**: JSON event (`inspection.created`, `station.status`, `quality.alert`).
@@ -95,8 +101,8 @@ Migration v3 menghapus user lama yang masih plaintext (kolom `password` tidak di
 - **Text JSON**: `{"type":"start"}` atau `{"type":"stop"}` untuk control kamera capture.
 
 ### Backend → Frontend
-- `GET /ws` — event broadcast (snapshot + new event).
-- `GET /ws/frames` — frame broadcast binary, format: `[2-byte BE stationId length][stationId UTF-8][JPEG]`.
+- `/ws` — event broadcast (snapshot + new event).
+- `/ws/frames` — frame broadcast binary, format: `[2-byte BE stationId length][stationId UTF-8][JPEG]`.
 
 ## REST API
 

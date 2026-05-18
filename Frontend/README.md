@@ -24,13 +24,27 @@ docker run --rm -p 8080:8080 diminspect-frontend
 
 ## Environment
 
+Dua mode build:
+
+**Local dev** (`npm run dev`, backend `npm run dev` di mesin sama, akses langsung ke port 4000):
+
 ```text
 VITE_API_URL=http://localhost:4000
 VITE_WS_URL=ws://localhost:4000/ws
 VITE_FRAME_WS_URL=ws://localhost:4000/ws/frames
 ```
 
-`VITE_WS_URL` dan `VITE_FRAME_WS_URL` opsional — kalau kosong, dihitung dari `VITE_API_URL` (replace `http` → `ws`).
+**Production / docker-compose** (semua melewati nginx reverse proxy di port 80, backend tidak di-expose ke publik):
+
+```text
+VITE_API_URL=/api
+VITE_WS_URL=/ws
+VITE_FRAME_WS_URL=/ws/frames
+```
+
+Path relatif akan otomatis di-resolve ke origin tempat frontend disajikan (`window.location.host`) dengan protokol `wss://` saat halaman pakai HTTPS.
+
+Semua var WS opsional — kalau kosong, dihitung dari `VITE_API_URL`. Helper `resolveWsUrl` di `services/api.ts` menangani konversi `http`→`ws` untuk URL absolut dan resolve `window.location` untuk path relatif.
 
 ## Default Credentials
 

@@ -15,6 +15,25 @@ import type {
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 export const API_BASE_URL = env?.VITE_API_URL ?? 'http://localhost:4000';
 
+export function resolveWsUrl(explicit: string | undefined, fallbackPath: string): string {
+  if (explicit) {
+    if (explicit.startsWith('ws://') || explicit.startsWith('wss://')) return explicit;
+    if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}${explicit.startsWith('/') ? explicit : `/${explicit}`}`;
+    }
+    return explicit;
+  }
+  if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
+    return API_BASE_URL.replace(/^http/, 'ws') + fallbackPath;
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}${fallbackPath}`;
+  }
+  return fallbackPath;
+}
+
 const TOKEN_KEY = 'diminspect_auth_token';
 export const AUTH_LOGOUT_EVENT = 'auth:logout';
 

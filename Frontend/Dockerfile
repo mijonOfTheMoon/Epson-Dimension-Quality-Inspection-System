@@ -9,8 +9,10 @@ RUN npm ci
 FROM deps AS build
 ARG VITE_API_URL=http://localhost:4000
 ARG VITE_WS_URL=ws://localhost:4000/ws
+ARG VITE_FRAME_WS_URL=ws://localhost:4000/ws/frames
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_WS_URL=${VITE_WS_URL}
+ENV VITE_FRAME_WS_URL=${VITE_FRAME_WS_URL}
 COPY . .
 RUN npm run build
 

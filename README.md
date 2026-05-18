@@ -41,14 +41,21 @@ Ganti password seed di production segera setelah login pertama (endpoint update 
 docker compose up --build
 ```
 
-Akses:
+Semua trafik publik via nginx reverse proxy di port **80**. Backend (port 4000) hanya di-`expose` ke jaringan internal Docker, **tidak** dipublish ke host.
 
-- Frontend: http://localhost
-- Backend health: http://localhost/api/health (via nginx) atau http://localhost:4000/health (direct backend dalam network)
-- WebSocket realtime: ws://localhost/ws
-- WebSocket agent ingest: ws://localhost/ws/agent
-- WebSocket frame viewer: ws://localhost/ws/frames
-- PostgreSQL: localhost:5432
+Endpoint publik:
+
+| Tujuan                       | URL                                   |
+|------------------------------|---------------------------------------|
+| Frontend UI                  | `http://localhost/`                   |
+| REST API                     | `http://localhost/api/*`              |
+| Backend health (via proxy)   | `http://localhost/api/health`         |
+| WebSocket event realtime     | `ws://localhost/ws`                   |
+| WebSocket agent ingest       | `ws://localhost/ws/agent`             |
+| WebSocket frame viewer       | `ws://localhost/ws/frames`            |
+| PostgreSQL (host port)       | `localhost:5432`                      |
+
+`nginx.conf` melakukan rewrite `/api/(.*) → /$1` ke `backend:4000`, dan prefix `/ws*` di-proxy dengan Upgrade header untuk WebSocket.
 
 Stop & reset data:
 
@@ -89,7 +96,7 @@ python computer_vision.py
 
 ## Environment
 
-Backend (`Backend/.env`):
+Backend (`Backend/.env`) — untuk `npm run dev` (standalone, port 4000 langsung):
 
 ```text
 PORT=4000
@@ -103,29 +110,39 @@ AGENT_TOKEN=change-me-agent-shared-token
 EVENT_REPLAY_LIMIT=100
 ```
 
-Frontend build args:
+Di docker-compose, env yang sama di-pass via `environment:` di `docker-compose.yml` (gunakan host env atau `.env` di root repo untuk override `JWT_SECRET` & `AGENT_TOKEN`).
+
+Frontend build args — dua mode:
+
+| Mode                          | `VITE_API_URL`            | `VITE_WS_URL`            | `VITE_FRAME_WS_URL`         |
+|-------------------------------|---------------------------|--------------------------|-----------------------------|
+| Local dev (vite + backend `npm run dev`) | `http://localhost:4000`   | `ws://localhost:4000/ws` | `ws://localhost:4000/ws/frames` |
+| Docker compose / production   | `/api`                    | `/ws`                    | `/ws/frames`                |
+
+Mode produksi pakai path relatif → browser resolve ke origin sendiri (host yang melayani frontend), nginx proxy yang forward ke backend.
+
+Agent (`Agent/.env`) — dua skenario:
 
 ```text
-VITE_API_URL=http://localhost:4000
-VITE_WS_URL=ws://localhost:4000/ws
-VITE_FRAME_WS_URL=ws://localhost:4000/ws/frames
-```
+# Local dev: backend `npm run dev` di mesin yang sama
+BACKEND_WS_URL=ws://localhost:4000/ws/agent
 
-Agent (`Agent/.env`):
+# Production: backend di VPS dibalik nginx
+BACKEND_WS_URL=wss://your-domain.example.com/ws/agent
+```
 
 ```text
 STATION_ID=station-1
 CAMERA_ID=camera-1
 CAMERA_INDEX=0
 MODEL_VERSION=vision-v1
-BACKEND_WS_URL=ws://vps-host:4000/ws/agent
 AGENT_TOKEN=change-me-agent-shared-token
 FRAME_FPS=10
 FRAME_QUALITY=70
 SHOW_PREVIEW=false
 ```
 
-`AGENT_TOKEN` di Agent harus sama dengan `AGENT_TOKEN` di Backend.
+`AGENT_TOKEN` di Agent **wajib sama** dengan `AGENT_TOKEN` di Backend.
 
 ## Database Migration
 

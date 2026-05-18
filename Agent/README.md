@@ -26,11 +26,20 @@ FRAME_QUALITY=70
 SHOW_PREVIEW=false
 ```
 
-- `BACKEND_WS_URL` ke alamat backend VPS (gunakan `wss://` di production).
-- `AGENT_TOKEN` harus sama dengan `AGENT_TOKEN` di Backend.
+### `BACKEND_WS_URL` per skenario deploy
+
+| Skenario                                            | URL                                                |
+|-----------------------------------------------------|----------------------------------------------------|
+| Backend `npm run dev` di mesin sama                 | `ws://localhost:4000/ws/agent`                     |
+| Backend `npm run dev` di mesin lain (LAN)           | `ws://<ip-backend>:4000/ws/agent`                  |
+| Backend di docker-compose / VPS (lewat nginx)       | `ws://<host>/ws/agent` atau `wss://<host>/ws/agent`|
+
+Backend di production **tidak** meng-expose port 4000 ke publik — selalu pakai port 80 (HTTP) / 443 (HTTPS) yang dilayani nginx.
+
+- `AGENT_TOKEN` wajib sama dengan `AGENT_TOKEN` di Backend.
 - `FRAME_FPS` target stream frame per detik.
 - `FRAME_QUALITY` JPEG quality 1-100.
-- `SHOW_PREVIEW` `true` untuk buka jendela OpenCV (development).
+- `SHOW_PREVIEW` `true` untuk buka jendela OpenCV preview (development).
 
 ## Protocol
 

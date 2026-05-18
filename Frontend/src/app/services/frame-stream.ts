@@ -1,10 +1,9 @@
-import { API_BASE_URL } from './api';
+import { resolveWsUrl } from './api';
 
 export type FrameListener = (stationId: string, frame: Blob) => void;
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const defaultFrameUrl = API_BASE_URL.replace(/^http/, 'ws') + '/ws/frames';
-const FRAME_WS_URL = env?.VITE_FRAME_WS_URL ?? defaultFrameUrl;
+const FRAME_WS_URL = resolveWsUrl(env?.VITE_FRAME_WS_URL, '/ws/frames');
 
 class FrameStreamClient {
   private socket: WebSocket | null = null;
