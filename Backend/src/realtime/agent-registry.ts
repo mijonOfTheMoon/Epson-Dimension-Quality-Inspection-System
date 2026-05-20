@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws';
+import type { DimensionSpec } from '../domain/types.js';
 
 export interface AgentConnection {
   stationId: string;
@@ -14,7 +15,20 @@ export interface AgentInfo {
   connectedAt: string | null;
 }
 
-export type AgentCommand = { type: 'start' | 'stop' };
+export type AgentCommandType = 'start' | 'stop' | 'capture' | 'recalibrate';
+
+export interface AgentPartPayload {
+  partId: string;
+  partCode: string;
+  partName: string;
+  vendor?: string;
+  dimensions: DimensionSpec[];
+}
+
+export interface AgentCommand {
+  type: AgentCommandType;
+  part?: AgentPartPayload;
+}
 
 export class AgentRegistry {
   private readonly agents = new Map<string, AgentConnection>();

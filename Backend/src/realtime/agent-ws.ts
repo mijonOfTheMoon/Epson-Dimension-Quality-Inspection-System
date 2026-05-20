@@ -57,6 +57,7 @@ export async function registerAgentWs(
           timestamp: new Date().toISOString(),
           state: 'offline',
           running: false,
+          phase: 'idle',
         });
       } catch (error) {
         app.log.debug({ err: error, stationId }, 'failed to record agent offline');

@@ -2,10 +2,9 @@ import { Outlet, NavLink, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, History, AlertTriangle, Users, LogOut,
-  Bell, Menu, Package, Video
+  Menu, Package, Video,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useAlerts } from '../hooks/useAlerts';
 import Logo from '../../assets/Logo.png';
 
 const roleLabels: Record<string, string> = {
@@ -21,9 +20,6 @@ export function Layout() {
   const { user, logout, hasRole } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const alerts = useAlerts(50);
-  const unreadCount = alerts.data.filter((a) => a.severity === 'critical' || a.severity === 'warning').length;
 
   const handleLogout = async () => { await logout(); navigate('/login', { replace: true }); };
 
@@ -40,7 +36,6 @@ export function Layout() {
 
   return (
     <div className="flex h-screen bg-[var(--background)]">
-      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#0f172a] text-white transform transition-transform lg:translate-x-0 lg:static ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
           <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center overflow-hidden">
@@ -86,42 +81,12 @@ export function Layout() {
 
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-[var(--border)] flex items-center justify-between px-4 bg-[var(--card)] shrink-0">
           <button className="lg:hidden p-1.5 hover:bg-[var(--accent)] rounded-md" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
-          <div className="relative">
-            <button onClick={() => setNotifOpen(!notifOpen)} className="relative p-2 hover:bg-[var(--accent)] rounded-md">
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-            {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
-                <div className="p-3 border-b border-[var(--border)]">
-                  <h4 className="text-sm">Notifikasi</h4>
-                </div>
-                {alerts.data.length === 0 && (
-                  <div className="p-4 text-center text-[var(--muted-foreground)] text-sm">
-                    Belum ada notifikasi dari backend.
-                  </div>
-                )}
-                {alerts.data.map((a) => (
-                  <div key={a.eventId} className={`p-3 border-b border-[var(--border)] text-sm ${a.severity === 'critical' ? 'bg-red-50' : a.severity === 'warning' ? 'bg-yellow-50' : ''}`}>
-                    <div style={{ fontWeight: 500 }}>{a.severity.toUpperCase()}</div>
-                    <div className="text-[var(--muted-foreground)] mt-0.5 text-xs">{a.message}</div>
-                    <div className="text-[10px] text-[var(--muted-foreground)] mt-1">{new Date(a.timestamp).toLocaleString('id-ID')}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />

@@ -1,6 +1,9 @@
 export type InspectionStatus = 'OK' | 'NG';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
+export type StationPhase = 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked';
+export type InspectionTrigger = 'auto' | 'manual';
+export type AgentCommandType = 'start' | 'stop' | 'capture' | 'recalibrate';
 
 export interface User {
   id: string;
@@ -52,7 +55,7 @@ export interface InspectionResult {
   line: string;
   confidenceScore: number;
   measurements: Measurement[];
-  imageUrl?: string;
+  trigger?: InspectionTrigger;
 }
 
 export interface StatusHistoryEntry {
@@ -78,13 +81,13 @@ export interface StationStatusEvent {
   eventId: string;
   eventType: 'station.status';
   stationId: string;
-  cameraId?: string;
   timestamp: string;
-  state: 'online' | 'offline' | 'degraded';
+  state: 'online' | 'offline';
   fps?: number;
   running?: boolean;
+  phase?: StationPhase;
+  activePartCode?: string;
   modelVersion?: string;
-  message?: string;
 }
 
 export interface AgentInfo {
@@ -99,22 +102,10 @@ export interface AuthLoginResponse {
   token: string;
 }
 
-export interface QualityAlertEvent {
-  eventId: string;
-  eventType: 'quality.alert';
-  stationId: string;
-  timestamp: string;
-  severity: 'info' | 'warning' | 'critical';
-  message: string;
-  inspectionId?: string;
-  partCode?: string;
-}
-
 export interface InspectionCreatedEvent {
   eventId: string;
   eventType: 'inspection.created';
   stationId: string;
-  cameraId?: string;
   timestamp: string;
   partId?: string;
   partName: string;
@@ -128,11 +119,11 @@ export interface InspectionCreatedEvent {
   line?: string;
   confidenceScore: number;
   measurements: Measurement[];
-  imageUrl?: string;
   modelVersion?: string;
+  trigger?: InspectionTrigger;
 }
 
-export type RealtimeEvent = InspectionCreatedEvent | StationStatusEvent | QualityAlertEvent;
+export type RealtimeEvent = InspectionCreatedEvent | StationStatusEvent;
 
 export interface DashboardSummary {
   total: number;

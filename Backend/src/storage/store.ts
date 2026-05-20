@@ -3,7 +3,6 @@ import type {
   InspectionCreatedEvent,
   InspectionQuery,
   PartType,
-  QualityAlertEvent,
   QualityTrackingRecord,
   RequestStatus,
   StationStatusEvent,
@@ -26,8 +25,8 @@ export interface DataStore {
   ingest(event: IngestEvent): Promise<IngestEvent | null>;
   listInspections(query: InspectionQuery): Promise<InspectionCreatedEvent[]>;
   listStations(): Promise<StationStatusEvent[]>;
-  listAlerts(limit: number): Promise<QualityAlertEvent[]>;
   listParts(): Promise<PartType[]>;
+  findPart(partCode: string): Promise<PartType | null>;
   listUsers(): Promise<Omit<User, 'password'>[]>;
   findUserByUsername(username: string): Promise<User | null>;
   findUserById(id: string): Promise<User | null>;

@@ -1,11 +1,11 @@
 import type {
+  AgentCommandType,
   AgentInfo,
   AuthLoginResponse,
   DashboardSummary,
   InspectionCreatedEvent,
   InspectionResult,
   PartType,
-  QualityAlertEvent,
   QualityTrackingRecord,
   RequestStatus,
   StationStatusEvent,
@@ -103,8 +103,14 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
     line: event.line ?? event.stationId ?? '-',
     confidenceScore: event.confidenceScore ?? 0,
     measurements: event.measurements ?? [],
-    imageUrl: event.imageUrl,
+    trigger: event.trigger,
   };
+}
+
+interface AgentCommandResponse {
+  stationId: string;
+  command: AgentCommandType;
+  delivered: true;
 }
 
 export const api = {
@@ -138,9 +144,6 @@ export const api = {
   getStations() {
     return request<StationStatusEvent[]>('/api/stations');
   },
-  getAlerts(limit = 50) {
-    return request<QualityAlertEvent[]>(`/api/alerts?limit=${limit}`);
-  },
   getQualityRecords() {
     return request<QualityTrackingRecord[]>('/api/quality-records');
   },
@@ -156,16 +159,28 @@ export const api = {
   getAgents() {
     return request<AgentInfo[]>('/api/agents');
   },
-  startAgent(stationId: string) {
-    return request<{ stationId: string; command: 'start'; delivered: true }>(
+  startAgent(stationId: string, partCode: string) {
+    return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
-      { method: 'POST', body: JSON.stringify({ command: 'start' }) },
+      { method: 'POST', body: JSON.stringify({ command: 'start', partCode }) },
     );
   },
   stopAgent(stationId: string) {
-    return request<{ stationId: string; command: 'stop'; delivered: true }>(
+    return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
       { method: 'POST', body: JSON.stringify({ command: 'stop' }) },
+    );
+  },
+  captureNow(stationId: string) {
+    return request<AgentCommandResponse>(
+      `/api/agents/${encodeURIComponent(stationId)}/command`,
+      { method: 'POST', body: JSON.stringify({ command: 'capture' }) },
+    );
+  },
+  recalibrate(stationId: string) {
+    return request<AgentCommandResponse>(
+      `/api/agents/${encodeURIComponent(stationId)}/command`,
+      { method: 'POST', body: JSON.stringify({ command: 'recalibrate' }) },
     );
   },
 };

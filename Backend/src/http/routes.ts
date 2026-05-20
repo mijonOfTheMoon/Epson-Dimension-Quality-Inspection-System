@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { inspectionCreatedSchema, loginSchema, statusUpdateSchema } from '../domain/schemas.js';
-import type { AgentRegistry } from '../realtime/agent-registry.js';
+import type { AgentRegistry, AgentCommand } from '../realtime/agent-registry.js';
 import type { AuthService } from '../services/auth-service.js';
 import type { IngestionService } from '../services/ingestion-service.js';
 import type { DataStore } from '../storage/store.js';
@@ -12,12 +12,9 @@ const inspectionQuerySchema = z.object({
   partCode: z.string().optional(),
 });
 
-const alertQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(500).optional(),
-});
-
 const agentCommandSchema = z.object({
-  command: z.enum(['start', 'stop']),
+  command: z.enum(['start', 'stop', 'capture', 'recalibrate']),
+  partCode: z.string().min(1).optional(),
 });
 
 export interface RouteDeps {
@@ -70,11 +67,6 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
 
   app.get('/api/stations', async () => store.listStations());
 
-  app.get('/api/alerts', async (request) => {
-    const query = alertQuerySchema.parse(request.query);
-    return store.listAlerts(query.limit ?? 100);
-  });
-
   app.get('/api/parts', async () => store.listParts());
 
   app.get('/api/users', async () => store.listUsers());
@@ -85,7 +77,22 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
     if (!requireAuth(request, reply)) return;
     const params = z.object({ stationId: z.string().min(1) }).parse(request.params);
     const body = agentCommandSchema.parse(request.body);
-    const delivered = agentRegistry.send(params.stationId, { type: body.command });
+
+    const command: AgentCommand = { type: body.command };
+    if (body.command === 'start') {
+      if (!body.partCode) return reply.code(400).send({ message: 'partCode wajib diisi saat start' });
+      const part = await store.findPart(body.partCode);
+      if (!part) return reply.code(404).send({ message: `Part ${body.partCode} tidak ditemukan` });
+      command.part = {
+        partId: part.id,
+        partCode: part.partCode,
+        partName: part.partName,
+        vendor: part.vendor,
+        dimensions: part.dimensions,
+      };
+    }
+
+    const delivered = agentRegistry.send(params.stationId, command);
     if (!delivered) return reply.code(404).send({ message: 'Agent offline' });
     return { stationId: params.stationId, command: body.command, delivered: true };
   });

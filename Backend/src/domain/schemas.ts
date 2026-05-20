@@ -16,7 +16,6 @@ export const inspectionCreatedSchema = z.object({
   eventId: z.string().min(1),
   eventType: z.literal('inspection.created'),
   stationId: z.string().min(1),
-  cameraId: z.string().optional(),
   timestamp: z.string().datetime({ offset: true }),
   partId: z.string().optional(),
   partName: z.string().min(1),
@@ -30,38 +29,26 @@ export const inspectionCreatedSchema = z.object({
   line: z.string().optional(),
   confidenceScore: z.number().min(0).max(100),
   measurements: z.array(measurementSchema),
-  imageUrl: z.string().optional(),
   modelVersion: z.string().optional(),
+  trigger: z.enum(['auto', 'manual']).optional(),
 });
 
 export const stationStatusSchema = z.object({
   eventId: z.string().min(1),
   eventType: z.literal('station.status'),
   stationId: z.string().min(1),
-  cameraId: z.string().optional(),
   timestamp: z.string().datetime({ offset: true }),
-  state: z.enum(['online', 'offline', 'degraded']),
+  state: z.enum(['online', 'offline']),
   fps: z.number().nonnegative().optional(),
   running: z.boolean().optional(),
+  phase: z.enum(['idle', 'calibrating', 'ready', 'stabilizing', 'locked']).optional(),
+  activePartCode: z.string().optional(),
   modelVersion: z.string().optional(),
-  message: z.string().optional(),
-});
-
-export const qualityAlertSchema = z.object({
-  eventId: z.string().min(1),
-  eventType: z.literal('quality.alert'),
-  stationId: z.string().min(1),
-  timestamp: z.string().datetime(),
-  severity: z.enum(['info', 'warning', 'critical']),
-  message: z.string().min(1),
-  inspectionId: z.string().optional(),
-  partCode: z.string().optional(),
 });
 
 export const ingestEventSchema = z.discriminatedUnion('eventType', [
   inspectionCreatedSchema,
   stationStatusSchema,
-  qualityAlertSchema,
 ]);
 
 export const statusUpdateSchema = z.object({
