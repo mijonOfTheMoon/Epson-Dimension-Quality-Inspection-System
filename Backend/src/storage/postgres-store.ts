@@ -6,10 +6,11 @@ import type {
   InspectionCreatedEvent,
   InspectionQuery,
   InspectionStatus,
+  InspectionTrigger,
   PartType,
-  QualityAlertEvent,
   QualityTrackingRecord,
   RequestStatus,
+  StationPhase,
   StationStatusEvent,
   User,
 } from '../domain/types.js';
@@ -159,12 +160,30 @@ const migrations = [
       ALTER TABLE stations ADD COLUMN IF NOT EXISTS running boolean NOT NULL DEFAULT false;
     `,
   },
+  {
+    version: 5,
+    sql: `
+      DROP INDEX IF EXISTS idx_alerts_timestamp;
+      DROP TABLE IF EXISTS alerts;
+
+      ALTER TABLE inspections DROP COLUMN IF EXISTS image_url;
+      ALTER TABLE inspections DROP COLUMN IF EXISTS camera_id;
+      ALTER TABLE inspections ADD COLUMN IF NOT EXISTS trigger text;
+
+      ALTER TABLE stations DROP COLUMN IF EXISTS message;
+      ALTER TABLE stations DROP COLUMN IF EXISTS camera_id;
+      UPDATE stations SET state = 'offline' WHERE state = 'degraded';
+      ALTER TABLE stations DROP CONSTRAINT IF EXISTS stations_state_check;
+      ALTER TABLE stations ADD CONSTRAINT stations_state_check CHECK (state IN ('online', 'offline'));
+      ALTER TABLE stations ADD COLUMN IF NOT EXISTS phase text;
+      ALTER TABLE stations ADD COLUMN IF NOT EXISTS active_part_code text;
+    `,
+  },
 ];
 
 interface InspectionRow {
   event_id: string;
   station_id: string;
-  camera_id: string | null;
   timestamp: string | Date;
   part_id: string | null;
   part_name: string;
@@ -178,30 +197,20 @@ interface InspectionRow {
   line: string | null;
   confidence_score: number;
   measurements: unknown;
-  image_url: string | null;
   model_version: string | null;
+  trigger: InspectionTrigger | null;
 }
 
 interface StationRow {
   event_id: string;
   station_id: string;
-  camera_id: string | null;
   timestamp: string | Date;
-  state: 'online' | 'offline' | 'degraded';
+  state: 'online' | 'offline';
   fps: number | null;
   running: boolean | null;
+  phase: StationPhase | null;
+  active_part_code: string | null;
   model_version: string | null;
-  message: string | null;
-}
-
-interface AlertRow {
-  event_id: string;
-  station_id: string;
-  timestamp: string | Date;
-  severity: 'info' | 'warning' | 'critical';
-  message: string;
-  inspection_id: string | null;
-  part_code: string | null;
 }
 
 interface PartRow {
@@ -257,8 +266,7 @@ export class PostgresStore implements DataStore {
       }
 
       if (event.eventType === 'inspection.created') await this.insertInspection(client, event);
-      else if (event.eventType === 'station.status') await this.upsertStation(client, event);
-      else await this.insertAlert(client, event);
+      else await this.upsertStation(client, event);
 
       await client.query('COMMIT');
       return event;
@@ -273,7 +281,10 @@ export class PostgresStore implements DataStore {
   async listInspections(query: InspectionQuery) {
     const limit = Math.min(query.limit ?? 100, 1000);
     const result = await this.pool.query<InspectionRow>(
-      `SELECT * FROM inspections
+      `SELECT event_id, station_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
+              operator_id, operator_name, status, shift, line, confidence_score, measurements,
+              model_version, trigger
+       FROM inspections
        WHERE ($1::text IS NULL OR status = $1)
          AND ($2::text IS NULL OR part_code = $2)
        ORDER BY timestamp DESC
@@ -284,18 +295,24 @@ export class PostgresStore implements DataStore {
   }
 
   async listStations() {
-    const result = await this.pool.query<StationRow>('SELECT * FROM stations ORDER BY timestamp DESC');
+    const result = await this.pool.query<StationRow>(
+      `SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code, model_version
+       FROM stations ORDER BY timestamp DESC`,
+    );
     return result.rows.map(mapStation);
-  }
-
-  async listAlerts(limit: number) {
-    const result = await this.pool.query<AlertRow>('SELECT * FROM alerts ORDER BY timestamp DESC LIMIT $1', [Math.min(limit, 500)]);
-    return result.rows.map(mapAlert);
   }
 
   async listParts() {
     const result = await this.pool.query<PartRow>('SELECT * FROM parts ORDER BY part_code ASC');
     return result.rows.map(mapPart);
+  }
+
+  async findPart(partCode: string) {
+    const result = await this.pool.query<PartRow>(
+      'SELECT * FROM parts WHERE part_code = $1 LIMIT 1',
+      [partCode],
+    );
+    return result.rows[0] ? mapPart(result.rows[0]) : null;
   }
 
   async listUsers(): Promise<Omit<User, 'password'>[]> {
@@ -436,13 +453,13 @@ export class PostgresStore implements DataStore {
   private async insertInspection(client: PoolClient, event: InspectionCreatedEvent) {
     await client.query(
       `INSERT INTO inspections (
-        event_id, station_id, camera_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
-        operator_id, operator_name, status, shift, line, confidence_score, measurements, image_url, model_version
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18)`,
+        event_id, station_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
+        operator_id, operator_name, status, shift, line, confidence_score, measurements,
+        model_version, trigger
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)`,
       [
         event.eventId,
         event.stationId,
-        event.cameraId ?? null,
         event.timestamp,
         event.partId ?? null,
         event.partName,
@@ -456,8 +473,8 @@ export class PostgresStore implements DataStore {
         event.line ?? null,
         event.confidenceScore,
         JSON.stringify(event.measurements),
-        event.imageUrl ?? null,
         event.modelVersion ?? null,
+        event.trigger ?? null,
       ],
     );
 
@@ -486,43 +503,27 @@ export class PostgresStore implements DataStore {
 
   private async upsertStation(client: PoolClient, event: StationStatusEvent) {
     await client.query(
-      `INSERT INTO stations (station_id, event_id, camera_id, timestamp, state, fps, running, model_version, message)
+      `INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code, model_version)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (station_id) DO UPDATE
-       SET event_id      = EXCLUDED.event_id,
-           camera_id     = EXCLUDED.camera_id,
-           timestamp     = EXCLUDED.timestamp,
-           state         = EXCLUDED.state,
-           fps           = EXCLUDED.fps,
-           running       = EXCLUDED.running,
-           model_version = EXCLUDED.model_version,
-           message       = EXCLUDED.message`,
+       SET event_id         = EXCLUDED.event_id,
+           timestamp        = EXCLUDED.timestamp,
+           state            = EXCLUDED.state,
+           fps              = EXCLUDED.fps,
+           running          = EXCLUDED.running,
+           phase            = EXCLUDED.phase,
+           active_part_code = EXCLUDED.active_part_code,
+           model_version    = EXCLUDED.model_version`,
       [
         event.stationId,
         event.eventId,
-        event.cameraId ?? null,
         event.timestamp,
         event.state,
         event.fps ?? null,
         event.running ?? false,
+        event.phase ?? null,
+        event.activePartCode ?? null,
         event.modelVersion ?? null,
-        event.message ?? null,
-      ],
-    );
-  }
-
-  private async insertAlert(client: PoolClient, event: QualityAlertEvent) {
-    await client.query(
-      `INSERT INTO alerts (event_id, station_id, timestamp, severity, message, inspection_id, part_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        event.eventId,
-        event.stationId,
-        event.timestamp,
-        event.severity,
-        event.message,
-        event.inspectionId ?? null,
-        event.partCode ?? null,
       ],
     );
   }
@@ -533,7 +534,6 @@ function mapInspection(row: InspectionRow): InspectionCreatedEvent {
     eventId: row.event_id,
     eventType: 'inspection.created',
     stationId: row.station_id,
-    cameraId: optional(row.camera_id),
     timestamp: iso(row.timestamp),
     partId: optional(row.part_id),
     partName: row.part_name,
@@ -547,8 +547,8 @@ function mapInspection(row: InspectionRow): InspectionCreatedEvent {
     line: optional(row.line),
     confidenceScore: row.confidence_score,
     measurements: json(row.measurements),
-    imageUrl: optional(row.image_url),
     modelVersion: optional(row.model_version),
+    trigger: row.trigger ?? undefined,
   };
 }
 
@@ -557,26 +557,13 @@ function mapStation(row: StationRow): StationStatusEvent {
     eventId: row.event_id,
     eventType: 'station.status',
     stationId: row.station_id,
-    cameraId: optional(row.camera_id),
     timestamp: iso(row.timestamp),
     state: row.state,
     fps: row.fps ?? undefined,
     running: row.running ?? false,
+    phase: row.phase ?? undefined,
+    activePartCode: optional(row.active_part_code),
     modelVersion: optional(row.model_version),
-    message: optional(row.message),
-  };
-}
-
-function mapAlert(row: AlertRow): QualityAlertEvent {
-  return {
-    eventId: row.event_id,
-    eventType: 'quality.alert',
-    stationId: row.station_id,
-    timestamp: iso(row.timestamp),
-    severity: row.severity,
-    message: row.message,
-    inspectionId: optional(row.inspection_id),
-    partCode: optional(row.part_code),
   };
 }
 

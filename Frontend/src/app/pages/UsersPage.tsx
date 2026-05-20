@@ -1,4 +1,4 @@
-import { UserPlus, Shield, Edit, Trash2 } from 'lucide-react';
+import { Shield } from 'lucide-react';
 import { useUsers } from '../hooks/useUsers';
 
 const roleBadge: Record<string, string> = {
@@ -24,14 +24,11 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1>Manajemen User</h1>
-          <p className="text-[var(--muted-foreground)] text-sm mt-1">Kelola akun pengguna dan hak akses (RBAC)</p>
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
-          <UserPlus className="w-4 h-4" /> Tambah User
-        </button>
+      <div>
+        <h1>Manajemen User</h1>
+        <p className="text-[var(--muted-foreground)] text-sm mt-1">
+          Daftar user (read-only). Kelola via seed data Backend.
+        </p>
       </div>
 
       {users.error && (
@@ -54,7 +51,6 @@ export function UsersPage() {
               <th className="px-4 py-3">Nama</th>
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -74,17 +70,11 @@ export function UsersPage() {
                     <Shield className="w-3 h-3" /> {roleLabels[u.role]}
                   </span>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1">
-                    <button className="p-1.5 hover:bg-[var(--accent)] rounded"><Edit className="w-4 h-4" /></button>
-                    <button className="p-1.5 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
               </tr>
             ))}
             {!users.loading && users.data.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
+                <td colSpan={3} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
                   Belum ada user dari backend.
                 </td>
               </tr>

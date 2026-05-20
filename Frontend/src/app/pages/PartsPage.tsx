@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Plus, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Package, ChevronDown, ChevronUp } from 'lucide-react';
 import { useParts } from '../hooks/useParts';
 
 export function PartsPage() {
@@ -9,14 +9,11 @@ export function PartsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1>Konfigurasi Tipe Part</h1>
-          <p className="text-[var(--muted-foreground)] text-sm mt-1">Kelola spesifikasi dimensi per tipe part</p>
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
-          <Plus className="w-4 h-4" /> Tambah Part
-        </button>
+      <div>
+        <h1>Konfigurasi Tipe Part</h1>
+        <p className="text-[var(--muted-foreground)] text-sm mt-1">
+          Spesifikasi dimensi per tipe part (read-only). Kelola via seed data Backend.
+        </p>
       </div>
 
       {parts.error && (
@@ -75,14 +72,6 @@ export function PartsPage() {
                     ))}
                   </tbody>
                 </table>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]">
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--accent)]">
-                    <Edit className="w-3.5 h-3.5" /> Edit
-                  </button>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50">
-                    <Trash2 className="w-3.5 h-3.5" /> Hapus
-                  </button>
-                </div>
               </div>
             )}
           </div>
