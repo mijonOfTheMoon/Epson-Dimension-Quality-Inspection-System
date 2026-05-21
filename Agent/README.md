@@ -15,15 +15,10 @@ python computer_vision.py
 ## Environment
 
 ```text
-STATION_ID=station-1
-CAMERA_ID=camera-1
+STATION_ID=Station 1
 CAMERA_INDEX=0
-MODEL_VERSION=vision-v1
 BACKEND_WS_URL=ws://localhost/ws/agent
 AGENT_TOKEN=change-me-agent-shared-token
-FRAME_FPS=10
-FRAME_QUALITY=70
-SHOW_PREVIEW=false
 ```
 
 ### `BACKEND_WS_URL` per skenario deploy
@@ -37,13 +32,11 @@ SHOW_PREVIEW=false
 Backend di production **tidak** meng-expose port 4000 ke publik — selalu pakai port 80 (HTTP) / 443 (HTTPS) yang dilayani nginx.
 
 - `AGENT_TOKEN` wajib sama dengan `AGENT_TOKEN` di Backend.
-- `FRAME_FPS` target stream frame per detik.
-- `FRAME_QUALITY` JPEG quality 1-100.
-- `SHOW_PREVIEW` `true` untuk buka jendela OpenCV preview (development).
+- Frame stream memakai 8 FPS dan JPEG quality 62.
 
 ## Protocol
 
-Agent membuka satu WebSocket ke `${BACKEND_WS_URL}?stationId=<id>&token=<AGENT_TOKEN>`. Reconnect otomatis dengan backoff eksponensial (1s → 30s cap).
+Agent membuka satu WebSocket ke `${BACKEND_WS_URL}?stationId=<id>` dengan bearer token di header. Reconnect otomatis dengan backoff eksponensial (1s → 30s cap).
 
 - **Outbound text** (JSON): `inspection.created`, `station.status` (dengan field `running`).
 - **Outbound binary**: JPEG frame (saat running).

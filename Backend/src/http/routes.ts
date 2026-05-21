@@ -15,6 +15,22 @@ const inspectionQuerySchema = z.object({
 const agentCommandSchema = z.object({
   command: z.enum(['start', 'stop', 'capture', 'recalibrate']),
   partCode: z.string().min(1).optional(),
+  shift: z.enum(['A', 'B', 'C']).optional(),
+  batchNo: z.string().min(1).optional(),
+});
+
+const shiftUpdateSchema = z.object({
+  label: z.string().min(1),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  active: z.boolean(),
+});
+
+const batchCreateSchema = z.object({
+  batchNo: z.string().min(1),
+  partCode: z.string().min(1),
+  shift: z.enum(['A', 'B', 'C']),
+  targetQty: z.coerce.number().int().nonnegative(),
 });
 
 export interface RouteDeps {
@@ -71,10 +87,45 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
 
   app.get('/api/users', async () => store.listUsers());
 
+  app.get('/api/shift-schedules', async () => store.listShiftSchedules());
+
+  app.patch('/api/shift-schedules/:id', async (request, reply) => {
+    if (!requireAuth(request, reply)) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = shiftUpdateSchema.parse(request.body);
+    const shift = await store.updateShiftSchedule(params.id, body);
+    if (!shift) return reply.code(404).send({ message: 'Shift tidak ditemukan' });
+    return shift;
+  });
+
+  app.get('/api/batches', async () => store.listBatches());
+
+  app.post('/api/batches', async (request, reply) => {
+    if (!requireAuth(request, reply)) return;
+    const body = batchCreateSchema.parse(request.body);
+    try {
+      const batch = await store.openBatch(body);
+      return reply.code(201).send(batch);
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'Batch gagal dibuat' });
+    }
+  });
+
+  app.patch('/api/batches/:id/close', async (request, reply) => {
+    if (!requireAuth(request, reply)) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    const batch = await store.closeBatch(params.id);
+    if (!batch) return reply.code(404).send({ message: 'Batch tidak ditemukan' });
+    return batch;
+  });
+
   app.get('/api/agents', async () => agentRegistry.list());
 
   app.post('/api/agents/:stationId/command', async (request, reply) => {
     if (!requireAuth(request, reply)) return;
+    const authUser = request.auth;
+    if (!authUser) return;
     const params = z.object({ stationId: z.string().min(1) }).parse(request.params);
     const body = agentCommandSchema.parse(request.body);
 
@@ -90,6 +141,9 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
         vendor: part.vendor,
         dimensions: part.dimensions,
       };
+      command.operator = { id: authUser.id, name: authUser.name };
+      command.shift = body.shift;
+      command.batchNo = body.batchNo;
     }
 
     const delivered = agentRegistry.send(params.stationId, command);

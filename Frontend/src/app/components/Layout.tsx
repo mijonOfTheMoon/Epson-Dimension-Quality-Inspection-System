@@ -1,8 +1,9 @@
 import { Outlet, NavLink, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import {
-  LayoutDashboard, History, AlertTriangle, Users, LogOut,
-  Menu, Package, Video,
+  LayoutDashboard, History, AlertTriangle, LogOut,
+  Menu, Settings, Video, ChevronUp, Moon, Sun,
 } from 'lucide-react';
 import { useState } from 'react';
 import Logo from '../../assets/Logo.png';
@@ -18,8 +19,10 @@ const roleLabels: Record<string, string> = {
 
 export function Layout() {
   const { user, logout, hasRole } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const handleLogout = async () => { await logout(); navigate('/login', { replace: true }); };
 
@@ -28,8 +31,7 @@ export function Layout() {
     { to: '/live-tracking', icon: Video, label: 'Live Tracking', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/history', icon: History, label: 'Riwayat Inspeksi', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/quality-tracking', icon: AlertTriangle, label: 'Quality Tracking', roles: ['engineering', 'supervisor', 'vendor', 'admin'] },
-    { to: '/parts', icon: Package, label: 'Konfigurasi Part', roles: ['qc', 'supervisor', 'admin'] },
-    { to: '/users', icon: Users, label: 'Manajemen User', roles: ['admin'] },
+    { to: '/settings', icon: Settings, label: 'Settings', roles: ['qc', 'supervisor', 'engineering', 'admin'] },
   ];
 
   const visibleItems = navItems.filter((item) => item.roles.some((r) => hasRole(r as any)));
@@ -64,7 +66,18 @@ export function Layout() {
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
-          <div className="flex items-center gap-3 mb-3">
+          {userMenuOpen && (
+            <div className="mb-3 rounded-xl bg-white/10 p-2 text-sm shadow-lg">
+              <button onClick={toggleTheme} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-white/10 hover:text-white">
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {theme === 'dark' ? 'Mode terang' : 'Mode gelap'}
+              </button>
+              <button onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-white/10 hover:text-white">
+                <LogOut className="w-4 h-4" /> Keluar
+              </button>
+            </div>
+          )}
+          <button onClick={() => setUserMenuOpen((open) => !open)} className="flex w-full items-center gap-3 rounded-xl p-2 hover:bg-white/10 text-left">
             <div className="w-8 h-8 rounded-full bg-blue-500/30 flex items-center justify-center text-sm">
               {user?.name?.charAt(0)}
             </div>
@@ -72,9 +85,7 @@ export function Layout() {
               <div className="text-sm truncate">{user?.name}</div>
               <div className="text-[11px] text-gray-400">{roleLabels[user?.role || '']}</div>
             </div>
-          </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white w-full px-1">
-            <LogOut className="w-4 h-4" /> Keluar
+            <ChevronUp className={`w-4 h-4 text-gray-400 transition-transform ${userMenuOpen ? '' : 'rotate-180'}`} />
           </button>
         </div>
       </aside>

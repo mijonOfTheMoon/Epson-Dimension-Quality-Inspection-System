@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import cv2
 
 from agent_link import AgentLink
-from config import AgentConfig, load_config
+from config import FRAME_FPS, FRAME_QUALITY, AgentConfig, load_config
 from vision import (
     InspectionPayload,
     PartSpec,
@@ -40,12 +40,9 @@ def build_inspection_event(config: AgentConfig, payload: InspectionPayload, trig
         "eventType": "inspection.created",
         "stationId": config.station_id,
         "timestamp": now_iso(),
-        "batchNo": datetime.now().strftime("B%Y%m%d"),
         "operatorId": "agent",
         "operatorName": "Vision Agent",
         "shift": "A",
-        "line": config.station_id,
-        "modelVersion": config.model_version,
         "trigger": trigger,
         **payload.to_dict(),
     }
@@ -68,7 +65,6 @@ def build_station_status(
         "fps": round(fps, 2),
         "running": running,
         "phase": phase,
-        "modelVersion": config.model_version,
     }
     if active_part_code:
         event["activePartCode"] = active_part_code
@@ -82,7 +78,11 @@ class InspectionRunner:
         self._running = threading.Event()
         self._commands: queue.Queue[dict[str, Any]] = queue.Queue()
         self._part: PartSpec | None = None
-        self._frame_interval = 1.0 / max(1, config.frame_fps)
+        self._operator_id = "agent"
+        self._operator_name = "Vision Agent"
+        self._shift = "A"
+        self._batch_no: str | None = None
+        self._frame_interval = 1.0 / FRAME_FPS
         self.link = AgentLink(config, self._enqueue_command)
 
     def start(self) -> None:
@@ -99,6 +99,13 @@ class InspectionRunner:
             part_raw = command.get("part")
             if isinstance(part_raw, dict):
                 self._part = PartSpec.from_dict(part_raw)
+            operator = command.get("operator")
+            if isinstance(operator, dict):
+                self._operator_id = str(operator.get("id", "agent"))
+                self._operator_name = str(operator.get("name", "Vision Agent"))
+            self._shift = str(command.get("shift", "A"))
+            batch_no = command.get("batchNo")
+            self._batch_no = str(batch_no) if batch_no else None
             self._running.set()
         elif kind == "stop":
             self._running.clear()
@@ -180,7 +187,7 @@ class InspectionRunner:
             self._send_status(phase="idle", running=False)
             return
 
-        encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config.frame_quality]
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, FRAME_QUALITY]
         phase: Phase = "calibrating"
         background = None
         stable_count = 0
@@ -230,7 +237,6 @@ class InspectionRunner:
                     if result.inspection is not None and result.foreground_area >= FOREGROUND_AREA_THRESHOLD:
                         stable_count += 1
                         if stable_count >= STABILITY_FRAMES:
-                            self.link.send_event(build_inspection_event(self.config, result.inspection, "auto"))
                             phase = "locked"
                             clear_count = 0
                             stable_count = 0
@@ -239,7 +245,13 @@ class InspectionRunner:
                         stable_count = 0
 
                     if manual_capture and result.inspection is not None:
-                        self.link.send_event(build_inspection_event(self.config, result.inspection, "manual"))
+                        event = build_inspection_event(self.config, result.inspection, "manual")
+                        event["operatorId"] = self._operator_id
+                        event["operatorName"] = self._operator_name
+                        event["shift"] = self._shift
+                        if self._batch_no:
+                            event["batchNo"] = self._batch_no
+                        self.link.send_event(event)
                         phase = "locked"
                         clear_count = 0
                         stable_count = 0
@@ -265,15 +277,8 @@ class InspectionRunner:
                     self._send_status(phase=phase, running=True, fps=fps)
                     last_status = now
 
-                if self.config.show_preview:
-                    cv2.imshow("Kamera Inspeksi", display)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        self._stop.set()
-                        break
         finally:
             cap.release()
-            if self.config.show_preview:
-                cv2.destroyAllWindows()
             self._send_status(phase="idle", running=False)
 
 

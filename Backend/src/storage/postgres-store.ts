@@ -7,9 +7,11 @@ import type {
   InspectionQuery,
   InspectionStatus,
   InspectionTrigger,
+  Batch,
   PartType,
   QualityTrackingRecord,
   RequestStatus,
+  ShiftSchedule,
   StationPhase,
   StationStatusEvent,
   User,
@@ -22,6 +24,13 @@ const SEED_USERS: User[] = [
   { id: 'u-003', username: 'qc1', password: 'qc123', name: 'Sari Dewi', role: 'qc' },
   { id: 'u-004', username: 'operator1', password: 'op123', name: 'Andi Pratama', role: 'operator' },
   { id: 'u-005', username: 'vendor1', password: 'ven123', name: 'PT. Maju Jaya', role: 'vendor' },
+  { id: 'u-006', username: 'engineer1', password: 'eng123', name: 'Rina Engineering', role: 'engineering' },
+];
+
+const SEED_SHIFTS: ShiftSchedule[] = [
+  { id: 'shift-a', shift: 'A', label: 'Shift A', startTime: '07:00', endTime: '15:00', active: true },
+  { id: 'shift-b', shift: 'B', label: 'Shift B', startTime: '15:00', endTime: '23:00', active: true },
+  { id: 'shift-c', shift: 'C', label: 'Shift C', startTime: '23:00', endTime: '07:00', active: true },
 ];
 
 const SEED_PARTS = [
@@ -78,7 +87,6 @@ const migrations = [
       CREATE TABLE IF NOT EXISTS inspections (
         event_id text PRIMARY KEY REFERENCES event_log(event_id) ON DELETE CASCADE,
         station_id text NOT NULL,
-        camera_id text,
         timestamp timestamptz NOT NULL,
         part_id text,
         part_name text NOT NULL,
@@ -89,21 +97,18 @@ const migrations = [
         operator_name text,
         status text NOT NULL CHECK (status IN ('OK', 'NG')),
         shift text,
-        line text,
         confidence_score double precision NOT NULL,
         measurements jsonb NOT NULL,
-        image_url text,
-        model_version text
+        detections jsonb NOT NULL DEFAULT '[]'::jsonb,
+        image_url text
       );
 
       CREATE TABLE IF NOT EXISTS stations (
         station_id text PRIMARY KEY,
         event_id text NOT NULL REFERENCES event_log(event_id) ON DELETE CASCADE,
-        camera_id text,
         timestamp timestamptz NOT NULL,
-        state text NOT NULL CHECK (state IN ('online', 'offline', 'degraded')),
+        state text NOT NULL CHECK (state IN ('online', 'offline')),
         fps double precision,
-        model_version text,
         message text
       );
 
@@ -179,6 +184,52 @@ const migrations = [
       ALTER TABLE stations ADD COLUMN IF NOT EXISTS active_part_code text;
     `,
   },
+  {
+    version: 6,
+    sql: `
+      ALTER TABLE inspections DROP COLUMN IF EXISTS line;
+      ALTER TABLE inspections DROP COLUMN IF EXISTS model_version;
+      ALTER TABLE inspections ADD COLUMN IF NOT EXISTS detections jsonb NOT NULL DEFAULT '[]'::jsonb;
+      UPDATE inspections SET station_id = 'Station 1' WHERE station_id = 'station-1';
+
+      ALTER TABLE stations DROP COLUMN IF EXISTS model_version;
+      UPDATE stations SET station_id = 'Station 1' WHERE station_id = 'station-1';
+
+      UPDATE event_log SET station_id = 'Station 1' WHERE station_id = 'station-1';
+
+      CREATE INDEX IF NOT EXISTS idx_inspections_station_timestamp ON inspections(station_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_inspections_shift_timestamp ON inspections(shift, timestamp DESC);
+    `,
+  },
+  {
+    version: 7,
+    sql: `
+      CREATE TABLE IF NOT EXISTS shift_schedules (
+        id text PRIMARY KEY,
+        shift text NOT NULL UNIQUE CHECK (shift IN ('A', 'B', 'C')),
+        label text NOT NULL,
+        start_time time NOT NULL,
+        end_time time NOT NULL,
+        active boolean NOT NULL DEFAULT true
+      );
+
+      CREATE TABLE IF NOT EXISTS batches (
+        id text PRIMARY KEY,
+        batch_no text NOT NULL UNIQUE,
+        part_code text NOT NULL,
+        part_name text NOT NULL,
+        shift text NOT NULL CHECK (shift IN ('A', 'B', 'C')),
+        status text NOT NULL CHECK (status IN ('open', 'closed')),
+        target_qty integer NOT NULL DEFAULT 0,
+        actual_qty integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        closed_at timestamptz
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_one_open ON batches(part_code, shift) WHERE status = 'open';
+      CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at DESC);
+    `,
+  },
 ];
 
 interface InspectionRow {
@@ -194,10 +245,9 @@ interface InspectionRow {
   operator_name: string | null;
   status: InspectionStatus;
   shift: 'A' | 'B' | 'C' | null;
-  line: string | null;
   confidence_score: number;
   measurements: unknown;
-  model_version: string | null;
+  detections: unknown;
   trigger: InspectionTrigger | null;
 }
 
@@ -210,7 +260,6 @@ interface StationRow {
   running: boolean | null;
   phase: StationPhase | null;
   active_part_code: string | null;
-  model_version: string | null;
 }
 
 interface PartRow {
@@ -232,6 +281,28 @@ interface QualityRecordRow {
   ng_rate: string | number;
   request_status: RequestStatus;
   status_history: unknown;
+}
+
+interface ShiftScheduleRow {
+  id: string;
+  shift: 'A' | 'B' | 'C';
+  label: string;
+  start_time: string;
+  end_time: string;
+  active: boolean;
+}
+
+interface BatchRow {
+  id: string;
+  batch_no: string;
+  part_code: string;
+  part_name: string;
+  shift: 'A' | 'B' | 'C';
+  status: 'open' | 'closed';
+  target_qty: number;
+  actual_qty: number;
+  created_at: string | Date;
+  closed_at: string | Date | null;
 }
 
 export class PostgresStore implements DataStore {
@@ -282,8 +353,8 @@ export class PostgresStore implements DataStore {
     const limit = Math.min(query.limit ?? 100, 1000);
     const result = await this.pool.query<InspectionRow>(
       `SELECT event_id, station_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
-              operator_id, operator_name, status, shift, line, confidence_score, measurements,
-              model_version, trigger
+              operator_id, operator_name, status, shift, confidence_score, measurements,
+              detections, trigger
        FROM inspections
        WHERE ($1::text IS NULL OR status = $1)
          AND ($2::text IS NULL OR part_code = $2)
@@ -296,7 +367,7 @@ export class PostgresStore implements DataStore {
 
   async listStations() {
     const result = await this.pool.query<StationRow>(
-      `SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code, model_version
+      `SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code
        FROM stations ORDER BY timestamp DESC`,
     );
     return result.rows.map(mapStation);
@@ -338,6 +409,69 @@ export class PostgresStore implements DataStore {
     return result.rows[0] ?? null;
   }
 
+  async listShiftSchedules() {
+    const result = await this.pool.query<ShiftScheduleRow>('SELECT * FROM shift_schedules ORDER BY shift ASC');
+    return result.rows.map(mapShiftSchedule);
+  }
+
+  async updateShiftSchedule(id: string, input: Pick<ShiftSchedule, 'label' | 'startTime' | 'endTime' | 'active'>) {
+    const result = await this.pool.query<ShiftScheduleRow>(
+      `UPDATE shift_schedules
+       SET label = $2, start_time = $3, end_time = $4, active = $5
+       WHERE id = $1
+       RETURNING *`,
+      [id, input.label, input.startTime, input.endTime, input.active],
+    );
+    return result.rows[0] ? mapShiftSchedule(result.rows[0]) : null;
+  }
+
+  async listBatches() {
+    const result = await this.pool.query<BatchRow>('SELECT * FROM batches ORDER BY created_at DESC');
+    return result.rows.map(mapBatch);
+  }
+
+  async openBatch(input: { batchNo: string; partCode: string; shift: 'A' | 'B' | 'C'; targetQty: number }) {
+    const part = await this.findPart(input.partCode);
+    if (!part) throw new Error(`Part ${input.partCode} tidak ditemukan`);
+    const result = await this.pool.query<BatchRow>(
+      `INSERT INTO batches (id, batch_no, part_code, part_name, shift, status, target_qty)
+       VALUES ($1, $2, $3, $4, $5, 'open', $6)
+       RETURNING *`,
+      [`batch-${Date.now()}`, input.batchNo, part.partCode, part.partName, input.shift, input.targetQty],
+    );
+    return mapBatch(result.rows[0]);
+  }
+
+  async closeBatch(id: string) {
+    const result = await this.pool.query<BatchRow>(
+      `UPDATE batches
+       SET status = 'closed', closed_at = now()
+       WHERE id = $1 AND status = 'open'
+       RETURNING *`,
+      [id],
+    );
+    return result.rows[0] ? mapBatch(result.rows[0]) : null;
+  }
+
+  async getActiveBatch(partCode: string, shift: 'A' | 'B' | 'C') {
+    return this.getActiveBatchWithClient(this.pool, partCode, shift);
+  }
+
+  private async getActiveBatchWithClient(
+    client: Pick<Pool, 'query'> | PoolClient,
+    partCode: string,
+    shift: 'A' | 'B' | 'C',
+  ) {
+    const result = await client.query<BatchRow>(
+      `SELECT * FROM batches
+       WHERE part_code = $1 AND shift = $2 AND status = 'open'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [partCode, shift],
+    );
+    return result.rows[0] ? mapBatch(result.rows[0]) : null;
+  }
+
   async listQualityRecords() {
     const result = await this.pool.query<QualityRecordRow>('SELECT * FROM quality_records ORDER BY date DESC, part_code ASC');
     return result.rows.map(mapQualityRecord);
@@ -356,7 +490,7 @@ export class PostgresStore implements DataStore {
   }
 
   async getDashboardSummary(): Promise<DashboardSummary> {
-    const [counts, trend, stations] = await Promise.all([
+    const [counts, trend, stations, stationTrend, partPareto, shiftSummary, measurementDrift] = await Promise.all([
       this.pool.query<{ status: InspectionStatus; count: string }>(
         'SELECT status, COUNT(*)::bigint AS count FROM inspections GROUP BY status',
       ),
@@ -373,6 +507,45 @@ export class PostgresStore implements DataStore {
                 COUNT(*) FILTER (WHERE state = 'online')::bigint AS active
          FROM stations`,
       ),
+      this.pool.query<{ station_id: string; ok: string; ng: string; total: string }>(
+        `SELECT station_id,
+                COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
+                COUNT(*)::bigint AS total
+         FROM inspections
+         GROUP BY station_id
+         ORDER BY station_id ASC`,
+      ),
+      this.pool.query<{ part_code: string; part_name: string; ok: string; ng: string; total: string }>(
+        `SELECT part_code, part_name,
+                COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
+                COUNT(*)::bigint AS total
+         FROM inspections
+         GROUP BY part_code, part_name
+         ORDER BY ng DESC, total DESC
+         LIMIT 8`,
+      ),
+      this.pool.query<{ shift: 'A' | 'B' | 'C'; ok: string; ng: string; total: string }>(
+        `SELECT COALESCE(shift, 'A') AS shift,
+                COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
+                COUNT(*)::bigint AS total
+         FROM inspections
+         GROUP BY COALESCE(shift, 'A')
+         ORDER BY shift ASC`,
+      ),
+      this.pool.query<{ dimension_name: string; avg_measured: string; nominal: string; unit: string }>(
+        `SELECT item->>'dimensionName' AS dimension_name,
+                AVG((item->>'measured')::numeric)::text AS avg_measured,
+                AVG((item->>'nominal')::numeric)::text AS nominal,
+                MAX(item->>'unit') AS unit
+         FROM inspections
+         CROSS JOIN LATERAL jsonb_array_elements(measurements) AS item
+         GROUP BY item->>'dimensionName'
+         ORDER BY ABS(AVG((item->>'measured')::numeric) - AVG((item->>'nominal')::numeric)) DESC
+         LIMIT 8`,
+      ),
     ]);
 
     const ok = Number(counts.rows.find((row) => row.status === 'OK')?.count ?? 0);
@@ -387,6 +560,38 @@ export class PostgresStore implements DataStore {
       dailyTrend: trend.rows.map((row) => ({ date: row.date, ok: Number(row.ok), ng: Number(row.ng) })),
       stationCount: Number(stations.rows[0]?.total ?? 0),
       activeStationCount: Number(stations.rows[0]?.active ?? 0),
+      stationTrend: stationTrend.rows.map((row) => ({
+        stationId: row.station_id,
+        ok: Number(row.ok),
+        ng: Number(row.ng),
+        ngRate: rate(row.ng, row.total),
+      })),
+      partPareto: partPareto.rows.map((row) => ({
+        partCode: row.part_code,
+        partName: row.part_name,
+        ok: Number(row.ok),
+        ng: Number(row.ng),
+        total: Number(row.total),
+        ngRate: rate(row.ng, row.total),
+      })),
+      shiftSummary: shiftSummary.rows.map((row) => ({
+        shift: row.shift,
+        ok: Number(row.ok),
+        ng: Number(row.ng),
+        total: Number(row.total),
+        ngRate: rate(row.ng, row.total),
+      })),
+      measurementDrift: measurementDrift.rows.map((row) => {
+        const avgMeasured = Number(Number(row.avg_measured).toFixed(3));
+        const nominal = Number(Number(row.nominal).toFixed(3));
+        return {
+          dimensionName: row.dimension_name,
+          avgMeasured,
+          nominal,
+          delta: Number((avgMeasured - nominal).toFixed(3)),
+          unit: row.unit,
+        };
+      }),
     };
   }
 
@@ -425,6 +630,16 @@ export class PostgresStore implements DataStore {
         );
       }
     }
+    for (const user of SEED_USERS) {
+      if (user.role !== 'engineering') continue;
+      const hashed = await bcrypt.hash(user.password, this.config.BCRYPT_ROUNDS);
+      await this.pool.query(
+        `INSERT INTO users (id, username, password, name, role, avatar)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [user.id, user.username, hashed, user.name, user.role, user.avatar ?? null],
+      );
+    }
 
     const partCount = await this.pool.query<{ count: string }>('SELECT COUNT(*)::bigint AS count FROM parts');
     if (Number(partCount.rows[0]?.count ?? 0) === 0) {
@@ -436,6 +651,15 @@ export class PostgresStore implements DataStore {
           [part.id, part.partName, part.partCode, part.vendor, JSON.stringify(part.dimensions)],
         );
       }
+    }
+
+    for (const shift of SEED_SHIFTS) {
+      await this.pool.query(
+        `INSERT INTO shift_schedules (id, shift, label, start_time, end_time, active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [shift.id, shift.shift, shift.label, shift.startTime, shift.endTime, shift.active],
+      );
     }
   }
 
@@ -451,12 +675,13 @@ export class PostgresStore implements DataStore {
   }
 
   private async insertInspection(client: PoolClient, event: InspectionCreatedEvent) {
+    const activeBatch = await this.getActiveBatchWithClient(client, event.partCode, event.shift ?? 'A');
     await client.query(
       `INSERT INTO inspections (
         event_id, station_id, timestamp, part_id, part_name, part_code, batch_no, vendor,
-        operator_id, operator_name, status, shift, line, confidence_score, measurements,
-        model_version, trigger
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)`,
+        operator_id, operator_name, status, shift, confidence_score, measurements,
+        detections, trigger
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16)`,
       [
         event.eventId,
         event.stationId,
@@ -464,19 +689,27 @@ export class PostgresStore implements DataStore {
         event.partId ?? null,
         event.partName,
         event.partCode,
-        event.batchNo ?? null,
+        event.batchNo ?? activeBatch?.batchNo ?? null,
         event.vendor ?? null,
         event.operatorId ?? null,
         event.operatorName ?? null,
         event.status,
-        event.shift ?? null,
-        event.line ?? null,
+        event.shift ?? 'A',
         event.confidenceScore,
         JSON.stringify(event.measurements),
-        event.modelVersion ?? null,
-        event.trigger ?? null,
+        JSON.stringify(event.detections),
+        event.trigger ?? 'manual',
       ],
     );
+
+    if (activeBatch) {
+      await client.query(
+        `UPDATE batches
+         SET actual_qty = actual_qty + $2
+         WHERE id = $1`,
+        [activeBatch.id, Math.max(1, event.detections.length)],
+      );
+    }
 
     const ngIncrement = event.status === 'NG' ? 1 : 0;
     await client.query(
@@ -503,8 +736,8 @@ export class PostgresStore implements DataStore {
 
   private async upsertStation(client: PoolClient, event: StationStatusEvent) {
     await client.query(
-      `INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code, model_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (station_id) DO UPDATE
        SET event_id         = EXCLUDED.event_id,
            timestamp        = EXCLUDED.timestamp,
@@ -512,8 +745,7 @@ export class PostgresStore implements DataStore {
            fps              = EXCLUDED.fps,
            running          = EXCLUDED.running,
            phase            = EXCLUDED.phase,
-           active_part_code = EXCLUDED.active_part_code,
-           model_version    = EXCLUDED.model_version`,
+           active_part_code = EXCLUDED.active_part_code`,
       [
         event.stationId,
         event.eventId,
@@ -523,7 +755,6 @@ export class PostgresStore implements DataStore {
         event.running ?? false,
         event.phase ?? null,
         event.activePartCode ?? null,
-        event.modelVersion ?? null,
       ],
     );
   }
@@ -544,10 +775,9 @@ function mapInspection(row: InspectionRow): InspectionCreatedEvent {
     operatorName: optional(row.operator_name),
     status: row.status,
     shift: row.shift ?? undefined,
-    line: optional(row.line),
     confidenceScore: row.confidence_score,
     measurements: json(row.measurements),
-    modelVersion: optional(row.model_version),
+    detections: json(row.detections),
     trigger: row.trigger ?? undefined,
   };
 }
@@ -563,7 +793,6 @@ function mapStation(row: StationRow): StationStatusEvent {
     running: row.running ?? false,
     phase: row.phase ?? undefined,
     activePartCode: optional(row.active_part_code),
-    modelVersion: optional(row.model_version),
   };
 }
 
@@ -590,6 +819,37 @@ function mapQualityRecord(row: QualityRecordRow): QualityTrackingRecord {
     requestStatus: row.request_status,
     statusHistory: json(row.status_history),
   };
+}
+
+function mapShiftSchedule(row: ShiftScheduleRow): ShiftSchedule {
+  return {
+    id: row.id,
+    shift: row.shift,
+    label: row.label,
+    startTime: String(row.start_time).slice(0, 5),
+    endTime: String(row.end_time).slice(0, 5),
+    active: row.active,
+  };
+}
+
+function mapBatch(row: BatchRow): Batch {
+  return {
+    id: row.id,
+    batchNo: row.batch_no,
+    partCode: row.part_code,
+    partName: row.part_name,
+    shift: row.shift,
+    status: row.status,
+    targetQty: row.target_qty,
+    actualQty: row.actual_qty,
+    createdAt: iso(row.created_at),
+    closedAt: row.closed_at ? iso(row.closed_at) : undefined,
+  };
+}
+
+function rate(ng: string, total: string) {
+  const denominator = Number(total);
+  return denominator > 0 ? Number(((Number(ng) / denominator) * 100).toFixed(1)) : 0;
 }
 
 function optional(value: string | null) {

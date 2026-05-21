@@ -2,7 +2,7 @@ export type InspectionStatus = 'OK' | 'NG';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
 export type StationPhase = 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked';
-export type InspectionTrigger = 'auto' | 'manual';
+export type InspectionTrigger = 'manual';
 
 export interface Measurement {
   dimensionName: string;
@@ -12,6 +12,22 @@ export interface Measurement {
   lowerLimit: number;
   unit: string;
   status: InspectionStatus;
+}
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ObjectDetection {
+  id: string;
+  label: string;
+  bbox: BoundingBox;
+  status: InspectionStatus;
+  confidenceScore: number;
+  measurements: Measurement[];
 }
 
 export interface InspectionCreatedEvent {
@@ -28,10 +44,9 @@ export interface InspectionCreatedEvent {
   operatorName?: string;
   status: InspectionStatus;
   shift?: 'A' | 'B' | 'C';
-  line?: string;
   confidenceScore: number;
   measurements: Measurement[];
-  modelVersion?: string;
+  detections: ObjectDetection[];
   trigger?: InspectionTrigger;
 }
 
@@ -45,7 +60,6 @@ export interface StationStatusEvent {
   running?: boolean;
   phase?: StationPhase;
   activePartCode?: string;
-  modelVersion?: string;
 }
 
 export type IngestEvent = InspectionCreatedEvent | StationStatusEvent;
@@ -93,6 +107,28 @@ export interface QualityTrackingRecord {
   ngRate: number;
   requestStatus: RequestStatus;
   statusHistory: StatusHistoryEntry[];
+}
+
+export interface ShiftSchedule {
+  id: string;
+  shift: 'A' | 'B' | 'C';
+  label: string;
+  startTime: string;
+  endTime: string;
+  active: boolean;
+}
+
+export interface Batch {
+  id: string;
+  batchNo: string;
+  partCode: string;
+  partName: string;
+  shift: 'A' | 'B' | 'C';
+  status: 'open' | 'closed';
+  targetQty: number;
+  actualQty: number;
+  createdAt: string;
+  closedAt?: string;
 }
 
 export interface InspectionQuery {
