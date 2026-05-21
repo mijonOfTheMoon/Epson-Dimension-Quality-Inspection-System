@@ -1,10 +1,10 @@
 import type { RealtimeEvent } from '../types/api';
-import { appendAuthToken, resolveWsUrl } from './api';
+import { appendAuthToken } from './api';
+import { wsUrl } from './ws-url';
 
 type RealtimeListener = (event: RealtimeEvent) => void;
 
-const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const WS_URL = resolveWsUrl(env?.VITE_WS_URL, '/ws');
+const WS_URL = wsUrl('/ws');
 
 const SNAPSHOT_BUFFER = 200;
 

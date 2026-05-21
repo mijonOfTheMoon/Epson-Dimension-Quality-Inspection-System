@@ -49,10 +49,6 @@ services:
     build:
       context: ./Frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: /api
-        VITE_WS_URL: /ws
-        VITE_FRAME_WS_URL: /ws/frames
     image: diminspect-frontend:latest
     container_name: diminspect-frontend
     restart: unless-stopped

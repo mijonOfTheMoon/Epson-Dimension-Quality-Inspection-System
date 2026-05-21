@@ -22,6 +22,6 @@ def load_config() -> AgentConfig:
     return AgentConfig(
         station_id=os.getenv("STATION_ID", "Station 1"),
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
-        backend_ws_url=os.getenv("BACKEND_WS_URL", "ws://localhost:4000/ws/agent"),
+        backend_ws_url=os.getenv("BACKEND_WS_URL", "ws://localhost/ws/agent"),
         agent_token=os.getenv("AGENT_TOKEN", "change-me-agent-shared-token"),
     )

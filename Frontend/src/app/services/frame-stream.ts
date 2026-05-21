@@ -1,9 +1,9 @@
-import { appendAuthToken, resolveWsUrl } from './api';
+import { appendAuthToken } from './api';
+import { wsUrl } from './ws-url';
 
 export type FrameListener = (stationId: string, frame: Blob) => void;
 
-const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const FRAME_WS_URL = resolveWsUrl(env?.VITE_FRAME_WS_URL, '/ws/frames');
+const FRAME_WS_URL = wsUrl('/ws/frames');
 
 class FrameStreamClient {
   private readonly sockets = new Map<string, WebSocket>();
