@@ -9,10 +9,31 @@ GUARDBAND_PERCENT = 0.2
 MIN_CONTOUR_AREA = 1000
 
 
+def _normalize_kind(raw: dict[str, Any]) -> str:
+    explicit = str(raw.get("kind", "")).strip().lower()
+    if explicit in {"width", "length", "diameter", "outer_diameter", "inner_diameter", "hole_diameter"}:
+        return explicit
+
+    name = str(raw.get("name", "")).strip().lower()
+    if "inner" in name or "inside" in name:
+        return "inner_diameter"
+    if "hole" in name or "lubang" in name:
+        return "hole_diameter"
+    if "outer" in name or "outside" in name:
+        return "outer_diameter"
+    if "diam" in name:
+        return "diameter"
+    if "length" in name or "panjang" in name:
+        return "length"
+    return "width"
+
+
 @dataclass(frozen=True)
 class DimensionSpec:
     id: str
     name: str
+    kind: str
+    view: str
     nominal: float
     upper_limit: float
     lower_limit: float
@@ -23,6 +44,8 @@ class DimensionSpec:
         return cls(
             id=str(raw.get("id", raw.get("name", ""))),
             name=str(raw.get("name", "Dimension")),
+            kind=_normalize_kind(raw),
+            view=str(raw.get("view", "top")),
             nominal=float(raw["nominal"]),
             upper_limit=float(raw["upperLimit"]),
             lower_limit=float(raw["lowerLimit"]),
@@ -179,15 +202,61 @@ def _status_for(value: float, spec: DimensionSpec) -> str:
     return "OK" if (spec.lower_limit + guard) <= value <= (spec.upper_limit - guard) else "NG"
 
 
-def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec) -> VisionResult:
+def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray) -> float | None:
+    x, y, w_box, h_box = cv2.boundingRect(contour)
+    if w_box <= 0 or h_box <= 0:
+        return None
+
+    crop_mask = mask[y:y + h_box, x:x + w_box]
+    local_contour = contour.copy()
+    local_contour[:, :, 0] -= x
+    local_contour[:, :, 1] -= y
+
+    filled = np.zeros((h_box, w_box), dtype=np.uint8)
+    cv2.drawContours(filled, [local_contour], -1, 255, -1)
+    holes = cv2.bitwise_and(filled, cv2.bitwise_not(crop_mask))
+    kernel = np.ones((3, 3), np.uint8)
+    holes = cv2.morphologyEx(holes, cv2.MORPH_OPEN, kernel)
+
+    hole_contours, _ = cv2.findContours(holes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    readable = [hole for hole in hole_contours if cv2.contourArea(hole) > MIN_CONTOUR_AREA * 0.05]
+    if not readable:
+        return None
+
+    largest = max(readable, key=cv2.contourArea)
+    (_, _), radius_px = cv2.minEnclosingCircle(largest)
+    return round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
+
+
+def _measure_dimension(
+    spec: DimensionSpec,
+    *,
+    width_mm: float,
+    length_mm: float,
+    diameter_mm: float,
+    hole_diameter_mm: float | None,
+) -> float | None:
+    if spec.kind == "width":
+        return width_mm
+    if spec.kind == "length":
+        return length_mm
+    if spec.kind in {"diameter", "outer_diameter"}:
+        return diameter_mm
+    if spec.kind in {"inner_diameter", "hole_diameter"}:
+        return hole_diameter_mm
+    return width_mm
+
+
+def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
     fg_area = int(cv2.countNonZero(mask))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) <= MIN_CONTOUR_AREA:
         return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
 
     result_frame = frame.copy()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     detections: list[ObjectDetection] = []
+    active_view = inspection_view if inspection_view in {"top", "side"} else "top"
+    active_specs = [spec for spec in part.dimensions if spec.view == active_view]
 
     ordered_contours = sorted(
         [contour for contour in contours if cv2.contourArea(contour) > MIN_CONTOUR_AREA],
@@ -202,28 +271,39 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec) -> Vision
         cy = int(moments["m01"] / moments["m00"]) if moments["m00"] else y + h_box // 2
         (circle_x, circle_y), radius_px = cv2.minEnclosingCircle(contour)
 
-        mid_y = y + h_box // 2
-        precise_left = _refine_edge_1d(gray, x, mid_y)
-        precise_right = _refine_edge_1d(gray, x + w_box, mid_y)
+        (_, _), (rect_w, rect_h), _ = cv2.minAreaRect(contour)
+        short_side_px = max(0.0, min(float(rect_w), float(rect_h)))
+        long_side_px = max(0.0, max(float(rect_w), float(rect_h)))
         diameter_mm = round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
-        width_mm = round(float((precise_right - precise_left) * PIXEL_TO_MM_RATIO), 3)
-
-        measured_by_name: dict[str, float] = {}
-        for spec in part.dimensions:
-            name = spec.name.lower()
-            if "diam" in name:
-                measured_by_name[spec.name] = diameter_mm
-            elif "width" in name or "lebar" in name:
-                measured_by_name[spec.name] = width_mm
-            else:
-                measured_by_name[spec.name] = diameter_mm if "h" not in name else width_mm
+        width_mm = round(short_side_px * PIXEL_TO_MM_RATIO, 3)
+        length_mm = round(long_side_px * PIXEL_TO_MM_RATIO, 3)
+        hole_mm = _hole_diameter_mm(mask, contour)
 
         measurements: list[Measurement] = []
         detection_ok = True
-        for spec in part.dimensions:
-            value = measured_by_name.get(spec.name, diameter_mm)
+        for spec in active_specs:
+            value = _measure_dimension(
+                spec,
+                width_mm=width_mm,
+                length_mm=length_mm,
+                diameter_mm=diameter_mm,
+                hole_diameter_mm=hole_mm,
+            )
+            if value is None:
+                detection_ok = False
+                measurements.append(Measurement(
+                    dimensionName=spec.name,
+                    measured=0.0,
+                    nominal=spec.nominal,
+                    upperLimit=spec.upper_limit,
+                    lowerLimit=spec.lower_limit,
+                    unit=spec.unit,
+                    status="UNREADABLE",
+                ))
+                continue
+
             status = _status_for(value, spec)
-            if status == "NG":
+            if status != "OK":
                 detection_ok = False
             measurements.append(Measurement(
                 dimensionName=spec.name,
@@ -233,6 +313,18 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec) -> Vision
                 lowerLimit=spec.lower_limit,
                 unit=spec.unit,
                 status=status,
+            ))
+
+        if not measurements and part.dimensions:
+            detection_ok = False
+            measurements.append(Measurement(
+                dimensionName=f"Dimensi {active_view}",
+                measured=0.0,
+                nominal=0.0,
+                upperLimit=0.0,
+                lowerLimit=0.0,
+                unit="mm",
+                status="UNREADABLE",
             ))
 
         if not measurements:

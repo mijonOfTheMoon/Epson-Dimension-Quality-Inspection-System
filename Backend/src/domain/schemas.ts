@@ -1,6 +1,23 @@
 import { z } from 'zod';
 
 const statusSchema = z.enum(['OK', 'NG']);
+export const measurementStatusSchema = z.enum(['OK', 'NG', 'UNREADABLE']);
+export const dimensionKindSchema = z.enum(['width', 'length', 'diameter', 'outer_diameter', 'inner_diameter', 'hole_diameter']);
+export const dimensionViewSchema = z.enum(['top', 'side']);
+
+export const dimensionSpecSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  kind: dimensionKindSchema,
+  view: dimensionViewSchema.default('top'),
+  nominal: z.coerce.number().finite(),
+  upperLimit: z.coerce.number().finite(),
+  lowerLimit: z.coerce.number().finite(),
+  unit: z.string().min(1).default('mm'),
+}).refine((value) => value.lowerLimit <= value.nominal && value.nominal <= value.upperLimit, {
+  message: 'nominal harus berada di antara lowerLimit dan upperLimit',
+  path: ['nominal'],
+});
 
 export const measurementSchema = z.object({
   dimensionName: z.string().min(1),
@@ -9,7 +26,7 @@ export const measurementSchema = z.object({
   upperLimit: z.number().finite(),
   lowerLimit: z.number().finite(),
   unit: z.string().min(1),
-  status: statusSchema,
+  status: measurementStatusSchema,
 });
 
 export const boundingBoxSchema = z.object({
@@ -58,6 +75,7 @@ export const stationStatusSchema = z.object({
   running: z.boolean().optional(),
   phase: z.enum(['idle', 'calibrating', 'ready', 'stabilizing', 'locked']).optional(),
   activePartCode: z.string().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const ingestEventSchema = z.discriminatedUnion('eventType', [

@@ -9,6 +9,7 @@ import type {
   ShiftSchedule,
   StationStatusEvent,
   User,
+  UserRole,
 } from '../domain/types.js';
 
 export interface DashboardSummary {
@@ -31,11 +32,19 @@ export interface DataStore {
   ingest(event: IngestEvent): Promise<IngestEvent | null>;
   listInspections(query: InspectionQuery): Promise<InspectionCreatedEvent[]>;
   listStations(): Promise<StationStatusEvent[]>;
+  deactivateStation(stationId: string): Promise<StationStatusEvent | null>;
   listParts(): Promise<PartType[]>;
   findPart(partCode: string): Promise<PartType | null>;
+  createPart(input: Omit<PartType, 'id'>): Promise<PartType>;
+  updatePart(id: string, input: Omit<PartType, 'id'>): Promise<PartType | null>;
+  deletePart(id: string): Promise<boolean>;
   listUsers(): Promise<Omit<User, 'password'>[]>;
   findUserByUsername(username: string): Promise<User | null>;
   findUserById(id: string): Promise<User | null>;
+  createUser(input: Omit<User, 'id'>): Promise<Omit<User, 'password'>>;
+  updateUser(id: string, input: Partial<Omit<User, 'id'>>): Promise<Omit<User, 'password'> | null>;
+  deleteUser(id: string): Promise<boolean>;
+  countUsersByRole(role: UserRole): Promise<number>;
   listShiftSchedules(): Promise<ShiftSchedule[]>;
   updateShiftSchedule(id: string, input: Pick<ShiftSchedule, 'label' | 'startTime' | 'endTime' | 'active'>): Promise<ShiftSchedule | null>;
   listBatches(): Promise<Batch[]>;

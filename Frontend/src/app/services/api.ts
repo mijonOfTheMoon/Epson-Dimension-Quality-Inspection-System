@@ -4,6 +4,7 @@ import type {
   AuthLoginResponse,
   Batch,
   DashboardSummary,
+  DimensionView,
   InspectionCreatedEvent,
   InspectionResult,
   PartType,
@@ -12,6 +13,7 @@ import type {
   ShiftSchedule,
   StationStatusEvent,
   User,
+  UserRole,
 } from '../types/api';
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
@@ -142,6 +144,21 @@ export const api = {
   getParts() {
     return request<PartType[]>('/api/parts');
   },
+  createPart(input: Omit<PartType, 'id'>) {
+    return request<PartType>('/api/parts', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  updatePart(id: string, input: Omit<PartType, 'id'>) {
+    return request<PartType>(`/api/parts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+  deletePart(id: string) {
+    return request<void>(`/api/parts/${id}`, { method: 'DELETE' });
+  },
   getShiftSchedules() {
     return request<ShiftSchedule[]>('/api/shift-schedules');
   },
@@ -190,10 +207,13 @@ export const api = {
   getAgents() {
     return request<AgentInfo[]>('/api/agents');
   },
-  startAgent(stationId: string, partCode: string, shift?: 'A' | 'B' | 'C', batchNo?: string) {
+  deleteStation(stationId: string) {
+    return request<void>(`/api/stations/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
+  },
+  startAgent(stationId: string, partCode: string, shift?: 'A' | 'B' | 'C', batchNo?: string, inspectionView: DimensionView = 'top') {
     return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
-      { method: 'POST', body: JSON.stringify({ command: 'start', partCode, shift, batchNo }) },
+      { method: 'POST', body: JSON.stringify({ command: 'start', partCode, shift, batchNo, inspectionView }) },
     );
   },
   stopAgent(stationId: string) {
@@ -202,10 +222,10 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ command: 'stop' }) },
     );
   },
-  captureNow(stationId: string) {
+  captureNow(stationId: string, inspectionView?: DimensionView) {
     return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
-      { method: 'POST', body: JSON.stringify({ command: 'capture' }) },
+      { method: 'POST', body: JSON.stringify({ command: 'capture', inspectionView }) },
     );
   },
   recalibrate(stationId: string) {
@@ -213,5 +233,20 @@ export const api = {
       `/api/agents/${encodeURIComponent(stationId)}/command`,
       { method: 'POST', body: JSON.stringify({ command: 'recalibrate' }) },
     );
+  },
+  createUser(input: { username: string; password: string; name: string; role: UserRole; avatar?: string }) {
+    return request<User>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  updateUser(id: string, input: { username: string; password?: string; name: string; role: UserRole; avatar?: string }) {
+    return request<User>(`/api/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+  deleteUser(id: string) {
+    return request<void>(`/api/users/${id}`, { method: 'DELETE' });
   },
 };

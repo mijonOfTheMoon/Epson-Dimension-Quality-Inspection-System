@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { inspectionCreatedSchema, loginSchema, statusUpdateSchema } from '../domain/schemas.js';
-import type { RequestStatus, UserRole } from '../domain/types.js';
+import { dimensionSpecSchema, inspectionCreatedSchema, loginSchema, statusUpdateSchema } from '../domain/schemas.js';
+import type { DimensionSpec, PartType, RequestStatus, UserRole } from '../domain/types.js';
 import type { AgentRegistry, AgentCommand } from '../realtime/agent-registry.js';
 import type { AuthService, SafeUser } from '../services/auth-service.js';
 import type { IngestionService } from '../services/ingestion-service.js';
@@ -16,8 +17,34 @@ const inspectionQuerySchema = z.object({
 const agentCommandSchema = z.object({
   command: z.enum(['start', 'stop', 'capture', 'recalibrate']),
   partCode: z.string().min(1).optional(),
+  inspectionView: z.enum(['top', 'side']).optional(),
   shift: z.enum(['A', 'B', 'C']).optional(),
   batchNo: z.string().min(1).optional(),
+});
+
+const partInputSchema = z.object({
+  partName: z.string().min(1),
+  partCode: z.string().min(1),
+  vendor: z.string().min(1),
+  dimensions: z.array(dimensionSpecSchema).min(1),
+});
+
+const userRoleSchema = z.enum(['operator', 'qc', 'supervisor', 'engineering', 'admin', 'vendor']);
+
+const userCreateSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(4),
+  name: z.string().min(1),
+  role: userRoleSchema,
+  avatar: z.string().optional(),
+});
+
+const userUpdateSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(4).optional().or(z.literal('')),
+  name: z.string().min(1),
+  role: userRoleSchema,
+  avatar: z.string().optional(),
 });
 
 const shiftUpdateSchema = z.object({
@@ -43,6 +70,8 @@ export interface RouteDeps {
 
 const APP_ROLES: UserRole[] = ['operator', 'qc', 'supervisor', 'engineering', 'admin'];
 const SETTINGS_ROLES: UserRole[] = ['qc', 'supervisor', 'engineering', 'admin'];
+const PART_MANAGER_ROLES: UserRole[] = ['engineering', 'admin'];
+const USER_MANAGER_ROLES: UserRole[] = ['admin'];
 
 const QUALITY_STATUS_ROLES: Record<RequestStatus, UserRole[]> = {
   not_requested: ['admin'],
@@ -79,6 +108,14 @@ function requireRole(request: FastifyRequest, reply: FastifyReply, roles: UserRo
 
 function canTransitionQualityStatus(current: RequestStatus, next: RequestStatus) {
   return QUALITY_STATUS_TRANSITIONS[current]?.includes(next) ?? false;
+}
+
+function normalizePartInput(input: z.infer<typeof partInputSchema>): Omit<PartType, 'id'> {
+  const dimensions: DimensionSpec[] = input.dimensions.map((dimension) => ({
+    ...dimension,
+    id: dimension.id?.trim() || randomUUID(),
+  }));
+  return { ...input, dimensions };
 }
 
 export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
@@ -129,14 +166,123 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
     return store.listStations();
   });
 
+  app.delete('/api/stations/:stationId', async (request, reply) => {
+    if (!requireRole(request, reply, SETTINGS_ROLES)) return;
+    const params = z.object({ stationId: z.string().min(1) }).parse(request.params);
+    agentRegistry.send(params.stationId, { type: 'stop' });
+    const station = await store.deactivateStation(params.stationId);
+    if (!station) return reply.code(404).send({ message: 'Station tidak ditemukan' });
+    const deactivated = await ingestion.ingest({
+      eventId: `station-deactivated-${params.stationId}-${randomUUID()}`,
+      eventType: 'station.status',
+      stationId: params.stationId,
+      timestamp: new Date().toISOString(),
+      state: 'offline',
+      running: false,
+      phase: 'idle',
+      isActive: false,
+    });
+    return deactivated ?? station;
+  });
+
   app.get('/api/parts', async (request, reply) => {
     if (!requireAuth(request, reply)) return;
     return store.listParts();
   });
 
+  app.post('/api/parts', async (request, reply) => {
+    if (!requireRole(request, reply, PART_MANAGER_ROLES)) return;
+    const body = partInputSchema.parse(request.body);
+    try {
+      const part = await store.createPart(normalizePartInput(body));
+      return reply.code(201).send(part);
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'Part gagal dibuat' });
+    }
+  });
+
+  app.patch('/api/parts/:id', async (request, reply) => {
+    if (!requireRole(request, reply, PART_MANAGER_ROLES)) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = partInputSchema.parse(request.body);
+    try {
+      const part = await store.updatePart(params.id, normalizePartInput(body));
+      if (!part) return reply.code(404).send({ message: 'Part tidak ditemukan' });
+      return part;
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'Part gagal diperbarui' });
+    }
+  });
+
+  app.delete('/api/parts/:id', async (request, reply) => {
+    if (!requireRole(request, reply, PART_MANAGER_ROLES)) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    try {
+      const deleted = await store.deletePart(params.id);
+      if (!deleted) return reply.code(404).send({ message: 'Part tidak ditemukan' });
+      return reply.code(204).send();
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'Part gagal dihapus' });
+    }
+  });
+
   app.get('/api/users', async (request, reply) => {
-    if (!requireAuth(request, reply)) return;
+    if (!requireRole(request, reply, USER_MANAGER_ROLES)) return;
     return store.listUsers();
+  });
+
+  app.post('/api/users', async (request, reply) => {
+    if (!requireRole(request, reply, USER_MANAGER_ROLES)) return;
+    const body = userCreateSchema.parse(request.body);
+    try {
+      const user = await store.createUser(body);
+      return reply.code(201).send(user);
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'User gagal dibuat' });
+    }
+  });
+
+  app.patch('/api/users/:id', async (request, reply) => {
+    const authUser = requireRole(request, reply, USER_MANAGER_ROLES);
+    if (!authUser) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = userUpdateSchema.parse(request.body);
+    const existing = await store.findUserById(params.id);
+    if (!existing) return reply.code(404).send({ message: 'User tidak ditemukan' });
+    if (authUser.id === params.id && body.role !== 'admin') {
+      return reply.code(400).send({ message: 'Tidak boleh mencabut role admin dari diri sendiri' });
+    }
+    if (existing.role === 'admin' && body.role !== 'admin' && await store.countUsersByRole('admin') <= 1) {
+      return reply.code(400).send({ message: 'Admin terakhir tidak boleh diubah rolenya' });
+    }
+    const password = body.password ? body.password : undefined;
+    try {
+      const user = await store.updateUser(params.id, { ...body, password });
+      if (!user) return reply.code(404).send({ message: 'User tidak ditemukan' });
+      return user;
+    } catch (error) {
+      if (error instanceof Error) return reply.code(400).send({ message: error.message });
+      return reply.code(400).send({ message: 'User gagal diperbarui' });
+    }
+  });
+
+  app.delete('/api/users/:id', async (request, reply) => {
+    const authUser = requireRole(request, reply, USER_MANAGER_ROLES);
+    if (!authUser) return;
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    if (authUser.id === params.id) return reply.code(400).send({ message: 'Tidak boleh menghapus user sendiri' });
+    const existing = await store.findUserById(params.id);
+    if (!existing) return reply.code(404).send({ message: 'User tidak ditemukan' });
+    if (existing.role === 'admin' && await store.countUsersByRole('admin') <= 1) {
+      return reply.code(400).send({ message: 'Admin terakhir tidak boleh dihapus' });
+    }
+    const deleted = await store.deleteUser(params.id);
+    if (!deleted) return reply.code(404).send({ message: 'User tidak ditemukan' });
+    return reply.code(204).send();
   });
 
   app.get('/api/shift-schedules', async (request, reply) => {
@@ -180,7 +326,8 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
 
   app.get('/api/agents', async (request, reply) => {
     if (!requireAuth(request, reply)) return;
-    return agentRegistry.list();
+    const activeStationIds = new Set((await store.listStations()).map((station) => station.stationId));
+    return agentRegistry.list().filter((agent) => activeStationIds.has(agent.stationId));
   });
 
   app.post('/api/agents/:stationId/command', async (request, reply) => {
@@ -202,8 +349,11 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
         dimensions: part.dimensions,
       };
       command.operator = { id: authUser.id, name: authUser.name };
+      command.inspectionView = body.inspectionView ?? 'top';
       command.shift = body.shift;
       command.batchNo = body.batchNo;
+    } else if (body.command === 'capture' && body.inspectionView) {
+      command.inspectionView = body.inspectionView;
     }
 
     const delivered = agentRegistry.send(params.stationId, command);

@@ -4,6 +4,8 @@ import { Pool, type PoolClient } from 'pg';
 import type { AppConfig } from '../config/env.js';
 import type {
   IngestEvent,
+  DimensionKind,
+  DimensionSpec,
   InspectionCreatedEvent,
   InspectionQuery,
   InspectionStatus,
@@ -16,6 +18,7 @@ import type {
   StationPhase,
   StationStatusEvent,
   User,
+  UserRole,
 } from '../domain/types.js';
 import type { DashboardSummary, DataStore } from './store.js';
 
@@ -41,8 +44,8 @@ const SEED_PARTS = [
     partCode: 'RDB-001',
     vendor: 'PT. Maju Jaya',
     dimensions: [
-      { id: 'd-001', name: 'Diameter', nominal: 280, upperLimit: 280.5, lowerLimit: 279.5, unit: 'mm' },
-      { id: 'd-002', name: 'Thickness', nominal: 22, upperLimit: 22.3, lowerLimit: 21.7, unit: 'mm' },
+      { id: 'd-001', name: 'Diameter', kind: 'diameter', view: 'top', nominal: 280, upperLimit: 280.5, lowerLimit: 279.5, unit: 'mm' },
+      { id: 'd-002', name: 'Thickness', kind: 'width', view: 'side', nominal: 22, upperLimit: 22.3, lowerLimit: 21.7, unit: 'mm' },
     ],
   },
   {
@@ -51,8 +54,8 @@ const SEED_PARTS = [
     partCode: 'BPS-002',
     vendor: 'PT. Maju Jaya',
     dimensions: [
-      { id: 'd-003', name: 'Width', nominal: 55, upperLimit: 55.4, lowerLimit: 54.6, unit: 'mm' },
-      { id: 'd-004', name: 'Height', nominal: 42, upperLimit: 42.3, lowerLimit: 41.7, unit: 'mm' },
+      { id: 'd-003', name: 'Width', kind: 'width', view: 'top', nominal: 55, upperLimit: 55.4, lowerLimit: 54.6, unit: 'mm' },
+      { id: 'd-004', name: 'Length', kind: 'length', view: 'top', nominal: 42, upperLimit: 42.3, lowerLimit: 41.7, unit: 'mm' },
     ],
   },
 ];
@@ -231,6 +234,13 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at DESC);
     `,
   },
+  {
+    version: 8,
+    sql: `
+      ALTER TABLE stations ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+      UPDATE stations SET is_active = true WHERE is_active IS NULL;
+    `,
+  },
 ];
 
 interface InspectionRow {
@@ -261,6 +271,7 @@ interface StationRow {
   running: boolean | null;
   phase: StationPhase | null;
   active_part_code: string | null;
+  is_active: boolean | null;
 }
 
 interface PartRow {
@@ -368,10 +379,28 @@ export class PostgresStore implements DataStore {
 
   async listStations() {
     const result = await this.pool.query<StationRow>(
-      `SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code
-       FROM stations ORDER BY timestamp DESC`,
+      `SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code, is_active
+       FROM stations
+       WHERE is_active = true
+       ORDER BY timestamp DESC`,
     );
     return result.rows.map(mapStation);
+  }
+
+  async deactivateStation(stationId: string) {
+    const result = await this.pool.query<StationRow>(
+      `UPDATE stations
+       SET state = 'offline',
+           running = false,
+           phase = 'idle',
+           active_part_code = NULL,
+           is_active = false,
+           timestamp = now()
+       WHERE station_id = $1
+       RETURNING event_id, station_id, timestamp, state, fps, running, phase, active_part_code, is_active`,
+      [stationId],
+    );
+    return result.rows[0] ? mapStation(result.rows[0]) : null;
   }
 
   async listParts() {
@@ -387,6 +416,46 @@ export class PostgresStore implements DataStore {
     return result.rows[0] ? mapPart(result.rows[0]) : null;
   }
 
+  async createPart(input: Omit<PartType, 'id'>) {
+    const id = `part-${randomUUID()}`;
+    const dimensions = normalizeDimensions(input.dimensions);
+    const result = await this.pool.query<PartRow>(
+      `INSERT INTO parts (id, part_name, part_code, vendor, dimensions)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       RETURNING *`,
+      [id, input.partName, input.partCode, input.vendor, JSON.stringify(dimensions)],
+    );
+    return mapPart(result.rows[0]);
+  }
+
+  async updatePart(id: string, input: Omit<PartType, 'id'>) {
+    const dimensions = normalizeDimensions(input.dimensions);
+    const result = await this.pool.query<PartRow>(
+      `UPDATE parts
+       SET part_name = $2, part_code = $3, vendor = $4, dimensions = $5::jsonb
+       WHERE id = $1
+       RETURNING *`,
+      [id, input.partName, input.partCode, input.vendor, JSON.stringify(dimensions)],
+    );
+    return result.rows[0] ? mapPart(result.rows[0]) : null;
+  }
+
+  async deletePart(id: string) {
+    const part = await this.pool.query<PartRow>('SELECT * FROM parts WHERE id = $1 LIMIT 1', [id]);
+    if (!part.rows[0]) return false;
+    const openBatch = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::bigint AS count
+       FROM batches
+       WHERE part_code = $1 AND status = 'open'`,
+      [part.rows[0].part_code],
+    );
+    if (Number(openBatch.rows[0]?.count ?? 0) > 0) {
+      throw new Error('Part masih dipakai batch aktif');
+    }
+    const result = await this.pool.query('DELETE FROM parts WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async listUsers(): Promise<Omit<User, 'password'>[]> {
     const result = await this.pool.query<Omit<User, 'password'>>(
       'SELECT id, username, name, role, avatar FROM users ORDER BY name ASC',
@@ -400,6 +469,51 @@ export class PostgresStore implements DataStore {
       [username],
     );
     return result.rows[0] ?? null;
+  }
+
+  async createUser(input: Omit<User, 'id'>): Promise<Omit<User, 'password'>> {
+    const hashed = await bcrypt.hash(input.password, this.config.BCRYPT_ROUNDS);
+    const result = await this.pool.query<Omit<User, 'password'>>(
+      `INSERT INTO users (id, username, password, name, role, avatar)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, username, name, role, avatar`,
+      [`user-${randomUUID()}`, input.username, hashed, input.name, input.role, input.avatar ?? null],
+    );
+    return result.rows[0];
+  }
+
+  async updateUser(id: string, input: Partial<Omit<User, 'id'>>): Promise<Omit<User, 'password'> | null> {
+    const existing = await this.findUserById(id);
+    if (!existing) return null;
+    const password = input.password ? await bcrypt.hash(input.password, this.config.BCRYPT_ROUNDS) : existing.password;
+    const result = await this.pool.query<Omit<User, 'password'>>(
+      `UPDATE users
+       SET username = $2, password = $3, name = $4, role = $5, avatar = $6
+       WHERE id = $1
+       RETURNING id, username, name, role, avatar`,
+      [
+        id,
+        input.username ?? existing.username,
+        password,
+        input.name ?? existing.name,
+        input.role ?? existing.role,
+        input.avatar ?? existing.avatar ?? null,
+      ],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async deleteUser(id: string) {
+    const result = await this.pool.query('DELETE FROM users WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async countUsersByRole(role: UserRole) {
+    const result = await this.pool.query<{ count: string }>(
+      'SELECT COUNT(*)::bigint AS count FROM users WHERE role = $1',
+      [role],
+    );
+    return Number(result.rows[0]?.count ?? 0);
   }
 
   async findUserById(id: string): Promise<User | null> {
@@ -505,8 +619,9 @@ export class PostgresStore implements DataStore {
       ),
       this.pool.query<{ total: string; active: string }>(
         `SELECT COUNT(*)::bigint AS total,
-                COUNT(*) FILTER (WHERE state = 'online')::bigint AS active
-         FROM stations`,
+                COUNT(*) FILTER (WHERE state = 'online' AND is_active = true)::bigint AS active
+         FROM stations
+         WHERE is_active = true`,
       ),
       this.pool.query<{ station_id: string; ok: string; ng: string; total: string }>(
         `SELECT station_id,
@@ -724,8 +839,8 @@ export class PostgresStore implements DataStore {
 
   private async upsertStation(client: PoolClient, event: StationStatusEvent) {
     await client.query(
-      `INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
        ON CONFLICT (station_id) DO UPDATE
        SET event_id         = EXCLUDED.event_id,
            timestamp        = EXCLUDED.timestamp,
@@ -733,7 +848,8 @@ export class PostgresStore implements DataStore {
            fps              = EXCLUDED.fps,
            running          = EXCLUDED.running,
            phase            = EXCLUDED.phase,
-           active_part_code = EXCLUDED.active_part_code`,
+           active_part_code = EXCLUDED.active_part_code,
+           is_active        = COALESCE($9, stations.is_active)`,
       [
         event.stationId,
         event.eventId,
@@ -743,6 +859,7 @@ export class PostgresStore implements DataStore {
         event.running ?? false,
         event.phase ?? null,
         event.activePartCode ?? null,
+        event.isActive ?? null,
       ],
     );
   }
@@ -781,6 +898,7 @@ function mapStation(row: StationRow): StationStatusEvent {
     running: row.running ?? false,
     phase: row.phase ?? undefined,
     activePartCode: optional(row.active_part_code),
+    isActive: row.is_active ?? undefined,
   };
 }
 
@@ -790,7 +908,7 @@ function mapPart(row: PartRow): PartType {
     partName: row.part_name,
     partCode: row.part_code,
     vendor: row.vendor,
-    dimensions: json(row.dimensions),
+    dimensions: normalizeDimensions(json(row.dimensions)),
   };
 }
 
@@ -847,6 +965,35 @@ function optional(value: string | null) {
 function json<T>(value: unknown): T {
   if (typeof value === 'string') return JSON.parse(value) as T;
   return value as T;
+}
+
+function normalizeDimensions(value: unknown): DimensionSpec[] {
+  const raw = Array.isArray(value) ? value : [];
+  return raw.map((item, index) => {
+    const dim = item as Partial<DimensionSpec> & { kind?: unknown; view?: unknown; name?: unknown };
+    const name = String(dim.name ?? `Dimension ${index + 1}`);
+    return {
+      id: String(dim.id ?? `dim-${index + 1}`),
+      name,
+      kind: normalizeKind(dim.kind, name),
+      view: dim.view === 'side' ? 'side' : 'top',
+      nominal: Number(dim.nominal ?? 0),
+      upperLimit: Number(dim.upperLimit ?? dim.nominal ?? 0),
+      lowerLimit: Number(dim.lowerLimit ?? dim.nominal ?? 0),
+      unit: String(dim.unit ?? 'mm'),
+    };
+  });
+}
+
+function normalizeKind(value: unknown, name: string): DimensionKind {
+  const allowed: DimensionKind[] = ['width', 'length', 'diameter', 'outer_diameter', 'inner_diameter', 'hole_diameter'];
+  if (typeof value === 'string' && allowed.includes(value as DimensionKind)) return value as DimensionKind;
+  const lower = name.toLowerCase();
+  if (lower.includes('inner') || lower.includes('hole')) return 'inner_diameter';
+  if (lower.includes('outer')) return 'outer_diameter';
+  if (lower.includes('diam')) return 'diameter';
+  if (lower.includes('length') || lower.includes('height') || lower.includes('panjang')) return 'length';
+  return 'width';
 }
 
 function iso(value: string | Date) {

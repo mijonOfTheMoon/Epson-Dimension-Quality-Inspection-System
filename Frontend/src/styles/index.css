@@ -1,3 +1,18 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+.input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.input:focus {
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 0.35);
+  border-color: rgb(59 130 246);
+}

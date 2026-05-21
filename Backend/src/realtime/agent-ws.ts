@@ -80,6 +80,7 @@ export async function registerAgentWs(
       timestamp: connection.connectedAt,
       state: 'online',
       running: false,
+      isActive: true,
     }).catch((error) => {
       app.log.debug({ err: error, stationId }, 'failed to record agent online');
     });

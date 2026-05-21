@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import {
   LayoutDashboard, History, AlertTriangle, LogOut,
-  Menu, Settings, Video, ChevronUp, Moon, Sun,
+  Menu, Settings, Video, ChevronUp, Moon, Sun, Package, Users,
 } from 'lucide-react';
 import { useState } from 'react';
 import Logo from '../../assets/Logo.png';
@@ -32,7 +32,9 @@ export function Layout() {
     { to: '/live-tracking', icon: Video, label: 'Live Tracking', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/history', icon: History, label: 'Riwayat Inspeksi', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/quality-tracking', icon: AlertTriangle, label: 'Quality Tracking', roles: ['engineering', 'supervisor', 'vendor', 'admin'] },
-    { to: '/settings', icon: Settings, label: 'Settings', roles: ['qc', 'supervisor', 'engineering', 'admin'] },
+    { to: '/part-configuration', icon: Package, label: 'Konfigurasi Part', roles: ['engineering', 'admin'] },
+    { to: '/user-management', icon: Users, label: 'Manajemen User', roles: ['admin'] },
+    { to: '/settings', icon: Settings, label: 'Pengaturan', roles: ['qc', 'supervisor', 'engineering', 'admin'] },
   ];
 
   const visibleItems = navItems.filter((item) => item.roles.some((r) => hasRole(r)));

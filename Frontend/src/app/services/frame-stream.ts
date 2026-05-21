@@ -22,7 +22,10 @@ class FrameStreamClient {
       if (listeners.size === 0) {
         this.listeners.delete(stationId);
         this.clearRetry(stationId);
-        this.sockets.get(stationId)?.close();
+        const socket = this.sockets.get(stationId);
+        this.sockets.delete(stationId);
+        this.connecting.delete(stationId);
+        socket?.close();
       }
     };
   }
@@ -42,6 +45,10 @@ class FrameStreamClient {
     this.sockets.set(stationId, socket);
 
     socket.onopen = () => {
+      if (this.sockets.get(stationId) !== socket) {
+        try { socket.close(); } catch { /* ignore */ }
+        return;
+      }
       this.retryMs.set(stationId, 1000);
       this.connecting.delete(stationId);
     };
@@ -50,7 +57,7 @@ class FrameStreamClient {
       this.handlePacket(message.data);
     };
     socket.onclose = () => {
-      this.sockets.delete(stationId);
+      if (this.sockets.get(stationId) === socket) this.sockets.delete(stationId);
       this.connecting.delete(stationId);
       if (!this.listeners.has(stationId)) return;
       const retryMs = this.retryMs.get(stationId) ?? 1000;

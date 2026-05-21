@@ -1,8 +1,11 @@
 export type InspectionStatus = 'OK' | 'NG';
+export type MeasurementStatus = InspectionStatus | 'UNREADABLE';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
 export type StationPhase = 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked';
 export type InspectionTrigger = 'manual';
+export type DimensionView = 'top' | 'side';
+export type DimensionKind = 'width' | 'length' | 'diameter' | 'outer_diameter' | 'inner_diameter' | 'hole_diameter';
 
 export interface Measurement {
   dimensionName: string;
@@ -11,7 +14,7 @@ export interface Measurement {
   upperLimit: number;
   lowerLimit: number;
   unit: string;
-  status: InspectionStatus;
+  status: MeasurementStatus;
 }
 
 export interface BoundingBox {
@@ -60,6 +63,7 @@ export interface StationStatusEvent {
   running?: boolean;
   phase?: StationPhase;
   activePartCode?: string;
+  isActive?: boolean;
 }
 
 export type IngestEvent = InspectionCreatedEvent | StationStatusEvent;
@@ -75,6 +79,8 @@ export interface PartType {
 export interface DimensionSpec {
   id: string;
   name: string;
+  kind: DimensionKind;
+  view: DimensionView;
   nominal: number;
   upperLimit: number;
   lowerLimit: number;

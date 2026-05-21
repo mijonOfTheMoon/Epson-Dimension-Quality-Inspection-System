@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import type { DimensionSpec } from '../domain/types.js';
+import type { DimensionSpec, DimensionView } from '../domain/types.js';
 
 export interface AgentConnection {
   stationId: string;
@@ -29,6 +29,7 @@ export interface AgentCommand {
   type: AgentCommandType;
   part?: AgentPartPayload;
   operator?: { id: string; name: string };
+  inspectionView?: DimensionView;
   shift?: 'A' | 'B' | 'C';
   batchNo?: string;
 }

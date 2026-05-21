@@ -82,6 +82,7 @@ class InspectionRunner:
         self._operator_name = "Vision Agent"
         self._shift = "A"
         self._batch_no: str | None = None
+        self._inspection_view = "top"
         self._frame_interval = 1.0 / FRAME_FPS
         self.link = AgentLink(config, self._enqueue_command)
 
@@ -106,10 +107,15 @@ class InspectionRunner:
             self._shift = str(command.get("shift", "A"))
             batch_no = command.get("batchNo")
             self._batch_no = str(batch_no) if batch_no else None
+            view = str(command.get("inspectionView", "top"))
+            self._inspection_view = view if view in {"top", "side"} else "top"
             self._running.set()
         elif kind == "stop":
             self._running.clear()
         elif kind in ("capture", "recalibrate"):
+            if kind == "capture":
+                view = str(command.get("inspectionView", self._inspection_view))
+                self._inspection_view = view if view in {"top", "side"} else self._inspection_view
             try:
                 self._commands.put_nowait(command)
             except queue.Full:
@@ -229,7 +235,7 @@ class InspectionRunner:
                     continue
 
                 mask = compute_foreground_mask(frame, background)
-                result = inspect_frame(frame, mask, self._part)
+                result = inspect_frame(frame, mask, self._part, self._inspection_view)
 
                 manual_capture = self._drain_command("capture")
 
