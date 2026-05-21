@@ -67,7 +67,6 @@ export const ingestEventSchema = z.discriminatedUnion('eventType', [
 
 export const statusUpdateSchema = z.object({
   status: z.enum(['not_requested', 'requested', 'in_progress', 'shipped', 'received']),
-  changedBy: z.string().min(1),
 });
 
 export const loginSchema = z.object({

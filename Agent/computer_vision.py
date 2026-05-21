@@ -233,7 +233,20 @@ class InspectionRunner:
 
                 manual_capture = self._drain_command("capture")
 
-                if phase == "ready":
+                if manual_capture and result.inspection is not None:
+                    event = build_inspection_event(self.config, result.inspection, "manual")
+                    event["operatorId"] = self._operator_id
+                    event["operatorName"] = self._operator_name
+                    event["shift"] = self._shift
+                    if self._batch_no:
+                        event["batchNo"] = self._batch_no
+                    self.link.send_event(event)
+                    phase = "locked"
+                    clear_count = 0
+                    stable_count = 0
+                    self._send_status(phase=phase, running=True, fps=fps)
+
+                elif phase == "ready":
                     if result.inspection is not None and result.foreground_area >= FOREGROUND_AREA_THRESHOLD:
                         stable_count += 1
                         if stable_count >= STABILITY_FRAMES:
@@ -243,19 +256,6 @@ class InspectionRunner:
                             self._send_status(phase=phase, running=True, fps=fps)
                     else:
                         stable_count = 0
-
-                    if manual_capture and result.inspection is not None:
-                        event = build_inspection_event(self.config, result.inspection, "manual")
-                        event["operatorId"] = self._operator_id
-                        event["operatorName"] = self._operator_name
-                        event["shift"] = self._shift
-                        if self._batch_no:
-                            event["batchNo"] = self._batch_no
-                        self.link.send_event(event)
-                        phase = "locked"
-                        clear_count = 0
-                        stable_count = 0
-                        self._send_status(phase=phase, running=True, fps=fps)
 
                 elif phase == "locked":
                     if result.foreground_area < FOREGROUND_AREA_THRESHOLD:

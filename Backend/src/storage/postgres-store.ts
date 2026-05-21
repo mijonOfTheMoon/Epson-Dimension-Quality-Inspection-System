@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { Pool, type PoolClient } from 'pg';
 import type { AppConfig } from '../config/env.js';
@@ -437,7 +438,7 @@ export class PostgresStore implements DataStore {
       `INSERT INTO batches (id, batch_no, part_code, part_name, shift, status, target_qty)
        VALUES ($1, $2, $3, $4, $5, 'open', $6)
        RETURNING *`,
-      [`batch-${Date.now()}`, input.batchNo, part.partCode, part.partName, input.shift, input.targetQty],
+      [`batch-${randomUUID()}`, input.batchNo, part.partCode, part.partName, input.shift, input.targetQty],
     );
     return mapBatch(result.rows[0]);
   }
@@ -618,25 +619,12 @@ export class PostgresStore implements DataStore {
   }
 
   private async seedStaticData() {
-    const userCount = await this.pool.query<{ count: string }>('SELECT COUNT(*)::bigint AS count FROM users');
-    if (Number(userCount.rows[0]?.count ?? 0) === 0) {
-      for (const user of SEED_USERS) {
-        const hashed = await bcrypt.hash(user.password, this.config.BCRYPT_ROUNDS);
-        await this.pool.query(
-          `INSERT INTO users (id, username, password, name, role, avatar)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (id) DO NOTHING`,
-          [user.id, user.username, hashed, user.name, user.role, user.avatar ?? null],
-        );
-      }
-    }
     for (const user of SEED_USERS) {
-      if (user.role !== 'engineering') continue;
       const hashed = await bcrypt.hash(user.password, this.config.BCRYPT_ROUNDS);
       await this.pool.query(
         `INSERT INTO users (id, username, password, name, role, avatar)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (id) DO NOTHING`,
+         ON CONFLICT DO NOTHING`,
         [user.id, user.username, hashed, user.name, user.role, user.avatar ?? null],
       );
     }

@@ -63,29 +63,38 @@ class AgentLink:
 
         while not self._stop.is_set():
             self._ready.clear()
-            self._ws = websocket.WebSocketApp(
+            opened = threading.Event()
+
+            def on_open(ws: Any) -> None:
+                opened.set()
+                self._on_open(ws)
+
+            ws = websocket.WebSocketApp(
                 url,
                 header=[f"Authorization: Bearer {self.config.agent_token}"],
-                on_open=self._on_open,
+                on_open=on_open,
                 on_message=self._on_message,
                 on_close=self._on_close,
                 on_error=self._on_error,
             )
-            sender = threading.Thread(target=self._sender_loop, daemon=True)
+            self._ws = ws
+            sender = threading.Thread(target=self._sender_loop, args=(ws,), daemon=True)
             sender.start()
             try:
-                self._ws.run_forever(ping_interval=20, ping_timeout=10)
+                ws.run_forever(ping_interval=20, ping_timeout=10)
             except Exception:
                 pass
             self._ready.clear()
             if self._stop.is_set():
                 break
+            if opened.is_set():
+                backoff = 1.0
             time.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
         self._ready.clear()
 
-    def _sender_loop(self) -> None:
-        while self._ws is not None and not self._stop.is_set():
+    def _sender_loop(self, ws: websocket.WebSocketApp) -> None:
+        while self._ws is ws and not self._stop.is_set():
             if not self._ready.wait(timeout=0.5):
                 if self._stop.is_set():
                     return
@@ -95,9 +104,10 @@ class AgentLink:
             except queue.Empty:
                 continue
             try:
-                self._ws.send(data, opcode=opcode)
+                ws.send(data, opcode=opcode)
             except Exception:
-                self._ready.clear()
+                if self._ws is ws:
+                    self._ready.clear()
                 return
 
     def _on_open(self, _ws: Any) -> None:

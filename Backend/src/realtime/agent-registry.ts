@@ -51,9 +51,13 @@ export class AgentRegistry {
     return connection;
   }
 
-  unregister(stationId: string, socket: WebSocket) {
+  unregister(stationId: string, socket: WebSocket): boolean {
     const current = this.agents.get(stationId);
-    if (current && current.socket === socket) this.agents.delete(stationId);
+    if (current && current.socket === socket) {
+      this.agents.delete(stationId);
+      return true;
+    }
+    return false;
   }
 
   get(stationId: string): AgentConnection | undefined {

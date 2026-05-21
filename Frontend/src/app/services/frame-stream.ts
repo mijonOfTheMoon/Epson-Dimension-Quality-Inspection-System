@@ -1,4 +1,4 @@
-import { resolveWsUrl } from './api';
+import { appendAuthToken, resolveWsUrl } from './api';
 
 export type FrameListener = (stationId: string, frame: Blob) => void;
 
@@ -10,6 +10,7 @@ class FrameStreamClient {
   private readonly listeners = new Map<string, Set<FrameListener>>();
   private readonly retryMs = new Map<string, number>();
   private readonly connecting = new Set<string>();
+  private readonly timers = new Map<string, number>();
 
   subscribe(stationId: string, listener: FrameListener) {
     const listeners = this.listeners.get(stationId) ?? new Set<FrameListener>();
@@ -20,6 +21,7 @@ class FrameStreamClient {
       listeners.delete(listener);
       if (listeners.size === 0) {
         this.listeners.delete(stationId);
+        this.clearRetry(stationId);
         this.sockets.get(stationId)?.close();
       }
     };
@@ -32,8 +34,9 @@ class FrameStreamClient {
   }
 
   private connect(stationId: string) {
+    if (!this.listeners.has(stationId)) return;
     this.connecting.add(stationId);
-    const url = `${FRAME_WS_URL}${FRAME_WS_URL.includes('?') ? '&' : '?'}stationId=${encodeURIComponent(stationId)}`;
+    const url = appendAuthToken(`${FRAME_WS_URL}${FRAME_WS_URL.includes('?') ? '&' : '?'}stationId=${encodeURIComponent(stationId)}`);
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
     this.sockets.set(stationId, socket);
@@ -51,12 +54,24 @@ class FrameStreamClient {
       this.connecting.delete(stationId);
       if (!this.listeners.has(stationId)) return;
       const retryMs = this.retryMs.get(stationId) ?? 1000;
-      window.setTimeout(() => this.connect(stationId), retryMs);
+      const timer = window.setTimeout(() => {
+        this.timers.delete(stationId);
+        this.connect(stationId);
+      }, retryMs);
+      this.timers.set(stationId, timer);
       this.retryMs.set(stationId, Math.min(retryMs * 2, 15000));
     };
     socket.onerror = () => {
       try { socket.close(); } catch { /* ignore */ }
     };
+  }
+
+  private clearRetry(stationId: string) {
+    const timer = this.timers.get(stationId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.timers.delete(stationId);
+    }
   }
 
   private handlePacket(buffer: ArrayBuffer) {

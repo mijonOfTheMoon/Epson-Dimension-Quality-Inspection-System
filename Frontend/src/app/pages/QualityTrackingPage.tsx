@@ -87,7 +87,7 @@ export function QualityTrackingPage() {
   const canUpdateVendor = role === 'vendor' || role === 'admin';
 
   const handleStatusChange = (recordId: string, newStatus: RequestStatus) => {
-    api.updateQualityStatus(recordId, newStatus, user?.name || 'Unknown').then((record) => {
+    api.updateQualityStatus(recordId, newStatus).then((record) => {
       setRecords((prev) => prev.map((item) => item.id === record.id ? record : item));
       showToast(`Status berhasil diubah ke "${STATUS_CONFIG[newStatus].label}"`);
     }).catch((err) => {

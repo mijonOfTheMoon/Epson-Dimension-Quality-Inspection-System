@@ -46,7 +46,8 @@ export async function registerAgentWs(
     });
 
     const cleanup = async () => {
-      registry.unregister(stationId, socket);
+      const removedActiveConnection = registry.unregister(stationId, socket);
+      if (!removedActiveConnection) return;
       frameBus.forget(stationId);
       try {
         await ingestion.ingest({
@@ -79,6 +80,8 @@ export async function registerAgentWs(
       timestamp: connection.connectedAt,
       state: 'online',
       running: false,
+    }).catch((error) => {
+      app.log.debug({ err: error, stationId }, 'failed to record agent online');
     });
   });
 }

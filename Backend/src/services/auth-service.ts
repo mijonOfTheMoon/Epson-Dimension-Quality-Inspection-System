@@ -74,3 +74,12 @@ export function extractBearerToken(header: string | undefined): string | undefin
   const match = /^Bearer\s+(.+)$/i.exec(header);
   return match?.[1];
 }
+
+export function extractQueryToken(query: unknown): string | undefined {
+  if (!query || typeof query !== 'object') return undefined;
+  const token = (query as { token?: unknown; access_token?: unknown }).token
+    ?? (query as { token?: unknown; access_token?: unknown }).access_token;
+  if (typeof token !== 'string') return undefined;
+  const trimmed = token.trim();
+  return trimmed || undefined;
+}

@@ -1,5 +1,5 @@
 import type { RealtimeEvent } from '../types/api';
-import { resolveWsUrl } from './api';
+import { appendAuthToken, resolveWsUrl } from './api';
 
 type RealtimeListener = (event: RealtimeEvent) => void;
 
@@ -23,22 +23,32 @@ class RealtimeClient {
     this.ensureConnection();
     return () => {
       this.listeners.delete(listener);
+      if (this.listeners.size === 0) this.disconnect();
     };
   }
 
   private ensureConnection() {
     if (typeof WebSocket === 'undefined') return;
-    if (this.socket || this.connecting) return;
     this.closed = false;
+    if (this.timer !== undefined) {
+      window.clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    if (this.socket || this.connecting) return;
     this.connect();
   }
 
   private connect() {
+    if (this.closed || this.listeners.size === 0) return;
     this.connecting = true;
-    const socket = new WebSocket(WS_URL);
+    const socket = new WebSocket(appendAuthToken(WS_URL));
     this.socket = socket;
 
     socket.onopen = () => {
+      if (this.socket !== socket) {
+        try { socket.close(); } catch { /* ignore */ }
+        return;
+      }
       this.retryMs = 1000;
       this.connecting = false;
     };
@@ -53,7 +63,7 @@ class RealtimeClient {
       } catch { /* ignore */ }
     };
     socket.onclose = () => {
-      this.socket = null;
+      if (this.socket === socket) this.socket = null;
       this.connecting = false;
       if (this.closed || this.listeners.size === 0) return;
       this.timer = window.setTimeout(() => this.connect(), this.retryMs);
@@ -62,6 +72,20 @@ class RealtimeClient {
     socket.onerror = () => {
       try { socket.close(); } catch { /* ignore */ }
     };
+  }
+
+  private disconnect() {
+    this.closed = true;
+    this.connecting = false;
+    if (this.timer !== undefined) {
+      window.clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      try { socket.close(); } catch { /* ignore */ }
+    }
   }
 
   private dispatch(event: RealtimeEvent) {

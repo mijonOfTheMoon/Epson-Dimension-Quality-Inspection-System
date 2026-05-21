@@ -1,6 +1,7 @@
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import fastify from 'fastify';
+import { ZodError } from 'zod';
 import type { AppConfig } from '../config/env.js';
 import { AgentRegistry } from '../realtime/agent-registry.js';
 import { EventBus } from '../realtime/event-bus.js';
@@ -32,6 +33,19 @@ export async function createServer(config: AppConfig, store: DataStore) {
   });
   await app.register(websocket);
 
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        message: 'Invalid request',
+        issues: error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      });
+    }
+    return reply.send(error);
+  });
+
   app.addHook('onRequest', async (request) => {
     const token = extractBearerToken(request.headers.authorization);
     if (!token) return;
@@ -40,8 +54,8 @@ export async function createServer(config: AppConfig, store: DataStore) {
   });
 
   await registerRoutes(app, { store, ingestion, auth, agentRegistry });
-  await registerRealtime(app, eventBus);
-  await registerFrameWs(app, frameBus);
+  await registerRealtime(app, eventBus, auth);
+  await registerFrameWs(app, frameBus, auth);
   await registerAgentWs(app, config, agentRegistry, frameBus, ingestion);
 
   return { app, ingestion, frameBus, agentRegistry, auth };

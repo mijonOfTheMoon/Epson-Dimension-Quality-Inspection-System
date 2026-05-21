@@ -51,6 +51,13 @@ export const tokenStorage = {
   },
 };
 
+export function appendAuthToken(url: string): string {
+  const token = tokenStorage.get();
+  if (!token) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+}
+
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -171,10 +178,10 @@ export const api = {
   getQualityRecords() {
     return request<QualityTrackingRecord[]>('/api/quality-records');
   },
-  updateQualityStatus(id: string, status: RequestStatus, changedBy: string) {
+  updateQualityStatus(id: string, status: RequestStatus) {
     return request<QualityTrackingRecord>(`/api/quality-records/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, changedBy }),
+      body: JSON.stringify({ status }),
     });
   },
   getDashboardSummary() {
