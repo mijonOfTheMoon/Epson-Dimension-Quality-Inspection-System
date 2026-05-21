@@ -2,12 +2,14 @@ import type {
   AgentCommandType,
   AgentInfo,
   AuthLoginResponse,
+  Batch,
   DashboardSummary,
   InspectionCreatedEvent,
   InspectionResult,
   PartType,
   QualityTrackingRecord,
   RequestStatus,
+  ShiftSchedule,
   StationStatusEvent,
   User,
 } from '../types/api';
@@ -100,9 +102,10 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
     timestamp: event.timestamp,
     status: event.status,
     shift: event.shift ?? 'A',
-    line: event.line ?? event.stationId ?? '-',
+    stationId: event.stationId,
     confidenceScore: event.confidenceScore ?? 0,
     measurements: event.measurements ?? [],
+    detections: event.detections ?? [],
     trigger: event.trigger,
   };
 }
@@ -132,6 +135,27 @@ export const api = {
   getParts() {
     return request<PartType[]>('/api/parts');
   },
+  getShiftSchedules() {
+    return request<ShiftSchedule[]>('/api/shift-schedules');
+  },
+  updateShiftSchedule(id: string, input: Pick<ShiftSchedule, 'label' | 'startTime' | 'endTime' | 'active'>) {
+    return request<ShiftSchedule>(`/api/shift-schedules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+  getBatches() {
+    return request<Batch[]>('/api/batches');
+  },
+  openBatch(input: { batchNo: string; partCode: string; shift: 'A' | 'B' | 'C'; targetQty: number }) {
+    return request<Batch>('/api/batches', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  closeBatch(id: string) {
+    return request<Batch>(`/api/batches/${id}/close`, { method: 'PATCH' });
+  },
   async getInspections(params: { limit?: number; status?: 'OK' | 'NG'; partCode?: string } = {}) {
     const query = new URLSearchParams();
     if (params.limit) query.set('limit', String(params.limit));
@@ -159,10 +183,10 @@ export const api = {
   getAgents() {
     return request<AgentInfo[]>('/api/agents');
   },
-  startAgent(stationId: string, partCode: string) {
+  startAgent(stationId: string, partCode: string, shift?: 'A' | 'B' | 'C', batchNo?: string) {
     return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
-      { method: 'POST', body: JSON.stringify({ command: 'start', partCode }) },
+      { method: 'POST', body: JSON.stringify({ command: 'start', partCode, shift, batchNo }) },
     );
   },
   stopAgent(stationId: string) {

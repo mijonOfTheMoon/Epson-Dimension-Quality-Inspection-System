@@ -132,21 +132,16 @@ BACKEND_WS_URL=wss://your-domain.example.com/ws/agent
 ```
 
 ```text
-STATION_ID=station-1
-CAMERA_ID=camera-1
+STATION_ID=Station 1
 CAMERA_INDEX=0
-MODEL_VERSION=vision-v1
 AGENT_TOKEN=change-me-agent-shared-token
-FRAME_FPS=10
-FRAME_QUALITY=70
-SHOW_PREVIEW=false
 ```
 
 ### Identitas vs Otorisasi Agent
 
 | Variabel       | Fungsi                                                                | Unik per agent? |
 |----------------|-----------------------------------------------------------------------|------------------|
-| `STATION_ID`   | Identitas logis agent (mis. `station-1`, `station-cnc-a`)             | **Ya** — wajib unik |
+| `STATION_ID`   | Identitas logis agent (mis. `Station 1`, `Station CNC A`)             | **Ya** — wajib unik |
 | `AGENT_TOKEN`  | Shared secret untuk otorisasi koneksi WS agent → backend              | **Tidak** — sama untuk semua agent |
 
 `AGENT_TOKEN` **bukan** identifier per agent. Ia hanya shared bearer secret: agent manapun yang tahu token bisa connect dengan `stationId` apapun. Cukup untuk MVP di LAN/VPN. Untuk multi-tenant atau jaringan kurang terpercaya, upgrade ke per-agent token (JWT signed per `stationId` atau row di tabel `agent_tokens`) — belum diimplementasikan.

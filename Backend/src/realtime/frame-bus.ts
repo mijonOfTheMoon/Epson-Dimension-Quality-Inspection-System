@@ -9,15 +9,15 @@ export class FrameBus {
     for (const listener of this.listeners) listener(stationId, frame);
   }
 
-  subscribe(listener: FrameListener) {
+  subscribe(listener: FrameListener, stationId?: string) {
+    if (stationId) {
+      const latest = this.latest.get(stationId);
+      if (latest) listener(stationId, latest);
+    }
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
-  }
-
-  snapshot(): Array<[string, Buffer]> {
-    return [...this.latest.entries()];
   }
 
   forget(stationId: string) {

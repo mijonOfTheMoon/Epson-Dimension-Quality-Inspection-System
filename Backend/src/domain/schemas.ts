@@ -12,6 +12,22 @@ export const measurementSchema = z.object({
   status: statusSchema,
 });
 
+export const boundingBoxSchema = z.object({
+  x: z.number().finite().nonnegative(),
+  y: z.number().finite().nonnegative(),
+  width: z.number().finite().positive().max(100),
+  height: z.number().finite().positive().max(100),
+});
+
+export const objectDetectionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  bbox: boundingBoxSchema,
+  status: statusSchema,
+  confidenceScore: z.number().min(0).max(100),
+  measurements: z.array(measurementSchema),
+});
+
 export const inspectionCreatedSchema = z.object({
   eventId: z.string().min(1),
   eventType: z.literal('inspection.created'),
@@ -26,11 +42,10 @@ export const inspectionCreatedSchema = z.object({
   operatorName: z.string().optional(),
   status: statusSchema,
   shift: z.enum(['A', 'B', 'C']).optional(),
-  line: z.string().optional(),
   confidenceScore: z.number().min(0).max(100),
   measurements: z.array(measurementSchema),
-  modelVersion: z.string().optional(),
-  trigger: z.enum(['auto', 'manual']).optional(),
+  detections: z.array(objectDetectionSchema).default([]),
+  trigger: z.literal('manual').optional(),
 });
 
 export const stationStatusSchema = z.object({
@@ -43,7 +58,6 @@ export const stationStatusSchema = z.object({
   running: z.boolean().optional(),
   phase: z.enum(['idle', 'calibrating', 'ready', 'stabilizing', 'locked']).optional(),
   activePartCode: z.string().optional(),
-  modelVersion: z.string().optional(),
 });
 
 export const ingestEventSchema = z.discriminatedUnion('eventType', [

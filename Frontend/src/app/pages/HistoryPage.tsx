@@ -33,9 +33,9 @@ export function HistoryPage() {
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
   const exportCSV = () => {
-    const headers = 'ID,Part,Part Code,Batch,Status,Operator,Shift,Line,Timestamp,Confidence\n';
+    const headers = 'ID,Part,Part Code,Batch,Status,Operator,Shift,Station,Timestamp,Confidence\n';
     const rows = filtered.map((r) =>
-      `${r.id},${r.partName},${r.partCode},${r.batchNo},${r.status},${r.operatorName},${r.shift},${r.line},${r.timestamp},${r.confidenceScore}`
+      `${r.id},${r.partName},${r.partCode},${r.batchNo},${r.status},${r.operatorName},${r.shift},${r.stationId},${r.timestamp},${r.confidenceScore}`
     ).join('\n');
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -114,7 +114,7 @@ export function HistoryPage() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Confidence</th>
                 <th className="px-4 py-3">Shift</th>
-                <th className="px-4 py-3">Line</th>
+                <th className="px-4 py-3">Station</th>
                 <th className="px-4 py-3">Waktu</th>
                 <th className="px-4 py-3">Detail</th>
               </tr>
@@ -134,7 +134,7 @@ export function HistoryPage() {
                     </td>
                     <td className="px-4 py-2.5">{r.confidenceScore}%</td>
                     <td className="px-4 py-2.5">{r.shift}</td>
-                    <td className="px-4 py-2.5">{r.line}</td>
+                    <td className="px-4 py-2.5">{r.stationId}</td>
                     <td className="px-4 py-2.5 text-xs">{new Date(r.timestamp).toLocaleString('id-ID')}</td>
                     <td className="px-4 py-2.5">
                       <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="p-1 hover:bg-[var(--accent)] rounded">

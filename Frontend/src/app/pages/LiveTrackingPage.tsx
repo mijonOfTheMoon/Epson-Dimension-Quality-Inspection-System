@@ -7,9 +7,11 @@ import { useStations } from '../hooks/useStations';
 import { useAgents } from '../hooks/useAgents';
 import { useFrameStream } from '../hooks/useFrameStream';
 import { useParts } from '../hooks/useParts';
+import { useShiftSchedules } from '../hooks/useShiftSchedules';
+import { useBatches } from '../hooks/useBatches';
 import { api, getErrorMessage } from '../services/api';
 import type {
-  AgentInfo, InspectionResult, StationPhase, StationStatusEvent,
+  AgentInfo, InspectionResult, ObjectDetection, StationPhase, StationStatusEvent,
 } from '../types/api';
 
 interface MergedStation {
@@ -17,10 +19,11 @@ interface MergedStation {
   online: boolean;
   running: boolean;
   fps?: number;
-  modelVersion?: string;
   phase?: StationPhase;
   activePartCode?: string;
 }
+
+type ViewMode = 'multi' | 'focus' | 'wall';
 
 function mergeStations(agents: AgentInfo[], stations: StationStatusEvent[]): MergedStation[] {
   const map = new Map<string, MergedStation>();
@@ -30,7 +33,6 @@ function mergeStations(agents: AgentInfo[], stations: StationStatusEvent[]): Mer
       online: station.state === 'online',
       running: Boolean(station.running),
       fps: station.fps,
-      modelVersion: station.modelVersion,
       phase: station.phase,
       activePartCode: station.activePartCode,
     });
@@ -42,7 +44,6 @@ function mergeStations(agents: AgentInfo[], stations: StationStatusEvent[]): Mer
       online: agent.online,
       running: agent.running,
       fps: existing?.fps,
-      modelVersion: existing?.modelVersion,
       phase: agent.online ? existing?.phase : 'idle',
       activePartCode: existing?.activePartCode,
     });
@@ -52,10 +53,10 @@ function mergeStations(agents: AgentInfo[], stations: StationStatusEvent[]): Mer
 
 const PHASE_LABELS: Record<StationPhase, { text: string; tone: string; icon: typeof Camera }> = {
   idle: { text: 'Idle', tone: 'bg-gray-100 text-gray-700', icon: StopCircle },
-  calibrating: { text: 'Kalibrasi background', tone: 'bg-amber-100 text-amber-700', icon: RefreshCcw },
-  ready: { text: 'Siap — masukkan part', tone: 'bg-blue-100 text-blue-700', icon: Hand },
-  stabilizing: { text: 'Mendeteksi part...', tone: 'bg-purple-100 text-purple-700', icon: Zap },
-  locked: { text: 'Tercatat — angkat part', tone: 'bg-green-100 text-green-700', icon: CheckCircle },
+  calibrating: { text: 'Kalibrasi', tone: 'bg-amber-100 text-amber-700', icon: RefreshCcw },
+  ready: { text: 'Siap', tone: 'bg-blue-100 text-blue-700', icon: Hand },
+  stabilizing: { text: 'Deteksi', tone: 'bg-purple-100 text-purple-700', icon: Zap },
+  locked: { text: 'Terkunci', tone: 'bg-green-100 text-green-700', icon: CheckCircle },
 };
 
 export function LiveTrackingPage() {
@@ -63,16 +64,33 @@ export function LiveTrackingPage() {
   const stations = useStations();
   const agents = useAgents();
   const parts = useParts();
-  const frames = useFrameStream();
+  const shifts = useShiftSchedules();
+  const batches = useBatches();
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ text: string; tone: 'info' | 'error' } | null>(null);
   const [selectedPart, setSelectedPart] = useState<Record<string, string>>({});
+  const [selectedShift, setSelectedShift] = useState<Record<string, 'A' | 'B' | 'C'>>({});
+  const [viewMode, setViewMode] = useState<ViewMode>('multi');
+  const [focusStation, setFocusStation] = useState<string | null>(null);
+  const [selectedDetection, setSelectedDetection] = useState<ObjectDetection | null>(null);
 
   const latestInspections = inspections.data.slice(0, 10);
-  const loading = inspections.loading || stations.loading || agents.loading || parts.loading;
-  const error = inspections.error || stations.error || agents.error || parts.error;
+  const loading = inspections.loading || stations.loading || agents.loading || parts.loading || shifts.loading || batches.loading;
+  const error = inspections.error || stations.error || agents.error || parts.error || shifts.error || batches.error;
 
   const merged = useMemo(() => mergeStations(agents.data, stations.data), [agents.data, stations.data]);
+  const visibleStations = useMemo(() => {
+    if (viewMode === 'focus' && focusStation) return merged.filter((station) => station.stationId === focusStation);
+    return merged;
+  }, [focusStation, merged, viewMode]);
+  const frames = useFrameStream(visibleStations.map((station) => station.stationId));
+  const latestByStation = useMemo(() => {
+    const map = new Map<string, InspectionResult>();
+    for (const inspection of inspections.data) {
+      if (!map.has(inspection.stationId)) map.set(inspection.stationId, inspection);
+    }
+    return map;
+  }, [inspections.data]);
 
   useEffect(() => {
     if (parts.data.length === 0) return;
@@ -88,6 +106,21 @@ export function LiveTrackingPage() {
       return changed ? next : current;
     });
   }, [merged, parts.data]);
+
+  useEffect(() => {
+    const activeShift = shifts.data.find((shift) => shift.active)?.shift ?? 'A';
+    setSelectedShift((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const s of merged) {
+        if (!next[s.stationId]) {
+          next[s.stationId] = activeShift;
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [merged, shifts.data]);
 
   const showToast = (text: string, tone: 'info' | 'error' = 'info') => {
     setToast({ text, tone });
@@ -109,6 +142,13 @@ export function LiveTrackingPage() {
 
   const onlineCount = merged.filter((s) => s.online).length;
   const runningCount = merged.filter((s) => s.running).length;
+  const shiftStats = latestInspections.reduce((acc, item) => {
+    acc.total += 1;
+    if (item.status === 'OK') acc.ok += 1;
+    if (item.status === 'NG') acc.ng += 1;
+    return acc;
+  }, { total: 0, ok: 0, ng: 0 });
+  const shiftNgRate = shiftStats.total > 0 ? ((shiftStats.ng / shiftStats.total) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="space-y-4">
@@ -122,10 +162,19 @@ export function LiveTrackingPage() {
         <div>
           <h1>Live Tracking</h1>
           <p className="text-[var(--muted-foreground)] text-sm mt-1">
-            Pilih part, mulai inspeksi, dan letakkan part di bawah kamera — sistem otomatis mencatat 1 part = 1 data.
+            Streaming berjalan terus. Data masuk saat operator menekan Capture.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {(['multi', 'focus', 'wall'] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-3 py-1 rounded-full ${viewMode === mode ? 'bg-blue-600 text-white' : 'bg-[var(--accent)] text-[var(--foreground)]'}`}
+            >
+              {mode === 'multi' ? 'Multi' : mode === 'focus' ? 'Focus' : 'Wall'}
+            </button>
+          ))}
           <span className="px-2 py-1 rounded-full bg-green-100 text-green-700">
             {onlineCount} Online
           </span>
@@ -147,11 +196,11 @@ export function LiveTrackingPage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-4">
+      <div className="grid lg:grid-cols-[1fr_320px] gap-4">
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm">Kamera Inspeksi</h3>
-            <span className="text-xs text-[var(--muted-foreground)]">{merged.length} station terdaftar</span>
+            <h3 className="text-sm">Kamera</h3>
+            <span className="text-xs text-[var(--muted-foreground)]">{merged.length} stasiun</span>
           </div>
 
           {loading && merged.length === 0 ? (
@@ -167,8 +216,8 @@ export function LiveTrackingPage() {
               <p className="text-xs mt-1">Jalankan agent di mesin local untuk mulai streaming.</p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 gap-4">
-              {merged.map((s) => {
+            <div className={viewMode === 'wall' ? 'grid md:grid-cols-3 gap-3' : viewMode === 'focus' ? 'grid gap-4' : 'grid xl:grid-cols-2 gap-4'}>
+              {visibleStations.map((s) => {
                 const frameUrl = frames[s.stationId];
                 const isBusy = busy[s.stationId];
                 const phase = s.phase ?? (s.running ? 'ready' : 'idle');
@@ -176,10 +225,14 @@ export function LiveTrackingPage() {
                 const PhaseIcon = PhaseMeta.icon;
                 const partCode = selectedPart[s.stationId] ?? '';
                 const activePart = parts.data.find((p) => p.partCode === s.activePartCode);
+                const shift = selectedShift[s.stationId] ?? 'A';
+                const latest = latestByStation.get(s.stationId);
+                const detections = latest?.detections ?? [];
+                const openBatch = batches.data.find((batch) => batch.status === 'open' && batch.partCode === partCode && batch.shift === shift);
 
                 return (
                   <div key={s.stationId} className="border border-[var(--border)] rounded-lg overflow-hidden flex flex-col">
-                    <div className="aspect-video bg-black flex items-center justify-center relative">
+                    <button onClick={() => { setFocusStation(s.stationId); setViewMode('focus'); }} className={`aspect-video bg-black flex items-center justify-center relative ${viewMode === 'focus' ? 'min-h-[480px]' : ''}`}>
                       {s.running && frameUrl ? (
                         <img src={frameUrl} alt={s.stationId} className="w-full h-full object-contain" />
                       ) : (
@@ -188,6 +241,20 @@ export function LiveTrackingPage() {
                           {s.online ? (s.running ? 'Menunggu frame...' : 'Idle — pilih part lalu klik Mulai') : 'Agent offline'}
                         </div>
                       )}
+                      {detections.map((detection) => (
+                        <button
+                          key={detection.id}
+                          onClick={(event) => { event.stopPropagation(); setSelectedDetection(detection); }}
+                          className={`absolute border-2 ${detection.status === 'OK' ? 'border-green-400' : 'border-red-400'} bg-transparent`}
+                          style={{
+                            left: `${detection.bbox.x}%`,
+                            top: `${detection.bbox.y}%`,
+                            width: `${detection.bbox.width}%`,
+                            height: `${detection.bbox.height}%`,
+                          }}
+                          title={detection.label}
+                        />
+                      ))}
                       <div className="absolute top-2 left-2 flex flex-col gap-1">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${s.online ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
                           {s.online ? 'ONLINE' : 'OFFLINE'}
@@ -204,20 +271,20 @@ export function LiveTrackingPage() {
                           {s.fps.toFixed(1)} FPS
                         </div>
                       ) : null}
-                    </div>
+                    </button>
 
                     <div className="p-3 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="text-sm truncate" style={{ fontWeight: 500 }}>{s.stationId}</div>
                           <div className="text-[11px] text-[var(--muted-foreground)] truncate">
-                            {activePart ? `${activePart.partName} • ${activePart.partCode}` : (s.modelVersion ?? 'belum ada part')}
+                            {activePart ? `${activePart.partName} • ${activePart.partCode}` : 'Belum ada part'}
                           </div>
                         </div>
                       </div>
 
                       {!s.running ? (
-                        <div className="flex items-center gap-2">
+                        <div className="grid md:grid-cols-[1fr_90px_120px] gap-2">
                           <select
                             disabled={!s.online || isBusy || parts.data.length === 0}
                             value={partCode}
@@ -229,9 +296,19 @@ export function LiveTrackingPage() {
                               <option key={p.partCode} value={p.partCode}>{p.partName} ({p.partCode})</option>
                             ))}
                           </select>
+                          <select
+                            disabled={!s.online || isBusy}
+                            value={shift}
+                            onChange={(e) => setSelectedShift((c) => ({ ...c, [s.stationId]: e.target.value as 'A' | 'B' | 'C' }))}
+                            className="px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
+                          >
+                            {shifts.data.filter((item) => item.active).map((item) => (
+                              <option key={item.id} value={item.shift}>{item.shift}</option>
+                            ))}
+                          </select>
                           <button
                             disabled={!s.online || isBusy || !partCode}
-                            onClick={() => runCommand(s.stationId, 'Mulai inspeksi', () => api.startAgent(s.stationId, partCode))}
+                            onClick={() => runCommand(s.stationId, 'Mulai', () => api.startAgent(s.stationId, partCode, shift, openBatch?.batchNo))}
                             className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50 shrink-0"
                           >
                             <Play className="w-3.5 h-3.5" /> Mulai
@@ -241,8 +318,8 @@ export function LiveTrackingPage() {
                         <div className="grid grid-cols-3 gap-1.5">
                           <button
                             disabled={!s.online || isBusy || phase === 'calibrating'}
-                            onClick={() => runCommand(s.stationId, 'Capture manual', () => api.captureNow(s.stationId))}
-                            title="Paksa simpan satu inspeksi sekarang"
+                            onClick={() => runCommand(s.stationId, 'Capture', () => api.captureNow(s.stationId))}
+                            title="Simpan inspeksi sekarang"
                             className="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
                           >
                             <Camera className="w-3.5 h-3.5" /> Capture
@@ -274,10 +351,31 @@ export function LiveTrackingPage() {
 
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
-            <h3 className="text-sm">Stream Event Inspeksi</h3>
-            <span className="text-xs text-[var(--muted-foreground)]">{latestInspections.length} terakhir</span>
+            <h3 className="text-sm">Shift ini</h3>
+            <span className="text-xs text-[var(--muted-foreground)]">{latestInspections.length} data</span>
           </div>
-          <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+          <div className="grid grid-cols-3 gap-2 p-4 border-b border-[var(--border)] text-center text-sm">
+            <div><div className="text-xl font-medium">{shiftStats.total}</div><div className="text-xs text-[var(--muted-foreground)]">Total</div></div>
+            <div><div className="text-xl font-medium text-green-600">{shiftStats.ok}</div><div className="text-xs text-[var(--muted-foreground)]">OK</div></div>
+            <div><div className="text-xl font-medium text-red-600">{shiftNgRate}%</div><div className="text-xs text-[var(--muted-foreground)]">NG</div></div>
+          </div>
+          {selectedDetection && (
+            <div className="p-4 border-b border-[var(--border)]">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm">{selectedDetection.label}</h4>
+                <span className={`text-xs ${selectedDetection.status === 'OK' ? 'text-green-600' : 'text-red-600'}`}>{selectedDetection.status}</span>
+              </div>
+              <div className="space-y-1">
+                {selectedDetection.measurements.map((measurement) => (
+                  <div key={measurement.dimensionName} className="flex justify-between text-xs">
+                    <span>{measurement.dimensionName}</span>
+                    <span>{measurement.measured} {measurement.unit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="p-4 space-y-3 max-h-[420px] overflow-y-auto">
             {latestInspections.length === 0 ? (
               <div className="text-center py-8 text-[var(--muted-foreground)] text-sm">
                 Belum ada event inspeksi.
@@ -293,7 +391,7 @@ export function LiveTrackingPage() {
                     <span className="text-xs text-[var(--muted-foreground)]">{new Date(r.timestamp).toLocaleTimeString('id-ID')}</span>
                   </div>
                   <div className="text-xs text-[var(--muted-foreground)]">
-                    Confidence: {r.confidenceScore}% • {r.trigger === 'manual' ? 'Manual' : 'Auto'}
+                    {r.stationId} • {r.detections.length || 1} objek • {r.confidenceScore}%
                   </div>
                 </div>
               ))

@@ -65,6 +65,42 @@ class Measurement:
 
 
 @dataclass(frozen=True)
+class BoundingBox:
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+        }
+
+
+@dataclass(frozen=True)
+class ObjectDetection:
+    id: str
+    label: str
+    bbox: BoundingBox
+    status: str
+    confidenceScore: float
+    measurements: list[Measurement]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "bbox": self.bbox.to_dict(),
+            "status": self.status,
+            "confidenceScore": self.confidenceScore,
+            "measurements": [measurement.to_dict() for measurement in self.measurements],
+        }
+
+
+@dataclass(frozen=True)
 class InspectionPayload:
     partName: str
     partCode: str
@@ -72,6 +108,7 @@ class InspectionPayload:
     status: str
     confidenceScore: float
     measurements: list[Measurement]
+    detections: list[ObjectDetection]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +118,7 @@ class InspectionPayload:
             "status": self.status,
             "confidenceScore": self.confidenceScore,
             "measurements": [measurement.to_dict() for measurement in self.measurements],
+            "detections": [detection.to_dict() for detection in self.detections],
         }
 
 
@@ -148,73 +186,102 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec) -> Vision
         return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
 
     result_frame = frame.copy()
-    largest = max(contours, key=cv2.contourArea)
-    x, y, w_box, h_box = cv2.boundingRect(largest)
-    moments = cv2.moments(largest)
-    cx = int(moments["m10"] / moments["m00"]) if moments["m00"] else x + w_box // 2
-    cy = int(moments["m01"] / moments["m00"]) if moments["m00"] else y + h_box // 2
-    (circle_x, circle_y), radius_px = cv2.minEnclosingCircle(largest)
-
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    mid_y = y + h_box // 2
-    precise_left = _refine_edge_1d(gray, x, mid_y)
-    precise_right = _refine_edge_1d(gray, x + w_box, mid_y)
-    diameter_mm = round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
-    width_mm = round(float((precise_right - precise_left) * PIXEL_TO_MM_RATIO), 3)
+    detections: list[ObjectDetection] = []
 
-    measured_by_name: dict[str, float] = {}
-    for spec in part.dimensions:
-        name = spec.name.lower()
-        if "diam" in name:
-            measured_by_name[spec.name] = diameter_mm
-        elif "width" in name or "lebar" in name:
-            measured_by_name[spec.name] = width_mm
-        else:
-            measured_by_name[spec.name] = diameter_mm if "h" not in name else width_mm
+    ordered_contours = sorted(
+        [contour for contour in contours if cv2.contourArea(contour) > MIN_CONTOUR_AREA],
+        key=cv2.contourArea,
+        reverse=True,
+    )[:12]
 
-    measurements: list[Measurement] = []
-    overall_ok = True
-    for spec in part.dimensions:
-        value = measured_by_name.get(spec.name, diameter_mm)
-        status = _status_for(value, spec)
-        if status == "NG":
-            overall_ok = False
-        measurements.append(Measurement(
-            dimensionName=spec.name,
-            measured=value,
-            nominal=spec.nominal,
-            upperLimit=spec.upper_limit,
-            lowerLimit=spec.lower_limit,
-            unit=spec.unit,
+    for index, contour in enumerate(ordered_contours, start=1):
+        x, y, w_box, h_box = cv2.boundingRect(contour)
+        moments = cv2.moments(contour)
+        cx = int(moments["m10"] / moments["m00"]) if moments["m00"] else x + w_box // 2
+        cy = int(moments["m01"] / moments["m00"]) if moments["m00"] else y + h_box // 2
+        (circle_x, circle_y), radius_px = cv2.minEnclosingCircle(contour)
+
+        mid_y = y + h_box // 2
+        precise_left = _refine_edge_1d(gray, x, mid_y)
+        precise_right = _refine_edge_1d(gray, x + w_box, mid_y)
+        diameter_mm = round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
+        width_mm = round(float((precise_right - precise_left) * PIXEL_TO_MM_RATIO), 3)
+
+        measured_by_name: dict[str, float] = {}
+        for spec in part.dimensions:
+            name = spec.name.lower()
+            if "diam" in name:
+                measured_by_name[spec.name] = diameter_mm
+            elif "width" in name or "lebar" in name:
+                measured_by_name[spec.name] = width_mm
+            else:
+                measured_by_name[spec.name] = diameter_mm if "h" not in name else width_mm
+
+        measurements: list[Measurement] = []
+        detection_ok = True
+        for spec in part.dimensions:
+            value = measured_by_name.get(spec.name, diameter_mm)
+            status = _status_for(value, spec)
+            if status == "NG":
+                detection_ok = False
+            measurements.append(Measurement(
+                dimensionName=spec.name,
+                measured=value,
+                nominal=spec.nominal,
+                upperLimit=spec.upper_limit,
+                lowerLimit=spec.lower_limit,
+                unit=spec.unit,
+                status=status,
+            ))
+
+        if not measurements:
+            nominal = round(diameter_mm, 3)
+            measurements.append(Measurement(
+                dimensionName="Diameter",
+                measured=diameter_mm,
+                nominal=nominal,
+                upperLimit=nominal + 0.5,
+                lowerLimit=nominal - 0.5,
+                unit="mm",
+                status="OK",
+            ))
+
+        status = "OK" if detection_ok else "NG"
+        color = (0, 255, 0) if status == "OK" else (0, 0, 255)
+        detection = ObjectDetection(
+            id=f"obj-{index}",
+            label=f"{part.part_code} #{index}",
+            bbox=BoundingBox(
+                x=round((x / frame.shape[1]) * 100, 2),
+                y=round((y / frame.shape[0]) * 100, 2),
+                width=round((w_box / frame.shape[1]) * 100, 2),
+                height=round((h_box / frame.shape[0]) * 100, 2),
+            ),
             status=status,
-        ))
+            confidenceScore=95.0 if status == "OK" else 88.0,
+            measurements=measurements,
+        )
+        detections.append(detection)
 
-    if not measurements:
-        nominal = round(diameter_mm, 3)
-        measurements.append(Measurement(
-            dimensionName="Diameter",
-            measured=diameter_mm,
-            nominal=nominal,
-            upperLimit=nominal + 0.5,
-            lowerLimit=nominal - 0.5,
-            unit="mm",
-            status="OK",
-        ))
+        cv2.circle(result_frame, (cx, cy), 3, (0, 255, 255), -1)
+        cv2.circle(result_frame, (int(circle_x), int(circle_y)), int(radius_px), color, 2)
+        cv2.rectangle(result_frame, (x, y), (x + w_box, y + h_box), color, 2)
+        cv2.putText(result_frame, detection.id, (x, max(20, y - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-    status = "OK" if overall_ok else "NG"
-    color = (0, 255, 0) if status == "OK" else (0, 0, 255)
-    cv2.circle(result_frame, (cx, cy), 3, (0, 255, 255), -1)
-    cv2.circle(result_frame, (int(circle_x), int(circle_y)), int(radius_px), color, 2)
-    cv2.rectangle(result_frame, (x, y), (x + w_box, y + h_box), (255, 255, 0), 1)
-    for i, m in enumerate(measurements):
-        cv2.putText(result_frame, f"{m.dimensionName}: {m.measured:.3f}{m.unit}",
-                    (x, max(20, y - 12 - 22 * i)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    cv2.putText(result_frame, f"STATUS: {status}", (10, result_frame.shape[0] - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+    if not detections:
+        return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
+
+    measurements = [measurement for detection in detections for measurement in detection.measurements]
+    status = "OK" if all(detection.status == "OK" for detection in detections) else "NG"
+    confidence = round(sum(detection.confidenceScore for detection in detections) / len(detections), 2)
+
+    cv2.putText(result_frame, f"STATUS: {status} | OBJECTS: {len(detections)}", (10, result_frame.shape[0] - 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0) if status == "OK" else (0, 0, 255), 2)
     cv2.putText(result_frame, f"{part.part_name} ({part.part_code})", (10, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
-    confidence = 95.0 if status == "OK" else 88.0
     inspection = InspectionPayload(
         partName=part.part_name,
         partCode=part.part_code,
@@ -222,6 +289,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec) -> Vision
         status=status,
         confidenceScore=confidence,
         measurements=measurements,
+        detections=detections,
     )
     return VisionResult(frame=result_frame, foreground_area=fg_area, inspection=inspection)
 

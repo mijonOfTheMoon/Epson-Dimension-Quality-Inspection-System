@@ -4,7 +4,17 @@ import { api, getErrorMessage } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 
 const EMPTY: DashboardSummary = {
-  total: 0, ok: 0, ng: 0, ngRate: 0, dailyTrend: [], stationCount: 0, activeStationCount: 0,
+  total: 0,
+  ok: 0,
+  ng: 0,
+  ngRate: 0,
+  dailyTrend: [],
+  stationCount: 0,
+  activeStationCount: 0,
+  stationTrend: [],
+  partPareto: [],
+  shiftSummary: [],
+  measurementDrift: [],
 };
 
 const REFRESH_DEBOUNCE_MS = 500;

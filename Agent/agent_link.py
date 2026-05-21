@@ -58,13 +58,14 @@ class AgentLink:
 
     def _run(self) -> None:
         backoff = 1.0
-        query = urlencode({"stationId": self.config.station_id, "token": self.config.agent_token})
+        query = urlencode({"stationId": self.config.station_id})
         url = f"{self.config.backend_ws_url}?{query}"
 
         while not self._stop.is_set():
             self._ready.clear()
             self._ws = websocket.WebSocketApp(
                 url,
+                header=[f"Authorization: Bearer {self.config.agent_token}"],
                 on_open=self._on_open,
                 on_message=self._on_message,
                 on_close=self._on_close,

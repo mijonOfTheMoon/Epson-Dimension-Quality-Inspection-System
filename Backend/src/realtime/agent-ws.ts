@@ -7,7 +7,6 @@ import type { FrameBus } from './frame-bus.js';
 
 interface AgentQuery {
   stationId?: string;
-  token?: string;
 }
 
 export async function registerAgentWs(
@@ -20,7 +19,7 @@ export async function registerAgentWs(
   app.get('/ws/agent', { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
     const query = (request.query ?? {}) as AgentQuery;
     const stationId = query.stationId?.trim();
-    const token = query.token?.trim();
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
 
     if (!stationId || token !== config.AGENT_TOKEN) {
       try { socket.close(4003, 'unauthorized'); } catch { /* ignore */ }

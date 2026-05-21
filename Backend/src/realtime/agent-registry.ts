@@ -28,6 +28,9 @@ export interface AgentPartPayload {
 export interface AgentCommand {
   type: AgentCommandType;
   part?: AgentPartPayload;
+  operator?: { id: string; name: string };
+  shift?: 'A' | 'B' | 'C';
+  batchNo?: string;
 }
 
 export class AgentRegistry {

@@ -2,7 +2,7 @@ export type InspectionStatus = 'OK' | 'NG';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
 export type StationPhase = 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked';
-export type InspectionTrigger = 'auto' | 'manual';
+export type InspectionTrigger = 'manual';
 export type AgentCommandType = 'start' | 'stop' | 'capture' | 'recalibrate';
 
 export interface User {
@@ -40,6 +40,22 @@ export interface Measurement {
   status: InspectionStatus;
 }
 
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ObjectDetection {
+  id: string;
+  label: string;
+  bbox: BoundingBox;
+  status: InspectionStatus;
+  confidenceScore: number;
+  measurements: Measurement[];
+}
+
 export interface InspectionResult {
   id: string;
   partId: string;
@@ -52,9 +68,10 @@ export interface InspectionResult {
   timestamp: string;
   status: InspectionStatus;
   shift: 'A' | 'B' | 'C';
-  line: string;
+  stationId: string;
   confidenceScore: number;
   measurements: Measurement[];
+  detections: ObjectDetection[];
   trigger?: InspectionTrigger;
 }
 
@@ -87,7 +104,6 @@ export interface StationStatusEvent {
   running?: boolean;
   phase?: StationPhase;
   activePartCode?: string;
-  modelVersion?: string;
 }
 
 export interface AgentInfo {
@@ -116,10 +132,9 @@ export interface InspectionCreatedEvent {
   operatorName?: string;
   status: InspectionStatus;
   shift?: 'A' | 'B' | 'C';
-  line?: string;
   confidenceScore: number;
   measurements: Measurement[];
-  modelVersion?: string;
+  detections: ObjectDetection[];
   trigger?: InspectionTrigger;
 }
 
@@ -133,6 +148,32 @@ export interface DashboardSummary {
   dailyTrend: { date: string; ok: number; ng: number }[];
   stationCount: number;
   activeStationCount: number;
+  stationTrend: { stationId: string; ok: number; ng: number; ngRate: number }[];
+  partPareto: { partCode: string; partName: string; ok: number; ng: number; total: number; ngRate: number }[];
+  shiftSummary: { shift: 'A' | 'B' | 'C'; ok: number; ng: number; total: number; ngRate: number }[];
+  measurementDrift: { dimensionName: string; avgMeasured: number; nominal: number; delta: number; unit: string }[];
+}
+
+export interface ShiftSchedule {
+  id: string;
+  shift: 'A' | 'B' | 'C';
+  label: string;
+  startTime: string;
+  endTime: string;
+  active: boolean;
+}
+
+export interface Batch {
+  id: string;
+  batchNo: string;
+  partCode: string;
+  partName: string;
+  shift: 'A' | 'B' | 'C';
+  status: 'open' | 'closed';
+  targetQty: number;
+  actualQty: number;
+  createdAt: string;
+  closedAt?: string;
 }
 
 export interface AsyncData<T> {
