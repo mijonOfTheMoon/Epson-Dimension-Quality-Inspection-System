@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import Logo from '../../assets/Logo.png';
+import type { UserRole } from '../types/api';
 
 const roleLabels: Record<string, string> = {
   operator: 'Operator QC',
@@ -26,7 +27,7 @@ export function Layout() {
 
   const handleLogout = async () => { await logout(); navigate('/login', { replace: true }); };
 
-  const navItems = [
+  const navItems: { to: string; icon: typeof LayoutDashboard; label: string; roles: UserRole[] }[] = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/live-tracking', icon: Video, label: 'Live Tracking', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
     { to: '/history', icon: History, label: 'Riwayat Inspeksi', roles: ['operator', 'qc', 'supervisor', 'engineering', 'admin'] },
@@ -34,7 +35,7 @@ export function Layout() {
     { to: '/settings', icon: Settings, label: 'Settings', roles: ['qc', 'supervisor', 'engineering', 'admin'] },
   ];
 
-  const visibleItems = navItems.filter((item) => item.roles.some((r) => hasRole(r as any)));
+  const visibleItems = navItems.filter((item) => item.roles.some((r) => hasRole(r)));
 
   return (
     <div className="flex h-screen bg-[var(--background)]">
