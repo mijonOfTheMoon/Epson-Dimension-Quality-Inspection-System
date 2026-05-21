@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AsyncData, Batch } from '../types/api';
 import { api, getErrorMessage } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
@@ -8,6 +8,7 @@ export function useBatches(): AsyncData<Batch[]> {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const refreshTimer = useRef<number | undefined>(undefined);
   const reload = useCallback(() => setVersion((current) => current + 1), []);
 
   useEffect(() => {
@@ -26,15 +27,31 @@ export function useBatches(): AsyncData<Batch[]> {
         if (active) setLoading(false);
       });
 
-    const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType === 'inspection.created') reload();
-    });
-
     return () => {
       active = false;
-      unsubscribe();
     };
-  }, [reload, version]);
+  }, [version]);
+
+  useEffect(() => {
+    const scheduleReload = () => {
+      if (refreshTimer.current !== undefined) return;
+      refreshTimer.current = window.setTimeout(() => {
+        refreshTimer.current = undefined;
+        reload();
+      }, 250);
+    };
+
+    const unsubscribe = subscribeRealtime((event) => {
+      if (event.eventType === 'inspection.created') scheduleReload();
+    });
+    return () => {
+      unsubscribe();
+      if (refreshTimer.current !== undefined) {
+        window.clearTimeout(refreshTimer.current);
+        refreshTimer.current = undefined;
+      }
+    };
+  }, [reload]);
 
   return { data, loading, error, reload };
 }
