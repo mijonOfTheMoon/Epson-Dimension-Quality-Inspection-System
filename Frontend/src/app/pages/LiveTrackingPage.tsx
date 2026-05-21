@@ -200,7 +200,7 @@ export function LiveTrackingPage() {
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm">Kamera</h3>
-            <span className="text-xs text-[var(--muted-foreground)]">{merged.length} stasiun</span>
+            <span className="text-xs text-[var(--muted-foreground)]">{merged.length} station</span>
           </div>
 
           {loading && merged.length === 0 ? (

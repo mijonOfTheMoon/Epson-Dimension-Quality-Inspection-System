@@ -21,7 +21,7 @@ export function DashboardPage() {
     { label: 'OK', value: ok, icon: CheckCircle, color: 'green' },
     { label: 'NG', value: ng, icon: XCircle, color: 'red' },
     { label: 'NG rate', value: `${ngRate.toFixed(1)}%`, icon: TrendingDown, color: 'orange' },
-    { label: 'Stasiun aktif', value: `${activeStationCount}/${stationCount}`, icon: Radio, color: 'blue' },
+    { label: 'Station aktif', value: `${activeStationCount}/${stationCount}`, icon: Radio, color: 'blue' },
   ];
 
   const colorMap: Record<string, string> = {
@@ -109,7 +109,7 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Stasiun" loading={loading}>
+        <ChartCard title="Station" loading={loading}>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={stationTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
