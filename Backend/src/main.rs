@@ -16,6 +16,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::Config;
 use crate::http::router::build_router;
+use crate::storage::DataStore;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
