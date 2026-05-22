@@ -1,31 +1,29 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "diminspect-frontend",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "dev": "vite",
     "build": "vite build",
-    "dev": "vite"
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "lucide-react": "0.487.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-router": "7.13.0",
-    "recharts": "2.15.2"
+    "chart.js": "^4.4.7",
+    "lucide-svelte": "^0.470.0",
+    "svelte": "^5.20.0",
+    "svelte-routing": "^2.13.0",
+    "uplot": "^1.6.31"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.12",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "4.7.0",
-    "tailwindcss": "4.1.12",
-    "vite": "6.3.5"
-  },
-
-  "pnpm": {
-    "overrides": {
-      "vite": "6.3.5"
-    }
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tailwindcss/vite": "^4.1.12",
+    "@tsconfig/svelte": "^5.0.4",
+    "@types/node": "^25.9.1",
+    "svelte-check": "^4.1.1",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.7.3",
+    "vite": "^6.3.5"
   }
 }
