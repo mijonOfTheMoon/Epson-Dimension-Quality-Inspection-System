@@ -1,11 +1,10 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use aws_sdk_s3::config::{BehaviorVersion, Credentials};
+use aws_sdk_s3::config::Credentials;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::{Client, Config};
-use aws_types::region::Region;
+use aws_sdk_s3::Client;
 use bytes::Bytes;
 
 use crate::config::ObjectStoreConfig;
@@ -28,15 +27,15 @@ impl R2Store {
             "cloudflare-r2",
         );
         let endpoint = format!("https://{}.r2.cloudflarestorage.com", config.account_id);
-        let sdk_config = Config::builder()
-            .behavior_version(BehaviorVersion::latest())
+        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .endpoint_url(endpoint)
             .credentials_provider(credentials)
-            .region(Region::new("auto"))
-            .build();
+            .region("auto")
+            .load()
+            .await;
 
         Ok(Self {
-            client: Client::from_conf(sdk_config),
+            client: Client::new(&sdk_config),
             bucket: config.bucket.clone(),
             signed_url_ttl: config.signed_url_ttl,
             upload_timeout: config.upload_timeout,
