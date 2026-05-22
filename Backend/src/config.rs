@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +28,17 @@ pub struct Config {
     pub bcrypt_rounds: u32,
     pub agent_token: String,
     pub event_replay_limit: usize,
+    pub object_store: Option<ObjectStoreConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectStoreConfig {
+    pub bucket: String,
+    pub account_id: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub signed_url_ttl: Duration,
+    pub upload_timeout: Duration,
 }
 
 impl Config {
@@ -46,6 +59,7 @@ impl Config {
         if agent_token.len() < 8 {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
+        let object_store = object_store_config()?;
 
         Ok(Self {
             node_env,
@@ -61,8 +75,37 @@ impl Config {
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
             agent_token,
             event_replay_limit: parse_env("EVENT_REPLAY_LIMIT", 100)?,
+            object_store,
         })
     }
+}
+
+fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
+    if !parse_bool_env("OBJECT_STORE_ENABLED", false)? {
+        return Ok(None);
+    }
+
+    let bucket = env_or("OBJECT_STORE_BUCKET", "diminspect-frames");
+    let account_id = env_or("OBJECT_STORE_ACCOUNT_ID", "");
+    let access_key_id = env_or("OBJECT_STORE_ACCESS_KEY_ID", "");
+    let secret_access_key = env_or("OBJECT_STORE_SECRET_ACCESS_KEY", "");
+    if [bucket.as_str(), account_id.as_str(), access_key_id.as_str(), secret_access_key.as_str()]
+        .iter()
+        .any(|value| value.trim().is_empty())
+    {
+        return Ok(None);
+    }
+
+    let signed_url_ttl = parse_env("OBJECT_STORE_SIGNED_URL_TTL_SECONDS", 86_400_u64)?;
+    let upload_timeout = parse_env("OBJECT_STORE_UPLOAD_TIMEOUT_SECONDS", 10_u64)?;
+    Ok(Some(ObjectStoreConfig {
+        bucket,
+        account_id,
+        access_key_id,
+        secret_access_key,
+        signed_url_ttl: Duration::from_secs(signed_url_ttl),
+        upload_timeout: Duration::from_secs(upload_timeout),
+    }))
 }
 
 fn env_or(key: &str, default: &str) -> String {

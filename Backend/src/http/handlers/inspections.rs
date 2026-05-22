@@ -1,10 +1,14 @@
-use axum::extract::{Extension, Query, State};
+use std::collections::HashMap;
+
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use futures_util::future::join_all;
+use serde::Serialize;
 
 use crate::domain::validation::validate_inspection;
 use crate::domain::{IngestEvent, InspectionCreatedEvent, InspectionQuery};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::http::response::DuplicatedResponse;
 use crate::http::router::CurrentUser;
 use crate::http::AppState;
@@ -18,7 +22,9 @@ pub async fn list(
     Query(query): Query<InspectionQuery>,
 ) -> AppResult<Json<Vec<InspectionCreatedEvent>>> {
     require_auth(&current)?;
-    Ok(Json(state.store.list_inspections(query).await?))
+    let mut inspections = state.store.list_inspections(query).await?;
+    attach_frame_urls(&mut inspections, state.object_store.clone()).await;
+    Ok(Json(inspections))
 }
 
 pub async fn create(
@@ -33,4 +39,72 @@ pub async fn create(
         Some(event) => Ok((StatusCode::CREATED, Json(serde_json::to_value(event)?))),
         None => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(DuplicatedResponse { duplicated: true })?))),
     }
+}
+
+pub async fn refresh_frame_url(
+    State(state): State<AppState>,
+    Extension(current): Extension<CurrentUser>,
+    Path(event_id): Path<String>,
+) -> AppResult<Json<FrameUrlResponse>> {
+    require_role(&current, APP_ROLES)?;
+    let object_store = state
+        .object_store
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Frame storage tidak aktif".into()))?;
+    let key = state
+        .store
+        .find_frame_object_key(&event_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Frame tidak tersedia".into()))?;
+
+    Ok(Json(FrameUrlResponse {
+        frame_url: object_store.signed_get_url(&key).await?,
+    }))
+}
+
+async fn attach_frame_urls(
+    inspections: &mut [InspectionCreatedEvent],
+    object_store: Option<std::sync::Arc<crate::storage::object_store::R2Store>>,
+) {
+    let Some(object_store) = object_store else {
+        return;
+    };
+
+    let tasks = inspections
+        .iter()
+        .filter_map(|inspection| {
+            inspection
+                .frame_object_key
+                .clone()
+                .map(|key| (inspection.event_id.clone(), key))
+        })
+        .map(|(event_id, key)| {
+            let object_store = object_store.clone();
+            async move {
+                match object_store.signed_get_url(&key).await {
+                    Ok(url) => Some((event_id, url)),
+                    Err(error) => {
+                        tracing::warn!(%event_id, %key, %error, "failed to sign frame URL");
+                        None
+                    }
+                }
+            }
+        });
+
+    let urls: HashMap<String, String> = join_all(tasks)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
+    for inspection in inspections {
+        if let Some(url) = urls.get(&inspection.event_id) {
+            inspection.frame_url = Some(url.clone());
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameUrlResponse {
+    pub frame_url: String,
 }

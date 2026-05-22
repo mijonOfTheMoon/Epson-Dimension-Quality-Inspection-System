@@ -41,6 +41,41 @@ impl PostgresStore {
         })
     }
 
+    pub async fn find_frame_object_key(&self, event_id: &str) -> anyhow::Result<Option<String>> {
+        let row: Option<(Option<String>,)> = sqlx::query_as(
+            r#"
+            SELECT frame_object_key
+            FROM inspections
+            WHERE event_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(event_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.and_then(|value| value.0))
+    }
+
+    pub async fn mark_frame_uploaded(&self, parent_event_id: &str, key: &str) -> anyhow::Result<u64> {
+        let child_pattern = format!("{parent_event_id}-%");
+        let result = sqlx::query(
+            r#"
+            UPDATE inspections
+            SET frame_object_key = $1,
+                frame_uploaded_at = now()
+            WHERE event_id = $2 OR event_id LIKE $3
+            "#,
+        )
+        .bind(key)
+        .bind(parent_event_id)
+        .bind(child_pattern)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     async fn seed_static_data(&self) -> anyhow::Result<()> {
         for user in super::seed::USERS {
             let hashed = hash(user.password, self.bcrypt_rounds)?;
@@ -243,7 +278,7 @@ impl DataStore for PostgresStore {
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
                    operator_id, operator_name, status, confidence_score, measurements,
-                   detections, trigger
+                   detections, trigger, frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE 1 = 1
             "#,
@@ -649,6 +684,8 @@ struct InspectionRow {
     measurements: Value,
     detections: Value,
     trigger: Option<String>,
+    frame_object_key: Option<String>,
+    frame_uploaded_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, FromRow)]
@@ -770,6 +807,9 @@ fn map_inspection(row: InspectionRow) -> anyhow::Result<InspectionCreatedEvent> 
             Some("manual") | None => row.trigger.as_ref().map(|_| InspectionTrigger::Manual),
             Some(_) => None,
         },
+        frame_object_key: row.frame_object_key,
+        frame_url: None,
+        frame_uploaded_at: row.frame_uploaded_at.map(iso),
     })
 }
 

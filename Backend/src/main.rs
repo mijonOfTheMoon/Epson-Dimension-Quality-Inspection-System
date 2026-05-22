@@ -8,6 +8,7 @@ mod realtime;
 mod storage;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::Context;
 use tokio::net::TcpListener;
@@ -15,6 +16,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::Config;
 use crate::http::router::build_router;
+use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
 #[tokio::main]
@@ -29,8 +31,12 @@ async fn main() -> anyhow::Result<()> {
 
     let store = PostgresStore::connect(&config).await?;
     store.init().await?;
+    let object_store = match &config.object_store {
+        Some(object_store_config) => Some(Arc::new(R2Store::from_config(object_store_config).await?)),
+        None => None,
+    };
 
-    let app = build_router(config.clone(), store);
+    let app = build_router(config.clone(), store, object_store);
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
         .context("invalid HOST/PORT")?;

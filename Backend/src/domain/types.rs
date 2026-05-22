@@ -187,6 +187,12 @@ pub struct InspectionCreatedEvent {
     pub detections: Vec<ObjectDetection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger: Option<InspectionTrigger>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_object_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_uploaded_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

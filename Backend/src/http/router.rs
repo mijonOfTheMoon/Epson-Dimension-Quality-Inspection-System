@@ -23,15 +23,21 @@ use crate::realtime::agent_registry::AgentRegistry;
 use crate::realtime::event_bus::EventBus;
 use crate::realtime::frame_bus::FrameBus;
 use crate::realtime::{ws_agent, ws_event, ws_frame};
+use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
-pub fn build_router(config: Config, store: PostgresStore) -> Router {
+pub fn build_router(config: Config, store: PostgresStore, object_store: Option<Arc<R2Store>>) -> Router {
     let store = Arc::new(store);
     let event_bus = Arc::new(EventBus::new(config.event_replay_limit));
     let frame_bus = Arc::new(FrameBus::new());
     let agent_registry = Arc::new(AgentRegistry::new());
     let auth = Arc::new(AuthService::new(config.clone(), store.clone()));
-    let ingestion = Arc::new(IngestionService::new(store.clone(), event_bus.clone()));
+    let ingestion = Arc::new(IngestionService::new(
+        store.clone(),
+        event_bus.clone(),
+        frame_bus.clone(),
+        object_store.clone(),
+    ));
 
     let state = AppState {
         config: config.clone(),
@@ -41,6 +47,7 @@ pub fn build_router(config: Config, store: PostgresStore) -> Router {
         event_bus,
         frame_bus,
         agent_registry,
+        object_store,
     };
 
     Router::new()
@@ -51,6 +58,7 @@ pub fn build_router(config: Config, store: PostgresStore) -> Router {
         .route("/api/auth/logout", post(handlers::auth::logout))
         .route("/api/dashboard/summary", get(handlers::dashboard::summary))
         .route("/api/inspections", get(handlers::inspections::list).post(handlers::inspections::create))
+        .route("/api/inspections/{event_id}/frame/refresh-url", post(handlers::inspections::refresh_frame_url))
         .route("/api/stations", get(handlers::stations::list))
         .route("/api/stations/{stationId}", delete(handlers::stations::delete_station))
         .route("/api/parts", get(handlers::parts::list).post(handlers::parts::create))

@@ -4,6 +4,7 @@ use tokio::sync::broadcast;
 
 pub struct FrameBus {
     latest: DashMap<String, Bytes>,
+    latest_raw: DashMap<String, Bytes>,
     headers: DashMap<String, Bytes>,
     tx: broadcast::Sender<(String, Bytes)>,
 }
@@ -13,12 +14,14 @@ impl FrameBus {
         let (tx, _) = broadcast::channel(1024);
         Self {
             latest: DashMap::new(),
+            latest_raw: DashMap::new(),
             headers: DashMap::new(),
             tx,
         }
     }
 
     pub fn publish(&self, station_id: &str, frame: Bytes) -> anyhow::Result<()> {
+        self.latest_raw.insert(station_id.to_string(), frame.clone());
         let packet = self.encode_packet(station_id, frame)?;
         self.latest.insert(station_id.to_string(), packet.clone());
         let _ = self.tx.send((station_id.to_string(), packet));
@@ -33,8 +36,13 @@ impl FrameBus {
         self.latest.get(station_id).map(|entry| entry.value().clone())
     }
 
+    pub fn latest_raw(&self, station_id: &str) -> Option<Bytes> {
+        self.latest_raw.get(station_id).map(|entry| entry.value().clone())
+    }
+
     pub fn forget(&self, station_id: &str) {
         self.latest.remove(station_id);
+        self.latest_raw.remove(station_id);
         self.headers.remove(station_id);
     }
 

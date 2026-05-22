@@ -7,6 +7,9 @@ rust-version = "1.83"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.65"
+aws-smithy-types = "1.2"
 axum = { version = "0.8", features = ["macros", "ws"] }
 bcrypt = "0.16"
 bytes = "1"
