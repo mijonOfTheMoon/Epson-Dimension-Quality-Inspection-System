@@ -1,13 +1,13 @@
-FROM rust:1.83-alpine AS builder
+FROM rust:1.91-alpine AS builder
 
 RUN apk add --no-cache build-base ca-certificates cmake musl-dev perl
 WORKDIR /app
 
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 COPY src ./src
 
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --locked --target x86_64-unknown-linux-musl
 
 FROM scratch AS runtime
 
