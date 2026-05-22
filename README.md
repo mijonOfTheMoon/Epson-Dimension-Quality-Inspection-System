@@ -1,15 +1,15 @@
 # DimInspect
 
-Sistem quality inspection dimensi dengan agent computer vision, backend Fastify, frontend React, PostgreSQL, dan nginx reverse proxy.
+Sistem quality inspection dimensi dengan agent computer vision, backend Rust Axum, frontend React, PostgreSQL + TimescaleDB, dan nginx reverse proxy.
 
 ## Architecture
 
 ```text
-[Agent PC: Python OpenCV] --WS--> [nginx proxy] --WS--> [Backend Fastify]
+[Agent PC: Python OpenCV] --WS--> [nginx proxy] --WS--> [Backend Rust Axum]
                                       |
 [Browser: React UI] --------HTTP/WS---+
                                       |
-                                  [PostgreSQL]
+                                  [PostgreSQL + TimescaleDB]
 ```
 
 - Browser hanya bicara ke nginx reverse proxy.
@@ -61,7 +61,7 @@ Demo seed users. Password tersimpan sebagai hash bcrypt di DB.
 
 ## Backend Environment
 
-Backend env diatur oleh `docker-compose.yml`; override lewat host env atau `.env` root repo untuk secret.
+Backend Rust berada di `Backend/`. Env diatur oleh `docker-compose.yml`; override lewat host env atau `.env` root repo untuk secret.
 
 ```text
 JWT_SECRET=change-me-in-production-please-use-long-secret
@@ -84,7 +84,7 @@ Untuk domain HTTPS, gunakan `wss://your-domain.example.com/ws/agent`.
 ## Validation
 
 ```bash
-cd Backend  && npm run typecheck && npm run build
+cd Backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cd Frontend && npm run build
 cd Agent    && python -m py_compile agent_link.py computer_vision.py config.py vision.py
 docker compose config

@@ -1,12 +1,3 @@
-node_modules
-dist
-coverage
-.cache
+target/
 .env
-.env.*
-*.log
-data
-Dockerfile
-README.md
-.git
-.gitignore
+.git/

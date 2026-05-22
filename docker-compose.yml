@@ -1,12 +1,13 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: timescale/timescaledb:latest-pg17
     container_name: diminspect-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: diminspect
       POSTGRES_USER: diminspect
       POSTGRES_PASSWORD: diminspect
+      TIMESCALEDB_TELEMETRY: "off"
     ports:
       - "5432:5432"
     volumes:
