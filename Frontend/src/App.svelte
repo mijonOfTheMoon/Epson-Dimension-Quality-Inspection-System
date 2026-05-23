@@ -10,7 +10,9 @@
   import HistoryPage from './routes/HistoryPage.svelte';
   import QualityTrackingPage from './routes/QualityTrackingPage.svelte';
   import PartConfigurationPage from './routes/PartConfigurationPage.svelte';
+  import PartEditorPage from './routes/PartEditorPage.svelte';
   import UserManagementPage from './routes/UserManagementPage.svelte';
+  import UserEditorPage from './routes/UserEditorPage.svelte';
 
   let { url = '' }: { url?: string } = $props();
 
@@ -27,6 +29,10 @@
   <Route path="/live-tracking"><ProtectedPage><LiveTrackingPage /></ProtectedPage></Route>
   <Route path="/history"><ProtectedPage><HistoryPage /></ProtectedPage></Route>
   <Route path="/quality-tracking"><ProtectedPage><QualityTrackingPage /></ProtectedPage></Route>
+  <Route path="/part-configuration/new"><ProtectedPage><PartEditorPage /></ProtectedPage></Route>
+  <Route path="/part-configuration/:id/edit" let:params><ProtectedPage><PartEditorPage id={params.id} /></ProtectedPage></Route>
   <Route path="/part-configuration"><ProtectedPage><PartConfigurationPage /></ProtectedPage></Route>
+  <Route path="/user-management/new"><ProtectedPage><UserEditorPage /></ProtectedPage></Route>
+  <Route path="/user-management/:id/edit" let:params><ProtectedPage><UserEditorPage id={params.id} /></ProtectedPage></Route>
   <Route path="/user-management"><ProtectedPage><UserManagementPage /></ProtectedPage></Route>
 </Router>

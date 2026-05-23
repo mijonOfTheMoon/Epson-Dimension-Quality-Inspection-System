@@ -1,10 +1,10 @@
 # DimInspect Agent
 
-Agent OpenCV berjalan di mesin operator dan connect outbound WebSocket ke backend lewat nginx reverse proxy. Agent tidak butuh port inbound.
+Agent Python OpenCV berjalan di mesin operator dan connect outbound WebSocket ke backend lewat nginx proxy. Agent tidak butuh inbound port.
 
 ## Run
 
-```bash
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -23,19 +23,23 @@ AGENT_TOKEN=change-me-agent-shared-token
 
 Untuk domain HTTPS, gunakan `wss://your-domain.example.com/ws/agent`.
 
-- `STATION_ID` wajib unik per agent.
-- `AGENT_TOKEN` wajib sama dengan `AGENT_TOKEN` di backend.
-- Frame stream memakai 8 FPS dan JPEG quality 62.
+## Behavior
 
-## Protocol
+- Saat idle, kamera tidak dibuka.
+- Agent tetap mengirim status `online` berkala agar UI tahu station hidup.
+- Command inbound: `start`, `stop`, `capture`, `recalibrate`.
+- Frame stream dikirim sebagai JPEG binary saat running.
+- Manual capture hanya mengirim `inspection.created` jika ada detection valid.
+- `STATION_ID` wajib unik per agent dan `AGENT_TOKEN` harus sama dengan backend.
 
-Agent membuka satu WebSocket ke `${BACKEND_WS_URL}?stationId=<id>` dengan bearer token di header. Reconnect otomatis dengan backoff eksponensial.
+## Vision Defaults
 
-- Outbound text: `inspection.created`, `station.status`.
-- Outbound binary: JPEG frame saat running.
-- Inbound text: command `start`, `stop`, `capture`, `recalibrate`.
-
-Saat idle, kamera tidak dibuka. Status `online` dengan `running:false` tetap dikirim berkala supaya UI tahu agent hidup.
+```text
+FRAME_FPS=8
+FRAME_QUALITY=62
+FOREGROUND_AREA_THRESHOLD=4000
+CALIBRATION_FRAMES=30
+```
 
 ## Autostart Windows
 
@@ -50,6 +54,6 @@ Settings:  Restart on failure every 1 minute, up to 99 attempts
 
 ## Validation
 
-```bash
+```powershell
 python -m py_compile agent_link.py computer_vision.py config.py vision.py
 ```

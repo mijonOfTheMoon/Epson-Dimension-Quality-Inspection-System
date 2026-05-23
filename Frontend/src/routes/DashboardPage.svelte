@@ -43,12 +43,6 @@
     </div>
   {/if}
 
-  {#if !summary.loading && !summary.error && summary.data.total === 0}
-    <div class="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl p-4 text-sm">
-      Belum ada inspeksi.
-    </div>
-  {/if}
-
   <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
     {#each cards as card (card.label)}
       {@const Icon = card.icon}

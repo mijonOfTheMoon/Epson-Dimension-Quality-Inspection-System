@@ -1,25 +1,48 @@
-# DimInspect Backend Rust
+# DimInspect Backend
 
-Rust + Axum rebuild of the DimInspect backend. It keeps the same REST and WebSocket contract as the Fastify service while moving persistence to `sqlx` migrations and TimescaleDB.
+Rust 1.91 + Axum API untuk auth, inspections, stations, agents, parts, users, dashboard, quality records, realtime events, frame stream, dan agent WebSocket.
 
-## Run locally
+## Run
 
 ```powershell
 cp .env.example .env
 docker compose up --build
 ```
 
-The service listens on `PORT` and exposes:
+Service listen di `PORT` dan expose:
 
-- `GET /health`
-- `GET /api/health`
-- REST endpoints under `/api/*`
-- WebSockets at `/ws`, `/ws/frames`, and `/ws/agent`
+- `GET /health` dan `GET /api/health`
+- REST endpoints di `/api/*`
+- WebSocket events di `/ws`
+- Frame stream di `/ws/frames`
+- Agent socket di `/ws/agent`
 
-## Notes
+## Data
 
-- Existing bcrypt hashes remain valid via the `bcrypt` crate.
-- The database image must include the TimescaleDB extension. The root `docker-compose.yml` uses a TimescaleDB PostgreSQL 17 image.
-- Migration v9 converts `inspections` into a hypertable and creates `dashboard_aggregates_daily`.
-- Migration v10 removes shift and batch tables/columns. The legacy React shift/batch UI is intentionally out of scope and may receive 404s until the Svelte rebuild lands.
-- Override `JWT_SECRET` and `AGENT_TOKEN` in production; the example values are development placeholders only.
+- PostgreSQL + TimescaleDB.
+- Schema clean source: `migrations/20240101000001_initial.up.sql`.
+- Static seed users dan seed parts ada di `src/storage/seed.rs`.
+- Dashboard summary dihitung langsung dari `inspections`.
+- Multi-detection capture disimpan sebagai row inspection terpisah, dengan metadata frame R2 yang sama.
+
+## Object Store
+
+Cloudflare R2 bersifat opsional. Aktifkan dengan:
+
+```text
+OBJECT_STORE_ENABLED=true
+OBJECT_STORE_BUCKET=diminspect-frames
+OBJECT_STORE_ACCOUNT_ID=...
+OBJECT_STORE_ACCESS_KEY_ID=...
+OBJECT_STORE_SECRET_ACCESS_KEY=...
+```
+
+Jika aktif, backend upload satu frame per capture dan mengembalikan signed URL untuk history/thumbnail.
+
+## Validation
+
+```powershell
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```

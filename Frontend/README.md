@@ -1,31 +1,44 @@
-# DimInspect Frontend Svelte 5
+# DimInspect Frontend
 
-Pure Svelte 5 (runes) + Vite 6 SPA. Tidak pakai SvelteKit. Deployed sebagai static asset di nginx.
+Svelte 5 (runes) + Vite 6 SPA. Build output static di `dist/` dan diserve oleh nginx container.
 
-## Dev
+## Run
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Dev server di `http://localhost:5173`, akan proxy ke backend lokal di `http://localhost:3001` (dikonfigurasi via nginx atau Vite dev proxy bila perlu).
-
-## Build
+Untuk full app dengan backend/proxy:
 
 ```powershell
+docker compose up --build
+```
+
+## Routes
+
+- `/dashboard`
+- `/live-tracking`
+- `/history`
+- `/quality-tracking`
+- `/part-configuration`
+- `/part-configuration/new`
+- `/part-configuration/:id/edit`
+- `/user-management`
+- `/user-management/new`
+- `/user-management/:id/edit`
+
+## Notes
+
+- API memakai relative path `/api/*`.
+- Realtime event stream memakai `/ws`.
+- Live frame stream memakai `/ws/frames`.
+- Favicon memakai logo yang sama dengan navbar.
+- Frame thumbnail memakai signed URL dari backend jika R2 aktif.
+
+## Validation
+
+```powershell
+npm run check
 npm run build
 ```
-
-Output ke `dist/`. Pakai via Docker:
-
-```powershell
-docker build -t diminspect-frontend .
-docker run -p 8080:8080 diminspect-frontend
-```
-
-## Catatan
-
-- Kontrak API selaras Backend Rust terbaru (lihat `Backend/src/domain/types.rs`).
-- Tidak ada shift/batch — sudah dihapus dari Backend.
-- Frame inspeksi disimpan di Cloudflare R2 dengan signed URL TTL 24 jam; auto-refresh via `<img onerror>`.
