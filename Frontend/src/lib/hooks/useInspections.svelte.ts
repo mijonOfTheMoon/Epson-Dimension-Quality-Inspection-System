@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import type { InspectionResult } from '$lib/types/api';
 import { api, getErrorMessage, normalizeInspectionEvent } from '$lib/services/api';
 import { subscribeRealtime } from '$lib/services/realtime';
@@ -6,32 +7,57 @@ export function useInspections(limit = 1000) {
   let data = $state<InspectionResult[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let version = $state(0);
+  let mounted = false;
+  let requestId = 0;
+  const ids = new Set<string>();
 
-  $effect(() => {
-    void version;
-    let active = true;
+  const load = async () => {
+    if (!mounted) return;
+    const current = ++requestId;
     loading = true;
-    api.getInspections({ limit })
-      .then((next) => { if (active) { data = next; error = null; } })
-      .catch((err) => { if (active) error = getErrorMessage(err); })
-      .finally(() => { if (active) loading = false; });
+    try {
+      const next = await api.getInspections({ limit });
+      if (!mounted || current !== requestId) return;
+      data = next;
+      ids.clear();
+      for (const item of next) ids.add(item.id);
+      error = null;
+    } catch (err) {
+      if (mounted && current === requestId) error = getErrorMessage(err);
+    } finally {
+      if (mounted && current === requestId) loading = false;
+    }
+  };
 
+  onMount(() => {
+    mounted = true;
+    void load();
     const unsubscribe = subscribeRealtime((event) => {
       if (event.eventType !== 'inspection.created') return;
       const next = normalizeInspectionEvent(event);
-      if (data.some((item) => item.id === next.id)) return;
-      data = [next, ...data].slice(0, limit);
+      if (ids.has(next.id)) return;
+      ids.add(next.id);
+      const merged = [next, ...data];
+      if (merged.length > limit) {
+        const dropped = merged.splice(limit);
+        for (const item of dropped) ids.delete(item.id);
+      }
+      data = merged;
       error = null;
     });
 
-    return () => { active = false; unsubscribe(); };
+    return () => {
+      mounted = false;
+      requestId += 1;
+      ids.clear();
+      unsubscribe();
+    };
   });
 
   return {
     get data() { return data; },
     get loading() { return loading; },
     get error() { return error; },
-    reload() { version += 1; },
+    reload() { void load(); },
   };
 }

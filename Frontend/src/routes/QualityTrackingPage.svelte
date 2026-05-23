@@ -34,13 +34,21 @@
     setTimeout(() => { toast = null; }, 3000);
   };
 
+  const APP_TIMEZONE = import.meta.env.VITE_APP_TIMEZONE ?? 'Asia/Jakarta';
+  const LOCAL_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
   const summary = $derived.by(() => {
     const vendorSet = new Set<string>();
     const dateSet = new Set<string>();
     let totalScannedToday = 0;
     let totalNGToday = 0;
     let pendingRequests = 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = LOCAL_DATE_FORMATTER.format(new Date());
     const lowerSearch = search.toLowerCase();
     const filtered: QualityTrackingRecord[] = [];
 

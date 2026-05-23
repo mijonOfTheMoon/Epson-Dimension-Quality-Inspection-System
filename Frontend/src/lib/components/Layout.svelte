@@ -41,19 +41,18 @@
     navigate('/login', { replace: true });
   };
 
-  let currentPath = $state(typeof window !== 'undefined' ? window.location.pathname : '/');
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-    const handler = () => { currentPath = window.location.pathname; };
-    window.addEventListener('popstate', handler);
-    const tick = setInterval(() => {
-      if (window.location.pathname !== currentPath) currentPath = window.location.pathname;
-    }, 200);
-    return () => {
-      window.removeEventListener('popstate', handler);
-      clearInterval(tick);
+  type LinkPropsFn = (params: { isCurrent: boolean; location: { pathname: string } }) => { class: string };
+
+  const linkPropsMap: Record<string, LinkPropsFn> = {};
+  for (const item of navItems) {
+    linkPropsMap[item.to] = ({ isCurrent, location }) => {
+      const isDashboardRoot = item.to === '/dashboard' && location.pathname === '/';
+      const active = isCurrent || isDashboardRoot;
+      return {
+        class: `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`,
+      };
     };
-  });
+  }
 </script>
 
 <div class="flex h-screen bg-[var(--background)]">
@@ -71,13 +70,7 @@
     <nav class="mt-4 px-3 space-y-1">
       {#each visibleItems as item (item.to)}
         {@const Icon = item.icon}
-        {@const isActive = currentPath === item.to || (item.to === '/dashboard' && currentPath === '/')}
-        <Link
-          to={item.to}
-          getProps={() => ({
-            class: `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`,
-          })}
-        >
+        <Link to={item.to} getProps={linkPropsMap[item.to]}>
           <Icon class="w-[18px] h-[18px]" />
           {item.label}
         </Link>

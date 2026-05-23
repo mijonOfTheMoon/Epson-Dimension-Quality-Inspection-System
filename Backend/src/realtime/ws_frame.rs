@@ -6,7 +6,10 @@ use axum::http::{HeaderMap, Uri};
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 
-use crate::auth::extract::{extract_bearer_token, extract_query_token};
+use crate::auth::extract::{
+    decode_form_query_value, extract_bearer_token, extract_query_token, extract_subprotocol_token,
+    WS_BEARER_PROTOCOL,
+};
 use crate::http::AppState;
 use crate::realtime::frame_bus::FrameBus;
 
@@ -16,16 +19,27 @@ pub async fn ws_handler(
     headers: HeaderMap,
     uri: Uri,
 ) -> Response {
-    ws.on_upgrade(move |socket| async move {
-        let token = extract_bearer_token(&headers).or_else(|| extract_query_token(&uri));
-        let user = state.auth.resolve_user(token.as_deref()).await.ok().flatten();
-        if user.is_none() {
-            close(socket, 4003, "unauthorized").await;
-            return;
-        }
-        let requested_station = station_query(&uri);
-        handle_socket(socket, state.frame_bus, requested_station).await;
-    })
+    let token = extract_bearer_token(&headers)
+        .or_else(|| extract_subprotocol_token(&headers))
+        .or_else(|| {
+            let value = extract_query_token(&uri);
+            if value.is_some() {
+                tracing::warn!(
+                    "ws auth via query token is deprecated; switch to Sec-WebSocket-Protocol"
+                );
+            }
+            value
+        });
+    let requested_station = station_query(&uri);
+    ws.protocols([WS_BEARER_PROTOCOL])
+        .on_upgrade(move |socket| async move {
+            let user = state.auth.resolve_user(token.as_deref()).await.ok().flatten();
+            if user.is_none() {
+                close(socket, 4003, "unauthorized").await;
+                return;
+            }
+            handle_socket(socket, state.frame_bus, requested_station).await;
+        })
 }
 
 async fn handle_socket(socket: WebSocket, frame_bus: Arc<FrameBus>, requested_station: Option<String>) {
@@ -84,8 +98,7 @@ fn station_query(uri: &Uri) -> Option<String> {
     for pair in query.split('&') {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         if key == "stationId" {
-            let decoded = urlencoding::decode(value).ok()?.trim().to_string();
-            if !decoded.is_empty() {
+            if let Some(decoded) = decode_form_query_value(value) {
                 return Some(decoded);
             }
         }

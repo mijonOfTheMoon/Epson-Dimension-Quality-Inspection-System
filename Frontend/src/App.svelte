@@ -3,8 +3,7 @@
   import { Router, Route } from 'svelte-routing';
   import { auth } from '$lib/stores/auth.svelte';
   import { theme } from '$lib/stores/theme.svelte';
-  import RequireAuth from '$lib/components/RequireAuth.svelte';
-  import Layout from '$lib/components/Layout.svelte';
+  import ProtectedPage from '$lib/components/ProtectedPage.svelte';
   import LoginPage from './routes/LoginPage.svelte';
   import DashboardPage from './routes/DashboardPage.svelte';
   import LiveTrackingPage from './routes/LiveTrackingPage.svelte';
@@ -23,17 +22,11 @@
 
 <Router {url}>
   <Route path="/login"><LoginPage /></Route>
-  <Route path="/*">
-    <RequireAuth>
-      <Layout>
-        <Route path="/"><DashboardPage /></Route>
-        <Route path="/dashboard"><DashboardPage /></Route>
-        <Route path="/live-tracking"><LiveTrackingPage /></Route>
-        <Route path="/history"><HistoryPage /></Route>
-        <Route path="/quality-tracking"><QualityTrackingPage /></Route>
-        <Route path="/part-configuration"><PartConfigurationPage /></Route>
-        <Route path="/user-management"><UserManagementPage /></Route>
-      </Layout>
-    </RequireAuth>
-  </Route>
+  <Route path="/"><ProtectedPage><DashboardPage /></ProtectedPage></Route>
+  <Route path="/dashboard"><ProtectedPage><DashboardPage /></ProtectedPage></Route>
+  <Route path="/live-tracking"><ProtectedPage><LiveTrackingPage /></ProtectedPage></Route>
+  <Route path="/history"><ProtectedPage><HistoryPage /></ProtectedPage></Route>
+  <Route path="/quality-tracking"><ProtectedPage><QualityTrackingPage /></ProtectedPage></Route>
+  <Route path="/part-configuration"><ProtectedPage><PartConfigurationPage /></ProtectedPage></Route>
+  <Route path="/user-management"><ProtectedPage><UserManagementPage /></ProtectedPage></Route>
 </Router>

@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { navigate } from 'svelte-routing';
+  import { navigate, useLocation } from 'svelte-routing';
   import { auth } from '$lib/stores/auth.svelte';
 
   let { children }: { children: Snippet } = $props();
+  const location = useLocation();
 
   $effect(() => {
-    if (auth.status === 'unauthenticated') {
+    if (auth.status === 'unauthenticated' && $location.pathname !== '/login') {
       navigate('/login', { replace: true });
     }
   });

@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import type { DashboardSummary } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 import { subscribeRealtime } from '$lib/services/realtime';
@@ -21,37 +22,49 @@ export function useDashboardSummary() {
   let data = $state<DashboardSummary>(EMPTY);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let version = $state(0);
+  let mounted = false;
+  let requestId = 0;
+  let timer: number | undefined;
 
-  $effect(() => {
-    void version;
-    let active = true;
-    let timer: number | undefined;
-    loading = true;
-    api.getDashboardSummary()
-      .then((next) => { if (active) { data = next; error = null; } })
-      .catch((err) => { if (active) error = getErrorMessage(err); })
-      .finally(() => { if (active) loading = false; });
+  const load = async (showLoading = true) => {
+    if (!mounted) return;
+    const current = ++requestId;
+    if (showLoading) loading = true;
+    try {
+      const next = await api.getDashboardSummary();
+      if (mounted && current === requestId) {
+        data = next;
+        if (showLoading) error = null;
+      }
+    } catch (err) {
+      if (mounted && current === requestId && showLoading) error = getErrorMessage(err);
+    } finally {
+      if (mounted && current === requestId && (showLoading || loading)) loading = false;
+    }
+  };
 
-    const scheduleRefresh = () => {
-      if (timer !== undefined) return;
-      timer = window.setTimeout(() => {
-        timer = undefined;
-        if (!active) return;
-        api.getDashboardSummary()
-          .then((next) => { if (active) data = next; })
-          .catch(() => undefined);
-      }, REFRESH_DEBOUNCE_MS);
-    };
+  const scheduleRefresh = () => {
+    if (!mounted || timer !== undefined) return;
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      void load(false);
+    }, REFRESH_DEBOUNCE_MS);
+  };
 
+  onMount(() => {
+    mounted = true;
+    void load();
     const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType === 'inspection.created') scheduleRefresh();
+      if (event.eventType === 'inspection.created' || event.eventType === 'station.status') {
+        scheduleRefresh();
+      }
     });
-
     return () => {
-      active = false;
+      mounted = false;
+      requestId += 1;
       unsubscribe();
       if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
     };
   });
 
@@ -59,6 +72,6 @@ export function useDashboardSummary() {
     get data() { return data; },
     get loading() { return loading; },
     get error() { return error; },
-    reload() { version += 1; },
+    reload() { void load(); },
   };
 }

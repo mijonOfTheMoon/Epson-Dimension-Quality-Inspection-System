@@ -3,7 +3,7 @@ import queue
 import threading
 import time
 from typing import Any, Callable
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import websocket
 
@@ -58,7 +58,7 @@ class AgentLink:
 
     def _run(self) -> None:
         backoff = 1.0
-        query = urlencode({"stationId": self.config.station_id})
+        query = urlencode({"stationId": self.config.station_id}, quote_via=quote)
         url = f"{self.config.backend_ws_url}?{query}"
 
         while not self._stop.is_set():

@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import type { QualityTrackingRecord } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 
@@ -5,25 +6,40 @@ export function useQualityRecords() {
   let data = $state<QualityTrackingRecord[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let version = $state(0);
+  let mounted = false;
+  let requestId = 0;
 
-  $effect(() => {
-    void version;
-    let active = true;
+  const load = async () => {
+    if (!mounted) return;
+    const current = ++requestId;
     loading = true;
-    api.getQualityRecords()
-      .then((next) => { if (active) { data = next; error = null; } })
-      .catch((err) => { if (active) error = getErrorMessage(err); })
-      .finally(() => { if (active) loading = false; });
-    return () => { active = false; };
+    try {
+      const next = await api.getQualityRecords();
+      if (mounted && current === requestId) {
+        data = next;
+        error = null;
+      }
+    } catch (err) {
+      if (mounted && current === requestId) error = getErrorMessage(err);
+    } finally {
+      if (mounted && current === requestId) loading = false;
+    }
+  };
+
+  onMount(() => {
+    mounted = true;
+    void load();
+    return () => {
+      mounted = false;
+      requestId += 1;
+    };
   });
 
   return {
     get data() { return data; },
     get loading() { return loading; },
     get error() { return error; },
-    reload() { version += 1; },
-    replace(next: QualityTrackingRecord[]) { data = next; },
+    reload() { void load(); },
     update(record: QualityTrackingRecord) {
       data = data.map((item) => item.id === record.id ? record : item);
     },

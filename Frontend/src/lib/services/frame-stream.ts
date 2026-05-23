@@ -1,4 +1,4 @@
-import { appendAuthToken } from './api';
+import { tokenStorage, WS_BEARER_PROTOCOL } from './api';
 import { wsUrl } from './ws-url';
 
 export type FrameListener = (stationId: string, frame: Blob) => void;
@@ -38,9 +38,12 @@ class FrameStreamClient {
 
   private connect(stationId: string) {
     if (!this.listeners.has(stationId)) return;
+    const token = tokenStorage.get();
+    if (!token) return;
     this.connecting.add(stationId);
-    const url = appendAuthToken(`${FRAME_WS_URL}${FRAME_WS_URL.includes('?') ? '&' : '?'}stationId=${encodeURIComponent(stationId)}`);
-    const socket = new WebSocket(url);
+    const separator = FRAME_WS_URL.includes('?') ? '&' : '?';
+    const url = `${FRAME_WS_URL}${separator}stationId=${encodeURIComponent(stationId)}`;
+    const socket = new WebSocket(url, [WS_BEARER_PROTOCOL, token]);
     socket.binaryType = 'arraybuffer';
     this.sockets.set(stationId, socket);
 

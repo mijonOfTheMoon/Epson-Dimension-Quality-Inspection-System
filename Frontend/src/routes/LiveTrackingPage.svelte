@@ -10,7 +10,7 @@
   import { useStations } from '$lib/hooks/useStations.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
   import type {
-    AgentInfo, DimensionView, InspectionResult, ObjectDetection, StationPhase, StationStatusEvent,
+    AgentInfo, DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
   } from '$lib/types/api';
 
   interface MergedStation {
@@ -50,14 +50,13 @@
     }
     for (const agent of agents) {
       const existing = map.get(agent.stationId);
-      if (!existing) continue;
       map.set(agent.stationId, {
         stationId: agent.stationId,
         online: agent.online,
         running: agent.running,
-        fps: existing.fps,
-        phase: agent.online ? existing.phase : 'idle',
-        activePartCode: existing.activePartCode,
+        fps: existing?.fps,
+        phase: agent.online ? (existing?.phase ?? 'idle') : 'idle',
+        activePartCode: existing?.activePartCode,
       });
     }
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
@@ -106,12 +105,22 @@
     return group?.detections.find((item) => item.id === key.detectionId) ?? null;
   });
 
-  let lastInspectionId = $state<string | null>(null);
+  const partByCode = $derived.by(() => new Map(parts.data.map((part) => [part.partCode, part])));
+  const defaultPartCode = $derived(parts.data[0]?.partCode ?? '');
+  const partForCode = (partCode: string) => partByCode.get(partCode);
+  const partCodeForStation = (station: MergedStation) => selectedPart[station.stationId] ?? station.activePartCode ?? defaultPartCode;
+  const partSupportsSideView = (part?: PartType) => part?.dimensions.some((dimension) => dimension.view === 'side') ?? false;
+  const viewForStation = (stationId: string, part?: PartType): DimensionView => {
+    const selected = inspectionView[stationId] ?? 'top';
+    return partSupportsSideView(part) ? selected : 'top';
+  };
+
+  let latestHandledInspectionId: string | null = null;
   $effect(() => {
     const latest = inspections.data[0];
     if (!latest) return;
-    if (latest.id === lastInspectionId) return;
-    lastInspectionId = latest.id;
+    if (latest.id === latestHandledInspectionId) return;
+    latestHandledInspectionId = latest.id;
     boxesHidden = false;
     if (latest.detections[0]) {
       selectedDetectionKey = { stationId: latest.stationId, detectionId: latest.detections[0].id };
@@ -120,37 +129,18 @@
     }
   });
 
-  $effect(() => {
-    if (parts.data.length === 0) return;
-    const next = { ...selectedPart };
-    let changed = false;
-    for (const station of merged) {
-      if (!next[station.stationId]) {
-        next[station.stationId] = station.activePartCode ?? parts.data[0].partCode;
-        changed = true;
-      }
-    }
-    if (changed) selectedPart = next;
-  });
-
-  $effect(() => {
-    const next = { ...inspectionView };
-    let changed = false;
-    for (const station of merged) {
-      const partCode = selectedPart[station.stationId];
-      const part = parts.data.find((item) => item.partCode === partCode);
-      const hasSide = part?.dimensions.some((dim) => dim.view === 'side') ?? false;
-      if (!next[station.stationId] || (!hasSide && next[station.stationId] !== 'top')) {
-        next[station.stationId] = 'top';
-        changed = true;
-      }
-    }
-    if (changed) inspectionView = next;
-  });
-
   const showToast = (text: string, tone: 'info' | 'error' = 'info') => {
     toast = { text, tone };
     window.setTimeout(() => { toast = null; }, 2800);
+  };
+
+  const setSelectedPart = (stationId: string, partCode: string) => {
+    selectedPart = { ...selectedPart, [stationId]: partCode };
+    inspectionView = { ...inspectionView, [stationId]: 'top' };
+  };
+
+  const setInspectionView = (stationId: string, view: DimensionView) => {
+    inspectionView = { ...inspectionView, [stationId]: view };
   };
 
   const runCommand = async (stationId: string, label: string, fn: () => Promise<unknown>) => {
@@ -264,11 +254,11 @@
             {@const phase = station.phase ?? (station.running ? 'ready' : 'idle')}
             {@const phaseMeta = PHASE_LABELS[phase]}
             {@const PhaseIcon = phaseMeta.icon}
-            {@const partCode = selectedPart[station.stationId] ?? ''}
-            {@const selectedPartType = parts.data.find((p) => p.partCode === partCode)}
-            {@const activePart = parts.data.find((p) => p.partCode === station.activePartCode) ?? selectedPartType}
-            {@const hasSideView = selectedPartType?.dimensions.some((d) => d.view === 'side') ?? false}
-            {@const view = inspectionView[station.stationId] ?? 'top'}
+            {@const partCode = partCodeForStation(station)}
+            {@const selectedPartType = partForCode(partCode)}
+            {@const activePart = partForCode(station.activePartCode ?? '') ?? selectedPartType}
+            {@const hasSideView = partSupportsSideView(selectedPartType)}
+            {@const view = viewForStation(station.stationId, selectedPartType)}
             {@const latestGroup = latestGroupsByStation.get(station.stationId)}
             {@const detections = boxesHidden ? [] : (latestGroup?.detections ?? [])}
 
@@ -365,7 +355,7 @@
                     <select
                       disabled={!station.online || isBusy || parts.data.length === 0}
                       value={partCode}
-                      onchange={(event) => selectedPart = { ...selectedPart, [station.stationId]: (event.currentTarget as HTMLSelectElement).value }}
+                      onchange={(event) => setSelectedPart(station.stationId, (event.currentTarget as HTMLSelectElement).value)}
                       class="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
                     >
                       {#if parts.data.length === 0}<option value="">Tidak ada part</option>{/if}
@@ -376,7 +366,7 @@
                     <select
                       disabled={!station.online || isBusy || !hasSideView}
                       value={view}
-                      onchange={(event) => inspectionView = { ...inspectionView, [station.stationId]: (event.currentTarget as HTMLSelectElement).value as DimensionView }}
+                      onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
                       class="px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
                     >
                       <option value="top">Tampak Atas</option>
@@ -395,7 +385,7 @@
                     <select
                       disabled={!station.online || isBusy || !hasSideView}
                       value={view}
-                      onchange={(event) => inspectionView = { ...inspectionView, [station.stationId]: (event.currentTarget as HTMLSelectElement).value as DimensionView }}
+                      onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
                       class="px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
                     >
                       <option value="top">Atas</option>

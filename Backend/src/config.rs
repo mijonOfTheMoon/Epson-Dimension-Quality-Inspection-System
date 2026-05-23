@@ -23,6 +23,7 @@ pub struct Config {
     pub database_url: String,
     pub database_ssl: bool,
     pub database_pool_max: u32,
+    pub timezone: String,
     pub jwt_secret: String,
     pub jwt_expires_in: String,
     pub bcrypt_rounds: u32,
@@ -60,6 +61,7 @@ impl Config {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
         let object_store = object_store_config()?;
+        let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
 
         Ok(Self {
             node_env,
@@ -70,6 +72,7 @@ impl Config {
             database_url,
             database_ssl: parse_bool_env("DATABASE_SSL", false)?,
             database_pool_max: parse_env("DATABASE_POOL_MAX", 10)?,
+            timezone,
             jwt_secret,
             jwt_expires_in: env_or("JWT_EXPIRES_IN", "7d"),
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
@@ -132,4 +135,23 @@ fn parse_bool_env(key: &str, default: bool) -> anyhow::Result<bool> {
         },
         Err(_) => Ok(default),
     }
+}
+
+fn validate_timezone(value: String) -> anyhow::Result<String> {
+    let valid = value
+        .chars()
+        .enumerate()
+        .all(|(index, ch)| {
+            if index == 0 {
+                ch.is_ascii_alphabetic()
+            } else {
+                ch.is_ascii_alphanumeric() || matches!(ch, '_' | '+' | '-' | '/')
+            }
+        });
+
+    if value.is_empty() || !valid {
+        return Err(anyhow!("APP_TIMEZONE must match ^[A-Za-z][A-Za-z0-9_+\\-/]*$"));
+    }
+
+    Ok(value)
 }

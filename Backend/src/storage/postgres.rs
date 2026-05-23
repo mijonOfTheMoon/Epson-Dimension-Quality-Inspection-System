@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use bcrypt::hash;
 use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
+use chrono_tz::Tz;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
@@ -20,6 +21,7 @@ use super::{DataStore, PartInput, UserInput, UserUpdateInput};
 pub struct PostgresStore {
     pool: PgPool,
     bcrypt_rounds: u32,
+    timezone: Tz,
 }
 
 impl PostgresStore {
@@ -28,6 +30,10 @@ impl PostgresStore {
         if config.database_ssl {
             options = options.ssl_mode(PgSslMode::Require);
         }
+        let timezone = config
+            .timezone
+            .parse::<Tz>()
+            .with_context(|| format!("APP_TIMEZONE {} is not a valid IANA timezone", config.timezone))?;
 
         let pool = PgPoolOptions::new()
             .max_connections(config.database_pool_max)
@@ -38,7 +44,12 @@ impl PostgresStore {
         Ok(Self {
             pool,
             bcrypt_rounds: config.bcrypt_rounds,
+            timezone,
         })
+    }
+
+    fn local_date(&self, timestamp: DateTime<Utc>) -> String {
+        timestamp.with_timezone(&self.timezone).format("%Y-%m-%d").to_string()
     }
 
     pub async fn find_frame_object_key(&self, event_id: &str) -> anyhow::Result<Option<String>> {
@@ -181,7 +192,7 @@ impl PostgresStore {
         .await?;
 
         let ng_increment = if event.status == InspectionStatus::Ng { 1 } else { 0 };
-        let date = event.timestamp.chars().take(10).collect::<String>();
+        let date = self.local_date(timestamp);
         let record_id = format!("QT-{}-{}", date, event.part_code);
         let history = json!([{ "status": "not_requested", "timestamp": event.timestamp, "changedBy": "System" }]);
 
@@ -548,7 +559,7 @@ impl DataStore for PostgresStore {
 
         let trend = sqlx::query_as::<_, DailyTrendRow>(
             r#"
-            SELECT to_char(bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+            SELECT to_char(bucket AT TIME ZONE $1, 'YYYY-MM-DD') AS date,
                    COALESCE(SUM(ok), 0)::bigint AS ok,
                    COALESCE(SUM(ng), 0)::bigint AS ng
             FROM dashboard_aggregates_daily
@@ -556,6 +567,7 @@ impl DataStore for PostgresStore {
             ORDER BY bucket ASC
             "#,
         )
+        .bind(self.timezone.name())
         .fetch_all(&self.pool)
         .await?;
 

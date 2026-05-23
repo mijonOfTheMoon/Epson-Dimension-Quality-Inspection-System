@@ -44,13 +44,6 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  $effect(() => {
-    if (editingId && !parts.data.some((part) => part.id === editingId)) {
-      editingId = null;
-      form = emptyForm();
-    }
-  });
-
   const editPart = (part: PartType) => {
     editingId = part.id;
     form = {

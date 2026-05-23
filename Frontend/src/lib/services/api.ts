@@ -16,6 +16,7 @@ import type {
 
 const TOKEN_KEY = 'diminspect_auth_token';
 export const AUTH_LOGOUT_EVENT = 'auth:logout';
+export const WS_BEARER_PROTOCOL = 'diminspect.v1.bearer';
 
 export const tokenStorage = {
   get(): string | null {
@@ -28,13 +29,6 @@ export const tokenStorage = {
     try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
   },
 };
-
-export function appendAuthToken(url: string): string {
-  const token = tokenStorage.get();
-  if (!token) return url;
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}token=${encodeURIComponent(token)}`;
-}
 
 export class ApiRequestError extends Error {
   status?: number;

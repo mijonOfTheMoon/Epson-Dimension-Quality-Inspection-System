@@ -38,6 +38,7 @@ services:
       DATABASE_URL: postgresql://diminspect:diminspect@postgres:5432/diminspect
       DATABASE_SSL: "false"
       DATABASE_POOL_MAX: 10
+      APP_TIMEZONE: "${APP_TIMEZONE:-Asia/Jakarta}"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production-please-use-long-secret}"
       JWT_EXPIRES_IN: "7d"
       BCRYPT_ROUNDS: 10

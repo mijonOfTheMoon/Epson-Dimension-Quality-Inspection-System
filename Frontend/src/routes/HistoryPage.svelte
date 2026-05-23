@@ -32,18 +32,24 @@
   });
 
   const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / perPage)));
-  const paginated = $derived(filtered.slice((page - 1) * perPage, page * perPage));
+  const currentPage = $derived(Math.min(page, totalPages));
+  const paginated = $derived(filtered.slice((currentPage - 1) * perPage, currentPage * perPage));
 
-  $effect(() => {
-    if (page > totalPages) page = totalPages;
-  });
+  const csvField = (value: unknown): string => {
+    const text = value == null ? '' : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
 
   const exportCSV = () => {
-    const headers = 'ID,Part,Part Code,Status,Operator,Station,Timestamp,Confidence,FrameUrl\n';
-    const rows = filtered.map((r) =>
-      `${r.id},${r.partName},${r.partCode},${r.status},${r.operatorName},${r.stationId},${r.timestamp},${r.confidenceScore},${r.frameUrl ?? ''}`
-    ).join('\n');
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const headers = ['ID', 'Part', 'Part Code', 'Status', 'Operator', 'Station', 'Timestamp', 'Confidence', 'FrameUrl'];
+    const lines = [headers.map(csvField).join(',')];
+    for (const r of filtered) {
+      lines.push([
+        r.id, r.partName, r.partCode, r.status, r.operatorName, r.stationId,
+        r.timestamp, r.confidenceScore, r.frameUrl ?? '',
+      ].map(csvField).join(','));
+    }
+    const blob = new Blob(['\uFEFF', lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -68,6 +74,12 @@
   const onPartChange = (event: Event) => {
     partFilter = (event.currentTarget as HTMLSelectElement).value;
     page = 1;
+  };
+  const goToPreviousPage = () => {
+    page = Math.max(1, currentPage - 1);
+  };
+  const goToNextPage = () => {
+    page = Math.min(totalPages, currentPage + 1);
   };
 </script>
 
@@ -198,9 +210,9 @@
 
   {#if totalPages > 1}
     <div class="flex items-center justify-center gap-2">
-      <button disabled={page <= 1} onclick={() => page -= 1} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Prev</button>
-      <span class="text-sm text-[var(--muted-foreground)]">{page} / {totalPages}</span>
-      <button disabled={page >= totalPages} onclick={() => page += 1} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Next</button>
+      <button disabled={currentPage <= 1} onclick={goToPreviousPage} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Prev</button>
+      <span class="text-sm text-[var(--muted-foreground)]">{currentPage} / {totalPages}</span>
+      <button disabled={currentPage >= totalPages} onclick={goToNextPage} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Next</button>
     </div>
   {/if}
 </div>

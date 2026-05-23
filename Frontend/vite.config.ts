@@ -14,15 +14,5 @@ export default defineConfig({
     target: 'es2022',
     cssCodeSplit: true,
     minify: 'esbuild',
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          if (id.includes('uplot')) return 'uplot';
-          if (id.includes('chart.js')) return 'chartjs';
-          if (id.includes('lucide-svelte')) return 'icons';
-          return undefined;
-        },
-      },
-    },
   },
 });

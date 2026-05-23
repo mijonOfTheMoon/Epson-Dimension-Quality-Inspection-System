@@ -1,5 +1,5 @@
 import type { RealtimeEvent } from '$lib/types/api';
-import { appendAuthToken } from './api';
+import { tokenStorage, WS_BEARER_PROTOCOL } from './api';
 import { wsUrl } from './ws-url';
 
 type RealtimeListener = (event: RealtimeEvent) => void;
@@ -18,8 +18,15 @@ class RealtimeClient {
 
   subscribe(listener: RealtimeListener): () => void {
     this.listeners.add(listener);
-    for (const event of this.snapshot) listener(event);
+    const snapshot = [...this.snapshot];
     this.ensureConnection();
+    defer(() => {
+      if (!this.listeners.has(listener)) return;
+      for (const event of snapshot) {
+        if (!this.listeners.has(listener)) break;
+        listener(event);
+      }
+    });
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size === 0) this.disconnect();
@@ -39,8 +46,10 @@ class RealtimeClient {
 
   private connect() {
     if (this.closed || this.listeners.size === 0) return;
+    const token = tokenStorage.get();
+    if (!token) return;
     this.connecting = true;
-    const socket = new WebSocket(appendAuthToken(WS_URL));
+    const socket = new WebSocket(WS_URL, [WS_BEARER_PROTOCOL, token]);
     this.socket = socket;
 
     socket.onopen = () => {
@@ -95,6 +104,14 @@ class RealtimeClient {
 }
 
 const realtimeClient = new RealtimeClient();
+
+function defer(callback: () => void) {
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(callback);
+    return;
+  }
+  window.setTimeout(callback, 0);
+}
 
 export function subscribeRealtime(listener: RealtimeListener) {
   return realtimeClient.subscribe(listener);

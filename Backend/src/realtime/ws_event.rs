@@ -6,7 +6,9 @@ use axum::http::{HeaderMap, Uri};
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 
-use crate::auth::extract::{extract_bearer_token, extract_query_token};
+use crate::auth::extract::{
+    extract_bearer_token, extract_query_token, extract_subprotocol_token, WS_BEARER_PROTOCOL,
+};
 use crate::http::AppState;
 use crate::realtime::event_bus::EventBus;
 
@@ -16,15 +18,26 @@ pub async fn ws_handler(
     headers: HeaderMap,
     uri: Uri,
 ) -> Response {
-    ws.on_upgrade(move |socket| async move {
-        let token = extract_bearer_token(&headers).or_else(|| extract_query_token(&uri));
-        let user = state.auth.resolve_user(token.as_deref()).await.ok().flatten();
-        if user.is_none() {
-            close(socket, 4003, "unauthorized").await;
-            return;
-        }
-        handle_socket(socket, state.event_bus).await;
-    })
+    let token = extract_bearer_token(&headers)
+        .or_else(|| extract_subprotocol_token(&headers))
+        .or_else(|| {
+            let value = extract_query_token(&uri);
+            if value.is_some() {
+                tracing::warn!(
+                    "ws auth via query token is deprecated; switch to Sec-WebSocket-Protocol"
+                );
+            }
+            value
+        });
+    ws.protocols([WS_BEARER_PROTOCOL])
+        .on_upgrade(move |socket| async move {
+            let user = state.auth.resolve_user(token.as_deref()).await.ok().flatten();
+            if user.is_none() {
+                close(socket, 4003, "unauthorized").await;
+                return;
+            }
+            handle_socket(socket, state.event_bus).await;
+        })
 }
 
 async fn handle_socket(socket: WebSocket, event_bus: Arc<EventBus>) {

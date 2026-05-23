@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { navigate } from 'svelte-routing';
+  import { navigate, useLocation } from 'svelte-routing';
   import { ScanLine, Eye, EyeOff } from 'lucide-svelte';
   import { auth } from '$lib/stores/auth.svelte';
   import { getErrorMessage } from '$lib/services/api';
@@ -9,9 +9,10 @@
   let showPw = $state(false);
   let error = $state('');
   let loading = $state(false);
+  const location = useLocation();
 
   $effect(() => {
-    if (auth.status === 'authenticated') {
+    if (auth.status === 'authenticated' && $location.pathname !== '/dashboard') {
       navigate('/dashboard', { replace: true });
     }
   });
@@ -22,8 +23,7 @@
     error = '';
     try {
       const ok = await auth.login(username, password);
-      if (ok) navigate('/dashboard', { replace: true });
-      else error = 'Username atau password salah';
+      if (!ok) error = 'Username atau password salah';
     } catch (err) {
       error = getErrorMessage(err);
     } finally {
