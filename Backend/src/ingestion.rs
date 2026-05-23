@@ -47,12 +47,12 @@ impl IngestionService {
         };
 
         let mut first_saved = None;
-        let mut saved_inspection = false;
+        let mut saved_inspection_ids = Vec::new();
         for item in events {
             let saved = self.store.ingest(item).await?;
             if let Some(saved) = saved {
-                if matches!(saved, IngestEvent::Inspection(_)) {
-                    saved_inspection = true;
+                if let IngestEvent::Inspection(inspection) = &saved {
+                    saved_inspection_ids.push(inspection.event_id.clone());
                 }
                 if first_saved.is_none() {
                     first_saved = Some(saved.clone());
@@ -61,11 +61,17 @@ impl IngestionService {
             }
         }
 
-        if saved_inspection {
+        if !saved_inspection_ids.is_empty() {
             if let (Some((parent_event_id, station_id, captured_at)), Some(object_store)) =
                 (upload_context, self.object_store.clone())
             {
-                self.spawn_upload_frame(parent_event_id, station_id, captured_at, object_store);
+                self.spawn_upload_frame(
+                    parent_event_id,
+                    station_id,
+                    captured_at,
+                    saved_inspection_ids,
+                    object_store,
+                );
             }
         }
 
@@ -77,6 +83,7 @@ impl IngestionService {
         parent_event_id: String,
         station_id: String,
         captured_at: String,
+        inspection_event_ids: Vec<String>,
         object_store: Arc<R2Store>,
     ) {
         let frame_bus = self.frame_bus.clone();
@@ -89,9 +96,10 @@ impl IngestionService {
 
             let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
             match upload_with_retry(&object_store, &key, jpeg, 3).await {
-                Ok(()) => match store.mark_frame_uploaded(&parent_event_id, &key).await {
+                Ok(()) => match store.mark_frame_uploaded(&inspection_event_ids, &key).await {
                     Ok(updated) => {
-                        tracing::info!(%parent_event_id, %station_id, %key, updated, "frame uploaded");
+                        let expected = inspection_event_ids.len();
+                        tracing::info!(%parent_event_id, %station_id, %key, updated, expected, "frame uploaded");
                     }
                     Err(error) => {
                         tracing::warn!(%parent_event_id, %station_id, %key, %error, "failed to update frame metadata");

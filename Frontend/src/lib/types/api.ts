@@ -154,9 +154,23 @@ export interface DashboardSummary {
   ng: number;
   ngRate: number;
   dailyTrend: { date: string; ok: number; ng: number }[];
-  stationCount: number;
-  activeStationCount: number;
-  stationTrend: { stationId: string; ok: number; ng: number; ngRate: number }[];
-  partPareto: { partCode: string; partName: string; ok: number; ng: number; total: number; ngRate: number }[];
-  measurementDrift: { dimensionName: string; avgMeasured: number; nominal: number; delta: number; unit: string }[];
+  failingDimensions: {
+    partCode: string;
+    partName: string;
+    dimensionName: string;
+    ngCount: number;
+    totalCount: number;
+    ngRate: number;
+    unit: string;
+  }[];
+  partRisk: { partCode: string; partName: string; total: number; ng: number; ngRate: number }[];
+  recentInspections: {
+    id: string;
+    timestamp: string;
+    stationId: string;
+    partCode: string;
+    partName: string;
+    status: InspectionStatus;
+    detections: number;
+  }[];
 }

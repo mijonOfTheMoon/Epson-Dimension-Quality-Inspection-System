@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, CheckCircle, Radio, TrendingDown, XCircle } from 'lucide-svelte';
+  import { Activity, AlertTriangle, CheckCircle, Clock3, ListChecks, TrendingDown, XCircle } from 'lucide-svelte';
   import { useDashboardSummary } from '$lib/hooks/useDashboardSummary.svelte';
 
   const summary = useDashboardSummary();
@@ -9,7 +9,6 @@
     { label: 'OK', value: summary.data.ok, icon: CheckCircle, color: 'green' },
     { label: 'NG', value: summary.data.ng, icon: XCircle, color: 'red' },
     { label: 'NG rate', value: `${summary.data.ngRate.toFixed(1)}%`, icon: TrendingDown, color: 'orange' },
-    { label: 'Station aktif', value: `${summary.data.activeStationCount}/${summary.data.stationCount}`, icon: Radio, color: 'blue' },
   ]);
 
   const colorMap: Record<string, string> = {
@@ -20,10 +19,15 @@
   };
 
   const totalDaily = $derived(summary.data.dailyTrend.reduce((acc, day) => Math.max(acc, day.ok + day.ng), 0) || 1);
+  const maxFailingDimension = $derived(summary.data.failingDimensions.reduce((acc, item) => Math.max(acc, item.ngCount), 0) || 1);
+  const maxPartRisk = $derived(summary.data.partRisk.reduce((acc, part) => Math.max(acc, part.ngRate), 0) || 1);
 
-  const maxStation = $derived(summary.data.stationTrend.reduce((acc, station) => Math.max(acc, station.ok + station.ng), 0) || 1);
-  const maxPart = $derived(summary.data.partPareto.reduce((acc, part) => Math.max(acc, part.ok + part.ng), 0) || 1);
-  const maxDrift = $derived(summary.data.measurementDrift.reduce((acc, drift) => Math.max(acc, Math.abs(drift.delta)), 0) || 1);
+  const formatScanTime = (timestamp: string) => new Date(timestamp).toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 </script>
 
 <div class="space-y-6">
@@ -45,7 +49,7 @@
     </div>
   {/if}
 
-  <div class="grid grid-cols-2 xl:grid-cols-5 gap-4">
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
     {#each cards as card (card.label)}
       {@const Icon = card.icon}
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
@@ -77,7 +81,7 @@
         <div class="space-y-2">
           {#each summary.data.dailyTrend as day (day.date)}
             <div>
-              <div class="text-xs text-[var(--muted-foreground)] mb-1 flex justify-between">
+              <div class="text-xs text-[var(--muted-foreground)] mb-1 flex justify-between gap-3">
                 <span>{day.date.slice(5)}</span>
                 <span>OK {day.ok} / NG {day.ng}</span>
               </div>
@@ -99,8 +103,11 @@
         {@const total = summary.data.ok + summary.data.ng || 1}
         {@const okPct = (summary.data.ok / total) * 100}
         {@const ngPct = (summary.data.ng / total) * 100}
-        <div class="flex items-center gap-6">
-          <div class="relative w-32 h-32 rounded-full" style="background: conic-gradient(#22c55e {okPct}%, #ef4444 0 {okPct + ngPct}%)">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-6">
+          <div
+            class="relative w-32 h-32 rounded-full shrink-0"
+            style:background={summary.data.total === 0 ? 'var(--accent)' : `conic-gradient(#22c55e ${okPct}%, #ef4444 0 ${okPct + ngPct}%)`}
+          >
             <div class="absolute inset-3 rounded-full bg-[var(--card)] flex flex-col items-center justify-center">
               <div class="text-lg font-medium">{summary.data.total}</div>
               <div class="text-[10px] text-[var(--muted-foreground)]">Total</div>
@@ -115,22 +122,25 @@
     </div>
 
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
-      <h3 class="mb-4">NG per part</h3>
+      <div class="flex items-center gap-2 mb-4">
+        <AlertTriangle class="w-4 h-4 text-red-600" />
+        <h3>Dimensi paling sering NG</h3>
+      </div>
       {#if summary.loading}
         <div class="h-[260px] bg-[var(--accent)] rounded animate-pulse"></div>
-      {:else if summary.data.partPareto.length === 0}
-        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada data.</div>
+      {:else if summary.data.failingDimensions.length === 0}
+        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada dimensi NG.</div>
       {:else}
-        <div class="space-y-2">
-          {#each summary.data.partPareto as part (part.partCode)}
+        <div class="space-y-3">
+          {#each summary.data.failingDimensions as item (`${item.partCode}-${item.dimensionName}`)}
             <div>
-              <div class="text-xs text-[var(--muted-foreground)] mb-1 flex justify-between">
-                <span>{part.partCode}</span>
-                <span>NG {part.ng} / {part.total} ({part.ngRate}%)</span>
+              <div class="text-xs mb-1 flex justify-between gap-3">
+                <span class="font-medium truncate">{item.dimensionName}</span>
+                <span class="text-[var(--muted-foreground)] shrink-0">NG {item.ngCount} / {item.totalCount}</span>
               </div>
-              <div class="flex gap-1 h-3">
-                <div class="bg-green-500 rounded-sm" style="width: {(part.ok / maxPart) * 100}%"></div>
-                <div class="bg-red-500 rounded-sm" style="width: {(part.ng / maxPart) * 100}%"></div>
+              <div class="text-[11px] text-[var(--muted-foreground)] mb-1 truncate">{item.partName} ({item.partCode})</div>
+              <div class="h-3 bg-[var(--accent)] rounded-sm overflow-hidden">
+                <div class="h-full bg-red-500" style="width: {(item.ngCount / maxFailingDimension) * 100}%"></div>
               </div>
             </div>
           {/each}
@@ -139,22 +149,28 @@
     </div>
 
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
-      <h3 class="mb-4">Station</h3>
+      <div class="flex items-center gap-2 mb-4">
+        <ListChecks class="w-4 h-4 text-orange-600" />
+        <h3>Part berisiko</h3>
+      </div>
       {#if summary.loading}
         <div class="h-[260px] bg-[var(--accent)] rounded animate-pulse"></div>
-      {:else if summary.data.stationTrend.length === 0}
-        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada data station.</div>
+      {:else if summary.data.partRisk.length === 0}
+        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada data part.</div>
       {:else}
-        <div class="space-y-2">
-          {#each summary.data.stationTrend as station (station.stationId)}
+        <div class="space-y-3">
+          {#each summary.data.partRisk as part (part.partCode)}
             <div>
-              <div class="text-xs text-[var(--muted-foreground)] mb-1 flex justify-between">
-                <span>{station.stationId}</span>
-                <span>OK {station.ok} / NG {station.ng}</span>
+              <div class="text-xs mb-1 flex justify-between gap-3">
+                <span class="font-medium truncate">{part.partName}</span>
+                <span class="text-[var(--muted-foreground)] shrink-0">{part.ngRate.toFixed(1)}% NG</span>
               </div>
-              <div class="flex gap-1 h-3">
-                <div class="bg-green-500 rounded-sm" style="width: {(station.ok / maxStation) * 100}%"></div>
-                <div class="bg-red-500 rounded-sm" style="width: {(station.ng / maxStation) * 100}%"></div>
+              <div class="text-[11px] text-[var(--muted-foreground)] mb-1 flex justify-between gap-3">
+                <span>{part.partCode}</span>
+                <span>NG {part.ng} dari {part.total} scan</span>
+              </div>
+              <div class="h-3 bg-[var(--accent)] rounded-sm overflow-hidden">
+                <div class="h-full bg-orange-500" style="width: {(part.ngRate / maxPartRisk) * 100}%"></div>
               </div>
             </div>
           {/each}
@@ -163,22 +179,30 @@
     </div>
 
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 xl:col-span-2">
-      <h3 class="mb-4">Drift dimensi</h3>
+      <div class="flex items-center gap-2 mb-4">
+        <Clock3 class="w-4 h-4 text-blue-600" />
+        <h3>Scan terbaru</h3>
+      </div>
       {#if summary.loading}
-        <div class="h-[200px] bg-[var(--accent)] rounded animate-pulse"></div>
-      {:else if summary.data.measurementDrift.length === 0}
-        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada data drift.</div>
+        <div class="h-[220px] bg-[var(--accent)] rounded animate-pulse"></div>
+      {:else if summary.data.recentInspections.length === 0}
+        <div class="text-sm text-[var(--muted-foreground)] py-12 text-center">Belum ada scan.</div>
       {:else}
-        <div class="space-y-2">
-          {#each summary.data.measurementDrift as drift (drift.dimensionName)}
-            <div>
-              <div class="text-xs text-[var(--muted-foreground)] mb-1 flex justify-between">
-                <span>{drift.dimensionName}</span>
-                <span>Delta {drift.delta.toFixed(3)} {drift.unit} (nominal {drift.nominal})</span>
+        <div class="divide-y divide-[var(--border)]">
+          {#each summary.data.recentInspections as inspection (inspection.id)}
+            <div class="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] px-2 py-0.5 rounded-full {inspection.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                    {inspection.status}
+                  </span>
+                  <span class="text-sm font-medium truncate">{inspection.partName} ({inspection.partCode})</span>
+                </div>
+                <div class="text-xs text-[var(--muted-foreground)] mt-1">
+                  {inspection.stationId} - {inspection.detections} objek - {formatScanTime(inspection.timestamp)}
+                </div>
               </div>
-              <div class="h-3 bg-[var(--accent)] rounded-sm overflow-hidden">
-                <div class="h-full {drift.delta >= 0 ? 'bg-purple-500' : 'bg-amber-500'}" style="width: {(Math.abs(drift.delta) / maxDrift) * 100}%"></div>
-              </div>
+              <div class="text-xs text-[var(--muted-foreground)] font-mono shrink-0">{inspection.id}</div>
             </div>
           {/each}
         </div>

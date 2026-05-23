@@ -48,8 +48,8 @@ impl PostgresStore {
         })
     }
 
-    fn local_date(&self, timestamp: DateTime<Utc>) -> String {
-        timestamp.with_timezone(&self.timezone).format("%Y-%m-%d").to_string()
+    fn local_date(&self, timestamp: DateTime<Utc>) -> NaiveDate {
+        timestamp.with_timezone(&self.timezone).date_naive()
     }
 
     pub async fn find_frame_object_key(&self, event_id: &str) -> anyhow::Result<Option<String>> {
@@ -68,19 +68,21 @@ impl PostgresStore {
         Ok(row.and_then(|value| value.0))
     }
 
-    pub async fn mark_frame_uploaded(&self, parent_event_id: &str, key: &str) -> anyhow::Result<u64> {
-        let child_pattern = format!("{parent_event_id}-%");
+    pub async fn mark_frame_uploaded(&self, event_ids: &[String], key: &str) -> anyhow::Result<u64> {
+        if event_ids.is_empty() {
+            return Ok(0);
+        }
+
         let result = sqlx::query(
             r#"
             UPDATE inspections
             SET frame_object_key = $1,
                 frame_uploaded_at = now()
-            WHERE event_id = $2 OR event_id LIKE $3
+            WHERE event_id = ANY($2)
             "#,
         )
         .bind(key)
-        .bind(parent_event_id)
-        .bind(child_pattern)
+        .bind(event_ids)
         .execute(&self.pool)
         .await?;
 
@@ -549,9 +551,9 @@ impl DataStore for PostgresStore {
     async fn get_dashboard_summary(&self) -> anyhow::Result<DashboardSummary> {
         let counts: DashboardCountsRow = sqlx::query_as(
             r#"
-            SELECT COALESCE(SUM(ok), 0)::bigint AS ok,
-                   COALESCE(SUM(ng), 0)::bigint AS ng
-            FROM dashboard_aggregates_daily
+            SELECT COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
+            FROM inspections
             "#,
         )
         .fetch_one(&self.pool)
@@ -559,69 +561,67 @@ impl DataStore for PostgresStore {
 
         let trend = sqlx::query_as::<_, DailyTrendRow>(
             r#"
-            SELECT to_char(bucket AT TIME ZONE $1, 'YYYY-MM-DD') AS date,
-                   COALESCE(SUM(ok), 0)::bigint AS ok,
-                   COALESCE(SUM(ng), 0)::bigint AS ng
-            FROM dashboard_aggregates_daily
-            GROUP BY bucket
-            ORDER BY bucket ASC
+            SELECT to_char((timestamp AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS date,
+                   COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
+                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
+            FROM inspections
+            GROUP BY (timestamp AT TIME ZONE $1)::date
+            ORDER BY (timestamp AT TIME ZONE $1)::date ASC
             "#,
         )
         .bind(self.timezone.name())
         .fetch_all(&self.pool)
         .await?;
 
-        let stations: StationCountRow = sqlx::query_as(
+        let failing_dimensions = sqlx::query_as::<_, FailingDimensionRow>(
             r#"
-            SELECT COUNT(*)::bigint AS total,
-                   COUNT(*) FILTER (WHERE state = 'online' AND is_active = true)::bigint AS active
-            FROM stations
-            WHERE is_active = true
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await?;
-
-        let station_trend = sqlx::query_as::<_, StationTrendRow>(
-            r#"
-            SELECT station_id,
-                   COALESCE(SUM(ok), 0)::bigint AS ok,
-                   COALESCE(SUM(ng), 0)::bigint AS ng,
-                   COALESCE(SUM(total), 0)::bigint AS total
-            FROM dashboard_aggregates_daily
-            GROUP BY station_id
-            ORDER BY station_id ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let part_pareto = sqlx::query_as::<_, PartParetoRow>(
-            r#"
-            SELECT part_code, part_name,
-                   COALESCE(SUM(ok), 0)::bigint AS ok,
-                   COALESCE(SUM(ng), 0)::bigint AS ng,
-                   COALESCE(SUM(total), 0)::bigint AS total
-            FROM dashboard_aggregates_daily
-            GROUP BY part_code, part_name
-            ORDER BY ng DESC, total DESC
+            SELECT i.part_code,
+                   i.part_name,
+                   COALESCE(item->>'dimensionName', 'Dimensi') AS dimension_name,
+                   COUNT(*) FILTER (WHERE item->>'status' <> 'OK')::bigint AS ng_count,
+                   COUNT(*)::bigint AS total_count,
+                   COALESCE(MAX(item->>'unit'), '') AS unit
+            FROM inspections i
+            CROSS JOIN LATERAL jsonb_array_elements(i.measurements) AS item
+            GROUP BY i.part_code, i.part_name, COALESCE(item->>'dimensionName', 'Dimensi')
+            HAVING COUNT(*) FILTER (WHERE item->>'status' <> 'OK') > 0
+            ORDER BY ng_count DESC, total_count DESC, i.part_code ASC
             LIMIT 8
             "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let measurement_drift = sqlx::query_as::<_, MeasurementDriftRow>(
+        let part_risk = sqlx::query_as::<_, PartRiskRow>(
             r#"
-            SELECT item->>'dimensionName' AS dimension_name,
-                   AVG((item->>'measured')::numeric)::text AS avg_measured,
-                   AVG((item->>'nominal')::numeric)::text AS nominal,
-                   MAX(item->>'unit') AS unit
+            SELECT part_code,
+                   part_name,
+                   COUNT(*)::bigint AS total,
+                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
             FROM inspections
-            CROSS JOIN LATERAL jsonb_array_elements(measurements) AS item
-            GROUP BY item->>'dimensionName'
-            ORDER BY ABS(AVG((item->>'measured')::numeric) - AVG((item->>'nominal')::numeric)) DESC
+            GROUP BY part_code, part_name
+            ORDER BY (COUNT(*) FILTER (WHERE status = 'NG')::numeric / NULLIF(COUNT(*), 0)) DESC,
+                     COUNT(*) FILTER (WHERE status = 'NG') DESC,
+                     COUNT(*) DESC,
+                     part_code ASC
             LIMIT 8
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let recent_inspections = sqlx::query_as::<_, RecentInspectionRow>(
+            r#"
+            SELECT event_id,
+                   timestamp,
+                   station_id,
+                   part_code,
+                   part_name,
+                   status,
+                   COALESCE(jsonb_array_length(detections), 0)::bigint AS detection_count
+            FROM inspections
+            ORDER BY timestamp DESC
+            LIMIT 10
             "#,
         )
         .fetch_all(&self.pool)
@@ -640,42 +640,42 @@ impl DataStore for PostgresStore {
                 .into_iter()
                 .map(|row| DailyTrendPoint { date: row.date, ok: row.ok, ng: row.ng })
                 .collect(),
-            station_count: stations.total,
-            active_station_count: stations.active,
-            station_trend: station_trend
+            failing_dimensions: failing_dimensions
                 .into_iter()
-                .map(|row| StationTrendPoint {
-                    station_id: row.station_id,
-                    ok: row.ok,
-                    ng: row.ng,
-                    ng_rate: rate(row.ng, row.total),
-                })
-                .collect(),
-            part_pareto: part_pareto
-                .into_iter()
-                .map(|row| PartParetoPoint {
+                .map(|row| FailingDimensionPoint {
                     part_code: row.part_code,
                     part_name: row.part_name,
-                    ok: row.ok,
-                    ng: row.ng,
+                    dimension_name: row.dimension_name,
+                    ng_count: row.ng_count,
+                    total_count: row.total_count,
+                    ng_rate: rate(row.ng_count, row.total_count),
+                    unit: row.unit,
+                })
+                .collect(),
+            part_risk: part_risk
+                .into_iter()
+                .map(|row| PartRiskPoint {
+                    part_code: row.part_code,
+                    part_name: row.part_name,
                     total: row.total,
+                    ng: row.ng,
                     ng_rate: rate(row.ng, row.total),
                 })
                 .collect(),
-            measurement_drift: measurement_drift
+            recent_inspections: recent_inspections
                 .into_iter()
                 .map(|row| {
-                    let avg_measured = round3(row.avg_measured.parse::<f64>().unwrap_or(0.0));
-                    let nominal = round3(row.nominal.parse::<f64>().unwrap_or(0.0));
-                    MeasurementDriftPoint {
-                        dimension_name: row.dimension_name,
-                        avg_measured,
-                        nominal,
-                        delta: round3(avg_measured - nominal),
-                        unit: row.unit,
-                    }
+                    Ok(RecentInspectionPoint {
+                        id: row.event_id,
+                        timestamp: iso(row.timestamp),
+                        station_id: row.station_id,
+                        part_code: row.part_code,
+                        part_name: row.part_name,
+                        status: parse_status(&row.status)?,
+                        detections: row.detection_count,
+                    })
                 })
-                .collect(),
+                .collect::<anyhow::Result<Vec<_>>>()?,
         })
     }
 }
@@ -769,34 +769,32 @@ struct DailyTrendRow {
 }
 
 #[derive(Debug, FromRow)]
-struct StationCountRow {
-    total: i64,
-    active: i64,
-}
-
-#[derive(Debug, FromRow)]
-struct StationTrendRow {
-    station_id: String,
-    ok: i64,
-    ng: i64,
-    total: i64,
-}
-
-#[derive(Debug, FromRow)]
-struct PartParetoRow {
+struct FailingDimensionRow {
     part_code: String,
     part_name: String,
-    ok: i64,
-    ng: i64,
-    total: i64,
+    dimension_name: String,
+    ng_count: i64,
+    total_count: i64,
+    unit: String,
 }
 
 #[derive(Debug, FromRow)]
-struct MeasurementDriftRow {
-    dimension_name: String,
-    avg_measured: String,
-    nominal: String,
-    unit: String,
+struct PartRiskRow {
+    part_code: String,
+    part_name: String,
+    total: i64,
+    ng: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct RecentInspectionRow {
+    event_id: String,
+    timestamp: DateTime<Utc>,
+    station_id: String,
+    part_code: String,
+    part_name: String,
+    status: String,
+    detection_count: i64,
 }
 
 fn map_inspection(row: InspectionRow) -> anyhow::Result<InspectionCreatedEvent> {
@@ -1019,10 +1017,6 @@ fn rate(ng: i64, total: i64) -> f64 {
     } else {
         0.0
     }
-}
-
-fn round3(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
 }
 
 fn iso(value: DateTime<Utc>) -> String {

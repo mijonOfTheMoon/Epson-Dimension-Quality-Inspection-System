@@ -28,6 +28,7 @@
   }
 
   type IconComponent = typeof StopCircle;
+  const BOXES_DISABLED_KEY = 'diminspect_live_tracking_boxes_disabled';
   const PHASE_LABELS: Record<StationPhase, { text: string; tone: string; icon: IconComponent }> = {
     idle: { text: 'Idle', tone: 'bg-gray-100 text-gray-700', icon: StopCircle },
     calibrating: { text: 'Kalibrasi', tone: 'bg-amber-100 text-amber-700', icon: RefreshCcw },
@@ -62,6 +63,24 @@
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
   }
 
+  const readBoxesDisabled = () => {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+      return localStorage.getItem(BOXES_DISABLED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  };
+
+  const persistBoxesDisabled = (value: boolean) => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(BOXES_DISABLED_KEY, value ? 'true' : 'false');
+    } catch {
+      // Ignore storage failures; the in-memory state still hides the boxes for this session.
+    }
+  };
+
   const inspections = useInspections(40);
   const stations = useStations();
   const agents = useAgents();
@@ -74,7 +93,7 @@
   let focusedStationId = $state<string | null>(null);
   let menuStationId = $state<string | null>(null);
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
-  let boxesHidden = $state(false);
+  let boxesDisabled = $state(readBoxesDisabled());
 
   const merged = $derived(mergeStations(agents.data, stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
@@ -121,7 +140,10 @@
     if (!latest) return;
     if (latest.id === latestHandledInspectionId) return;
     latestHandledInspectionId = latest.id;
-    boxesHidden = false;
+    if (boxesDisabled) {
+      selectedDetectionKey = null;
+      return;
+    }
     if (latest.detections[0]) {
       selectedDetectionKey = { stationId: latest.stationId, detectionId: latest.detections[0].id };
     } else {
@@ -143,12 +165,22 @@
     inspectionView = { ...inspectionView, [stationId]: view };
   };
 
-  const runCommand = async (stationId: string, label: string, fn: () => Promise<unknown>) => {
+  const refreshInspectionsSoon = () => {
+    window.setTimeout(() => inspections.reload(), 1200);
+  };
+
+  const runCommand = async (
+    stationId: string,
+    label: string,
+    fn: () => Promise<unknown>,
+    onSuccess?: () => void,
+  ) => {
     busy = { ...busy, [stationId]: true };
     try {
       await fn();
       showToast(`${label}: ${stationId}`);
       await agents.refresh();
+      onSuccess?.();
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally {
@@ -249,6 +281,7 @@
       {:else}
         <div class={focusedStationId ? 'grid gap-4' : 'grid xl:grid-cols-2 gap-4'}>
           {#each visibleStations as station (station.stationId)}
+            {@const isFocused = focusedStationId === station.stationId}
             {@const frameUrl = frameStream.frames[station.stationId]}
             {@const isBusy = busy[station.stationId]}
             {@const phase = station.phase ?? (station.running ? 'ready' : 'idle')}
@@ -260,10 +293,10 @@
             {@const hasSideView = partSupportsSideView(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
             {@const latestGroup = latestGroupsByStation.get(station.stationId)}
-            {@const detections = boxesHidden ? [] : (latestGroup?.detections ?? [])}
+            {@const detections = boxesDisabled ? [] : (latestGroup?.detections ?? [])}
 
             <div class="border border-[var(--border)] rounded-lg overflow-hidden flex flex-col">
-              <div class="aspect-video bg-black flex items-center justify-center relative {focusedStationId ? 'min-h-[480px]' : ''}">
+              <div class="aspect-video bg-black flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''}">
                 {#if station.running && frameUrl}
                   <img src={frameUrl} alt={station.stationId} class="w-full h-full object-contain" />
                 {:else}
@@ -305,11 +338,11 @@
                   {/if}
                   <button
                     type="button"
-                    onclick={() => focusedStationId = focusedStationId === station.stationId ? null : station.stationId}
-                    title={focusedStationId === station.stationId ? 'Minimize' : 'Maximize'}
+                    onclick={() => focusedStationId = isFocused ? null : station.stationId}
+                    title={isFocused ? 'Minimize' : 'Maximize'}
                     class="w-8 h-8 rounded-full bg-black/60 text-white inline-flex items-center justify-center hover:bg-black/80"
                   >
-                    {#if focusedStationId === station.stationId}
+                    {#if isFocused}
                       <Minimize2 class="w-4 h-4" />
                     {:else}
                       <Maximize2 class="w-4 h-4" />
@@ -351,12 +384,12 @@
                 </div>
 
                 {#if !station.running}
-                  <div class="grid md:grid-cols-[1fr_140px_120px] gap-2">
+                  <div class={isFocused ? 'grid md:grid-cols-[minmax(0,1fr)_140px_120px] gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-2'}>
                     <select
                       disabled={!station.online || isBusy || parts.data.length === 0}
                       value={partCode}
                       onchange={(event) => setSelectedPart(station.stationId, (event.currentTarget as HTMLSelectElement).value)}
-                      class="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
+                      class="min-w-0 px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'sm:col-span-2'}"
                     >
                       {#if parts.data.length === 0}<option value="">Tidak ada part</option>{/if}
                       {#each parts.data as part (part.partCode)}
@@ -375,25 +408,30 @@
                     <button
                       disabled={!station.online || isBusy || !partCode}
                       onclick={() => runCommand(station.stationId, 'Mulai', () => api.startAgent(station.stationId, partCode, view))}
-                      class="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50 shrink-0"
+                      class="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
                     >
                       <Play class="w-3.5 h-3.5" /> Mulai
                     </button>
                   </div>
                 {:else}
-                  <div class="grid grid-cols-[1fr_1fr_1fr_1fr] gap-1.5">
+                  <div class={isFocused ? 'grid grid-cols-[1fr_1fr_1fr_1fr] gap-1.5' : 'grid grid-cols-2 gap-1.5'}>
                     <select
                       disabled={!station.online || isBusy || !hasSideView}
                       value={view}
                       onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
-                      class="px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
+                      class="px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'col-span-2'}"
                     >
                       <option value="top">Atas</option>
                       <option value="side">Samping</option>
                     </select>
                     <button
                       disabled={!station.online || isBusy || phase === 'calibrating'}
-                      onclick={() => runCommand(station.stationId, 'Capture', () => api.captureNow(station.stationId, view))}
+                      onclick={() => runCommand(
+                        station.stationId,
+                        'Capture',
+                        () => api.captureNow(station.stationId, view),
+                        refreshInspectionsSoon,
+                      )}
                       title="Simpan inspeksi sekarang"
                       class="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
                     >
@@ -433,7 +471,11 @@
           </div>
           <button
             type="button"
-            onclick={() => { selectedDetectionKey = null; boxesHidden = true; }}
+            onclick={() => {
+              selectedDetectionKey = null;
+              boxesDisabled = true;
+              persistBoxesDisabled(true);
+            }}
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:bg-[var(--accent)]"
           >
             <RotateCcw class="w-3.5 h-3.5" /> Reset

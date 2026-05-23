@@ -9,11 +9,9 @@ const EMPTY: DashboardSummary = {
   ng: 0,
   ngRate: 0,
   dailyTrend: [],
-  stationCount: 0,
-  activeStationCount: 0,
-  stationTrend: [],
-  partPareto: [],
-  measurementDrift: [],
+  failingDimensions: [],
+  partRisk: [],
+  recentInspections: [],
 };
 
 const REFRESH_DEBOUNCE_MS = 500;

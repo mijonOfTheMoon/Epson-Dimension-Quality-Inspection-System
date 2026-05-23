@@ -388,11 +388,9 @@ pub struct DashboardSummary {
     pub ng: i64,
     pub ng_rate: f64,
     pub daily_trend: Vec<DailyTrendPoint>,
-    pub station_count: i64,
-    pub active_station_count: i64,
-    pub station_trend: Vec<StationTrendPoint>,
-    pub part_pareto: Vec<PartParetoPoint>,
-    pub measurement_drift: Vec<MeasurementDriftPoint>,
+    pub failing_dimensions: Vec<FailingDimensionPoint>,
+    pub part_risk: Vec<PartRiskPoint>,
+    pub recent_inspections: Vec<RecentInspectionPoint>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -405,30 +403,34 @@ pub struct DailyTrendPoint {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StationTrendPoint {
-    pub station_id: String,
-    pub ok: i64,
-    pub ng: i64,
-    pub ng_rate: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PartParetoPoint {
+pub struct FailingDimensionPoint {
     pub part_code: String,
     pub part_name: String,
-    pub ok: i64,
-    pub ng: i64,
+    pub dimension_name: String,
+    pub ng_count: i64,
+    pub total_count: i64,
+    pub ng_rate: f64,
+    pub unit: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartRiskPoint {
+    pub part_code: String,
+    pub part_name: String,
     pub total: i64,
+    pub ng: i64,
     pub ng_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MeasurementDriftPoint {
-    pub dimension_name: String,
-    pub avg_measured: f64,
-    pub nominal: f64,
-    pub delta: f64,
-    pub unit: String,
+pub struct RecentInspectionPoint {
+    pub id: String,
+    pub timestamp: String,
+    pub station_id: String,
+    pub part_code: String,
+    pub part_name: String,
+    pub status: InspectionStatus,
+    pub detections: i64,
 }
