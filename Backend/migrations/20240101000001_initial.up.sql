@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_quality_records_date
 CREATE MATERIALIZED VIEW IF NOT EXISTS dashboard_aggregates_daily
 WITH (timescaledb.continuous) AS
 SELECT
-  time_bucket('1 day', timestamp) AS bucket,
+  time_bucket('1 day', timestamp, 'Asia/Jakarta') AS bucket,
   station_id,
   part_code,
   part_name,
