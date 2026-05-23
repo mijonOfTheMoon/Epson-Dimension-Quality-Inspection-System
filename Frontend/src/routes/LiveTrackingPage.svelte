@@ -9,6 +9,7 @@
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { auth } from '$lib/stores/auth.svelte';
   import type {
     AgentInfo, DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
   } from '$lib/types/api';
@@ -94,6 +95,7 @@
   let menuStationId = $state<string | null>(null);
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
   let boxesDisabled = $state(readBoxesDisabled());
+  const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
 
   const merged = $derived(mergeStations(agents.data, stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
@@ -383,74 +385,80 @@
                   </div>
                 </div>
 
-                {#if !station.running}
-                  <div class={isFocused ? 'grid md:grid-cols-[minmax(0,1fr)_140px_120px] gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-2'}>
-                    <select
-                      disabled={!station.online || isBusy || parts.data.length === 0}
-                      value={partCode}
-                      onchange={(event) => setSelectedPart(station.stationId, (event.currentTarget as HTMLSelectElement).value)}
-                      class="min-w-0 px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'sm:col-span-2'}"
-                    >
-                      {#if parts.data.length === 0}<option value="">Tidak ada part</option>{/if}
-                      {#each parts.data as part (part.partCode)}
-                        <option value={part.partCode}>{part.partName} ({part.partCode})</option>
-                      {/each}
-                    </select>
-                    <select
-                      disabled={!station.online || isBusy || !hasSideView}
-                      value={view}
-                      onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
-                      class="px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
-                    >
-                      <option value="top">Tampak Atas</option>
-                      <option value="side">Tampak Samping</option>
-                    </select>
-                    <button
-                      disabled={!station.online || isBusy || !partCode}
-                      onclick={() => runCommand(station.stationId, 'Mulai', () => api.startAgent(station.stationId, partCode, view))}
-                      class="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      <Play class="w-3.5 h-3.5" /> Mulai
-                    </button>
-                  </div>
+                {#if canControl}
+                  {#if !station.running}
+                    <div class={isFocused ? 'grid md:grid-cols-[minmax(0,1fr)_140px_120px] gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-2'}>
+                      <select
+                        disabled={!station.online || isBusy || parts.data.length === 0}
+                        value={partCode}
+                        onchange={(event) => setSelectedPart(station.stationId, (event.currentTarget as HTMLSelectElement).value)}
+                        class="min-w-0 px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'sm:col-span-2'}"
+                      >
+                        {#if parts.data.length === 0}<option value="">Tidak ada part</option>{/if}
+                        {#each parts.data as part (part.partCode)}
+                          <option value={part.partCode}>{part.partName} ({part.partCode})</option>
+                        {/each}
+                      </select>
+                      <select
+                        disabled={!station.online || isBusy || !hasSideView}
+                        value={view}
+                        onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
+                        class="px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50"
+                      >
+                        <option value="top">Tampak Atas</option>
+                        <option value="side">Tampak Samping</option>
+                      </select>
+                      <button
+                        disabled={!station.online || isBusy || !partCode}
+                        onclick={() => runCommand(station.stationId, 'Mulai', () => api.startAgent(station.stationId, partCode, view))}
+                        class="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <Play class="w-3.5 h-3.5" /> Mulai
+                      </button>
+                    </div>
+                  {:else}
+                    <div class={isFocused ? 'grid grid-cols-[1fr_1fr_1fr_1fr] gap-1.5' : 'grid grid-cols-2 gap-1.5'}>
+                      <select
+                        disabled={!station.online || isBusy || !hasSideView}
+                        value={view}
+                        onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
+                        class="px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'col-span-2'}"
+                      >
+                        <option value="top">Atas</option>
+                        <option value="side">Samping</option>
+                      </select>
+                      <button
+                        disabled={!station.online || isBusy || phase === 'calibrating'}
+                        onclick={() => runCommand(
+                          station.stationId,
+                          'Capture',
+                          () => api.captureNow(station.stationId, view),
+                          refreshInspectionsSoon,
+                        )}
+                        title="Simpan inspeksi sekarang"
+                        class="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <Camera class="w-3.5 h-3.5" /> Capture
+                      </button>
+                      <button
+                        disabled={!station.online || isBusy}
+                        onclick={() => runCommand(station.stationId, 'Kalibrasi', () => api.recalibrate(station.stationId))}
+                        class="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-500 text-white rounded-lg text-xs hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        <RefreshCcw class="w-3.5 h-3.5" /> Kalibrasi
+                      </button>
+                      <button
+                        disabled={!station.online || isBusy}
+                        onclick={() => runCommand(station.stationId, 'Berhenti', () => api.stopAgent(station.stationId))}
+                        class="flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <StopCircle class="w-3.5 h-3.5" /> Stop
+                      </button>
+                    </div>
+                  {/if}
                 {:else}
-                  <div class={isFocused ? 'grid grid-cols-[1fr_1fr_1fr_1fr] gap-1.5' : 'grid grid-cols-2 gap-1.5'}>
-                    <select
-                      disabled={!station.online || isBusy || !hasSideView}
-                      value={view}
-                      onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
-                      class="px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-[var(--card)] disabled:opacity-50 {isFocused ? '' : 'col-span-2'}"
-                    >
-                      <option value="top">Atas</option>
-                      <option value="side">Samping</option>
-                    </select>
-                    <button
-                      disabled={!station.online || isBusy || phase === 'calibrating'}
-                      onclick={() => runCommand(
-                        station.stationId,
-                        'Capture',
-                        () => api.captureNow(station.stationId, view),
-                        refreshInspectionsSoon,
-                      )}
-                      title="Simpan inspeksi sekarang"
-                      class="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      <Camera class="w-3.5 h-3.5" /> Capture
-                    </button>
-                    <button
-                      disabled={!station.online || isBusy}
-                      onclick={() => runCommand(station.stationId, 'Kalibrasi', () => api.recalibrate(station.stationId))}
-                      class="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-500 text-white rounded-lg text-xs hover:bg-amber-600 disabled:opacity-50"
-                    >
-                      <RefreshCcw class="w-3.5 h-3.5" /> Kalibrasi
-                    </button>
-                    <button
-                      disabled={!station.online || isBusy}
-                      onclick={() => runCommand(station.stationId, 'Berhenti', () => api.stopAgent(station.stationId))}
-                      class="flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 disabled:opacity-50"
-                    >
-                      <StopCircle class="w-3.5 h-3.5" /> Stop
-                    </button>
+                  <div class="text-xs text-[var(--muted-foreground)] text-center py-2 border border-dashed border-[var(--border)] rounded-lg">
+                    Mode Pemantauan Saja
                   </div>
                 {/if}
               </div>

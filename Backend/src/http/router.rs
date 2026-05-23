@@ -58,6 +58,7 @@ pub fn build_router(config: Config, store: PostgresStore, object_store: Option<A
         .route("/api/auth/logout", post(handlers::auth::logout))
         .route("/api/dashboard/summary", get(handlers::dashboard::summary))
         .route("/api/inspections", get(handlers::inspections::list).post(handlers::inspections::create))
+        .route("/api/inspections/{event_id}", get(handlers::inspections::get_detail))
         .route("/api/inspections/{event_id}/frame/refresh-url", post(handlers::inspections::refresh_frame_url))
         .route("/api/stations", get(handlers::stations::list))
         .route("/api/stations/{stationId}", delete(handlers::stations::delete_station))

@@ -11,6 +11,7 @@ pub trait DataStore: Send + Sync {
     async fn init(&self) -> anyhow::Result<()>;
     async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>>;
     async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>>;
+    async fn find_inspection(&self, event_id: &str) -> anyhow::Result<Option<InspectionCreatedEvent>>;
     async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>>;
     async fn deactivate_station(&self, station_id: &str) -> anyhow::Result<Option<StationStatusEvent>>;
     async fn list_parts(&self) -> anyhow::Result<Vec<PartType>>;

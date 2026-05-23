@@ -14,7 +14,7 @@ use crate::http::router::CurrentUser;
 use crate::http::AppState;
 use crate::storage::DataStore;
 
-use super::{require_auth, require_role, APP_ROLES};
+use super::{require_auth, require_role, APP_ROLES, INSPECTION_ROLES};
 
 pub async fn list(
     State(state): State<AppState>,
@@ -22,9 +22,27 @@ pub async fn list(
     Query(query): Query<InspectionQuery>,
 ) -> AppResult<Json<Vec<InspectionCreatedEvent>>> {
     require_auth(&current)?;
-    let mut inspections = state.store.list_inspections(query).await?;
-    attach_frame_urls(&mut inspections, state.object_store.clone()).await;
+    let inspections = state.store.list_inspections(query).await?;
     Ok(Json(inspections))
+}
+
+pub async fn get_detail(
+    State(state): State<AppState>,
+    Extension(current): Extension<CurrentUser>,
+    Path(event_id): Path<String>,
+) -> AppResult<Json<InspectionCreatedEvent>> {
+    require_auth(&current)?;
+    let inspection = state
+        .store
+        .find_inspection(&event_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Inspeksi tidak ditemukan".into()))?;
+
+    let mut vec_inspections = vec![inspection];
+    attach_frame_urls(&mut vec_inspections, state.object_store.clone()).await;
+    let inspection = vec_inspections.into_iter().next().unwrap();
+
+    Ok(Json(inspection))
 }
 
 pub async fn create(
@@ -32,7 +50,7 @@ pub async fn create(
     Extension(current): Extension<CurrentUser>,
     Json(event): Json<InspectionCreatedEvent>,
 ) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
-    require_role(&current, APP_ROLES)?;
+    require_role(&current, INSPECTION_ROLES)?;
     validate_inspection(&event)?;
     let saved = state.ingestion.ingest(IngestEvent::Inspection(event)).await?;
     match saved {

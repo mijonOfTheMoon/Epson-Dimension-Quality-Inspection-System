@@ -290,8 +290,9 @@ impl DataStore for PostgresStore {
         let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
-                   operator_id, operator_name, status, confidence_score, measurements,
-                   detections, trigger, frame_object_key, frame_uploaded_at
+                   operator_id, operator_name, status, confidence_score,
+                   '[]'::jsonb as measurements, '[]'::jsonb as detections,
+                   trigger, frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE 1 = 1
             "#,
@@ -313,6 +314,24 @@ impl DataStore for PostgresStore {
             .fetch_all(&self.pool)
             .await?;
         rows.into_iter().map(map_inspection).collect()
+    }
+
+    async fn find_inspection(&self, event_id: &str) -> anyhow::Result<Option<InspectionCreatedEvent>> {
+        let row = sqlx::query_as::<_, InspectionRow>(
+            r#"
+            SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
+                   operator_id, operator_name, status, confidence_score, measurements,
+                   detections, trigger, frame_object_key, frame_uploaded_at
+            FROM inspections
+            WHERE event_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(event_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(map_inspection).transpose()
     }
 
     async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>> {

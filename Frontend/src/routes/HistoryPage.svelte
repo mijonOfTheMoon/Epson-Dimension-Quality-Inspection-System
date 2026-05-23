@@ -3,6 +3,7 @@
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
+  import { api, getErrorMessage } from '$lib/services/api';
 
   const inspections = useInspections(1000);
   const parts = useParts();
@@ -11,6 +12,31 @@
   let statusFilter = $state<'all' | 'OK' | 'NG'>('all');
   let partFilter = $state('all');
   let expandedId = $state<string | null>(null);
+
+  let detailLoading = $state<Record<string, boolean>>({});
+  let detailErrors = $state<Record<string, string>>({});
+  let details = $state<Record<string, any>>({});
+
+  const toggleExpand = async (id: string) => {
+    if (expandedId === id) {
+      expandedId = null;
+      return;
+    }
+
+    expandedId = id;
+    if (!details[id] && !detailLoading[id]) {
+      detailLoading[id] = true;
+      detailErrors[id] = '';
+      try {
+        const data = await api.getInspectionDetail(id);
+        details[id] = data;
+      } catch (err) {
+        detailErrors[id] = getErrorMessage(err);
+      } finally {
+        detailLoading[id] = false;
+      }
+    }
+  };
   let page = $state(1);
   const perPage = 15;
 
@@ -137,11 +163,9 @@
       <table class="w-full text-sm">
         <thead class="bg-[var(--accent)]">
           <tr class="text-left">
-            <th class="px-4 py-3">ID</th>
             <th class="px-4 py-3">Part</th>
             <th class="px-4 py-3">Status</th>
             <th class="px-4 py-3">Confidence</th>
-            <th class="px-4 py-3">Station</th>
             <th class="px-4 py-3">Waktu</th>
             <th class="px-4 py-3">Detail</th>
           </tr>
@@ -149,7 +173,6 @@
         <tbody>
           {#each paginated as row (row.id)}
             <tr class="border-b border-[var(--border)] hover:bg-[var(--accent)]/50">
-              <td class="px-4 py-2.5" style="font-weight: 500">{row.id}</td>
               <td class="px-4 py-2.5">
                 <div>{row.partName}</div>
                 <div class="text-xs text-[var(--muted-foreground)]">{row.partCode} | {row.vendor}</div>
@@ -158,10 +181,9 @@
                 <span class="px-2 py-0.5 rounded-full text-xs {row.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">{row.status}</span>
               </td>
               <td class="px-4 py-2.5">{row.confidenceScore}%</td>
-              <td class="px-4 py-2.5">{row.stationId}</td>
               <td class="px-4 py-2.5 text-xs">{new Date(row.timestamp).toLocaleString('id-ID')}</td>
               <td class="px-4 py-2.5">
-                <button onclick={() => expandedId = expandedId === row.id ? null : row.id} class="p-1 hover:bg-[var(--accent)] rounded" aria-label="Toggle detail">
+                <button onclick={() => toggleExpand(row.id)} class="p-1 hover:bg-[var(--accent)] rounded" aria-label="Toggle detail">
                   {#if expandedId === row.id}
                     <ChevronUp class="w-4 h-4" />
                   {:else}
@@ -172,25 +194,46 @@
             </tr>
             {#if expandedId === row.id}
               <tr>
-                <td colspan="7" class="px-4 py-3 bg-[var(--accent)]">
-                  <div class="text-xs" style="font-weight: 500">Detail Pengukuran - Operator: {row.operatorName}</div>
-                  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
-                    {#each row.measurements as measurement (measurement.dimensionName)}
-                      <div class="p-2 rounded border {measurement.status === 'OK' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}">
-                        <div class="text-xs text-[var(--muted-foreground)]">{measurement.dimensionName}</div>
-                        <div class="text-sm" style="font-weight: 500">
-                          <span class={measurement.status === 'OK' ? 'text-green-700' : 'text-red-700'}>{measurement.measured} {measurement.unit}</span>
-                        </div>
-                        <div class="text-[10px] text-[var(--muted-foreground)]">
-                          Nominal: {measurement.nominal} | Range: {measurement.lowerLimit} ~ {measurement.upperLimit}
-                        </div>
-                      </div>
-                    {/each}
-                  </div>
-                  {#if row.frameUrl}
-                    <div class="mt-3 max-w-md">
-                      <FrameThumbnail eventId={row.id} initialUrl={row.frameUrl} className="w-full" />
+                <td colspan="5" class="px-4 py-3 bg-[var(--accent)]">
+                  {#if detailLoading[row.id]}
+                    <div class="text-xs text-[var(--muted-foreground)] py-4 text-center">
+                      Memuat detail pengukuran...
                     </div>
+                  {:else if detailErrors[row.id]}
+                    <div class="text-xs text-red-600 py-4 text-center">
+                      Gagal memuat detail: {detailErrors[row.id]}
+                    </div>
+                  {:else if details[row.id]}
+                    {@const detail = details[row.id]}
+                    <div class="text-xs" style="font-weight: 500">Detail Pengukuran - Operator: {detail.operatorName}</div>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                      {#each detail.measurements as measurement (measurement.dimensionName)}
+                        <div class="p-2 rounded border {measurement.status === 'OK' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}">
+                          <div class="text-xs text-[var(--muted-foreground)]">{measurement.dimensionName}</div>
+                          <div class="text-sm" style="font-weight: 500">
+                            <span class={measurement.status === 'OK' ? 'text-green-700' : 'text-red-700'}>{measurement.measured} {measurement.unit}</span>
+                          </div>
+                          <div class="text-[10px] text-[var(--muted-foreground)]">
+                            Nominal: {measurement.nominal} | Range: {measurement.lowerLimit} ~ {measurement.upperLimit}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if detail.frameUrl}
+                      <div class="mt-3 max-w-md relative">
+                        <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
+                        {#each detail.detections as detection (detection.id)}
+                          <div
+                            class="absolute pointer-events-none border-2 {detection.status === 'OK' ? 'border-green-400' : 'border-red-400'}"
+                            style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
+                          >
+                            <span class="absolute -top-5 left-0 px-1 py-0.5 bg-black/60 text-white text-[9px] rounded whitespace-nowrap">
+                              {detection.label}
+                            </span>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
                   {/if}
                 </td>
               </tr>
@@ -198,7 +241,7 @@
           {/each}
           {#if !loading && paginated.length === 0}
             <tr>
-              <td colspan="7" class="px-4 py-12 text-center text-[var(--muted-foreground)]">
+              <td colspan="5" class="px-4 py-12 text-center text-[var(--muted-foreground)]">
                 {inspections.data.length === 0 ? 'Belum ada data inspeksi dari backend.' : 'Tidak ada data yang cocok dengan filter.'}
               </td>
             </tr>

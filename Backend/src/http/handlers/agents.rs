@@ -14,7 +14,7 @@ use crate::realtime::agent_registry::{
 };
 use crate::storage::DataStore;
 
-use super::{require_auth, require_role, APP_ROLES};
+use super::{require_auth, require_role, INSPECTION_ROLES};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,7 +71,7 @@ pub async fn command(
     Path(station_id): Path<String>,
     Json(body): Json<AgentCommandBody>,
 ) -> AppResult<Json<CommandDeliveredResponse>> {
-    let auth_user = require_role(&current, APP_ROLES)?;
+    let auth_user = require_role(&current, INSPECTION_ROLES)?;
     let mut command = AgentCommand {
         kind: match body.command {
             AgentCommandBodyType::Start => AgentCommandType::Start,

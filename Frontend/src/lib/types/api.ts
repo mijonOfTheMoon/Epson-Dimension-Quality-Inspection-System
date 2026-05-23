@@ -63,11 +63,9 @@ export interface ObjectDetection {
 
 export interface InspectionResult {
   id: string;
-  partId: string;
   partName: string;
   partCode: string;
   vendor: string;
-  operatorId: string;
   operatorName: string;
   timestamp: string;
   status: InspectionStatus;
@@ -75,10 +73,7 @@ export interface InspectionResult {
   confidenceScore: number;
   measurements: Measurement[];
   detections: ObjectDetection[];
-  trigger?: InspectionTrigger;
-  frameObjectKey?: string;
   frameUrl?: string;
-  frameUploadedAt?: string;
 }
 
 export interface StatusHistoryEntry {

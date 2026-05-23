@@ -76,11 +76,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function normalizeInspectionEvent(event: InspectionCreatedEvent): InspectionResult {
   return {
     id: event.eventId,
-    partId: event.partId ?? event.partCode ?? 'unknown',
     partName: event.partName,
     partCode: event.partCode,
     vendor: event.vendor ?? '-',
-    operatorId: event.operatorId ?? '-',
     operatorName: event.operatorName ?? '-',
     timestamp: event.timestamp,
     status: event.status,
@@ -88,10 +86,7 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
     confidenceScore: event.confidenceScore ?? 0,
     measurements: event.measurements ?? [],
     detections: event.detections ?? [],
-    trigger: event.trigger,
-    frameObjectKey: event.frameObjectKey,
     frameUrl: event.frameUrl,
-    frameUploadedAt: event.frameUploadedAt,
   };
 }
 
@@ -143,6 +138,12 @@ export const api = {
     const suffix = query.size ? `?${query.toString()}` : '';
     const data = await request<InspectionCreatedEvent[]>(`/api/inspections${suffix}`);
     return data.map(normalizeInspectionEvent);
+  },
+  async getInspectionDetail(eventId: string) {
+    const data = await request<InspectionCreatedEvent>(
+      `/api/inspections/${encodeURIComponent(eventId)}`
+    );
+    return normalizeInspectionEvent(data);
   },
   refreshFrameUrl(eventId: string) {
     return request<{ frameUrl: string }>(

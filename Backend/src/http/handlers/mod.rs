@@ -19,6 +19,10 @@ const APP_ROLES: &[UserRole] = &[
     UserRole::Engineering,
     UserRole::Admin,
 ];
+const INSPECTION_ROLES: &[UserRole] = &[
+    UserRole::Operator,
+    UserRole::Admin,
+];
 const SETTINGS_ROLES: &[UserRole] = &[
     UserRole::Qc,
     UserRole::Supervisor,
