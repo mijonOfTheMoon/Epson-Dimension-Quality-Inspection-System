@@ -1,84 +1,171 @@
 @import 'tailwindcss';
 
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
   --font-size: 16px;
   --background: #f8fafc;
   --foreground: #0f172a;
+  
+  /* Slate & Violet Theme */
   --card: #ffffff;
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #030213;
+  
+  --primary: #4f46e5; /* Indigo */
   --primary-foreground: #ffffff;
-  --secondary: #e2e8f0;
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
+  
+  --secondary: #f1f5f9;
+  --secondary-foreground: #1e293b;
+  
+  --muted: #f8fafc;
   --muted-foreground: #64748b;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
+  
+  --accent: #eef2ff;
+  --accent-foreground: #4f46e5;
+  
+  --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+  
+  --border: rgba(148, 163, 184, 0.12);
   --input: transparent;
-  --input-background: #f3f3f5;
+  --input-background: #f8fafc;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: rgba(59, 130, 246, 0.4);
-  --radius: 0.625rem;
+  --ring: rgba(79, 70, 229, 0.2);
+  --radius: 0.75rem;
 }
 
 .dark {
-  --background: #0f172a;
+  --background: #090d16; /* Deep futurism space navy */
   --foreground: #f8fafc;
-  --card: #1e293b;
+  
+  --card: #0f172a; /* Slate 900 */
   --card-foreground: #f8fafc;
-  --popover: #1e293b;
+  --popover: #0f172a;
   --popover-foreground: #f8fafc;
-  --primary: #f8fafc;
-  --primary-foreground: #0f172a;
-  --secondary: #334155;
+  
+  --primary: #6366f1; /* Bright indigo */
+  --primary-foreground: #ffffff;
+  
+  --secondary: #1e293b; /* Slate 800 */
   --secondary-foreground: #f8fafc;
-  --muted: #334155;
+  
+  --muted: #1e293b;
   --muted-foreground: #94a3b8;
-  --accent: #334155;
-  --accent-foreground: #f8fafc;
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: rgba(255, 255, 255, 0.1);
-  --input: #334155;
-  --ring: rgba(96, 165, 250, 0.4);
+  
+  --accent: #1e1b4b; /* Indigo deep accent */
+  --accent-foreground: #a5b4fc;
+  
+  --destructive: #f87171;
+  --destructive-foreground: #ffffff;
+  
+  --border: rgba(255, 255, 255, 0.08);
+  --input: #1e293b;
+  --ring: rgba(99, 102, 241, 0.3);
 }
 
 html {
   font-size: var(--font-size);
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1 { font-size: 1.5rem; font-weight: 500; line-height: 1.5; }
-h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; }
-h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; }
-h4 { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+/* Beautiful custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+h1 { font-size: 1.75rem; font-weight: 700; line-height: 1.25; tracking: -0.02em; }
+h2 { font-size: 1.375rem; font-weight: 600; line-height: 1.35; tracking: -0.01em; }
+h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; }
+h4 { font-size: 0.95rem; font-weight: 500; line-height: 1.4; }
+
+/* Custom premium styles */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+.dark .glass-card {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Premium dynamic transitions */
+.transition-premium {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card hover animation */
+.card-hover-effect {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-hover-effect:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.15);
+  border-color: rgba(79, 70, 229, 0.25);
+}
+.dark .card-hover-effect:hover {
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.5);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+/* Bounding box glow */
+.bbox-ok {
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.6);
+  transition: all 0.2s ease-in-out;
+}
+.bbox-ng {
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.6);
+  transition: all 0.2s ease-in-out;
+}
 
 .input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.875rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--background);
+  border-radius: var(--radius);
+  background: var(--card);
   color: var(--foreground);
   font-size: 0.875rem;
+  transition: all 0.2s;
   outline: none;
 }
 
 .input:focus {
-  box-shadow: 0 0 0 2px rgb(59 130 246 / 0.35);
-  border-color: rgb(59 130 246);
+  box-shadow: 0 0 0 3px var(--ring);
+  border-color: var(--primary);
+}
+
+/* Monospace variables and values */
+.font-mono-data {
+  font-family: var(--font-mono);
 }

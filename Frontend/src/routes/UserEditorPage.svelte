@@ -119,21 +119,29 @@
   };
 </script>
 
-<div class="space-y-5">
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+<div class="space-y-6 select-none font-sans">
+  <!-- Top Navigation Bar -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
-      <button onclick={() => navigate('/user-management')} class="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2">
-        <ArrowLeft class="w-4 h-4" /> Back
+      <button onclick={() => navigate('/user-management')} class="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2.5 transition-colors group">
+        <ArrowLeft class="w-3.5 h-3.5 transition-transform group-hover:-translate-x-[2px]" /> Kembali
       </button>
-      <h1>{isEdit ? 'Edit User' : 'Tambah User'}</h1>
-      <p class="text-sm text-[var(--muted-foreground)] mt-1">Profil dan akses pengguna sistem.</p>
+      <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Akun Pengguna' : 'Tambah User Baru'}</h1>
+      <p class="text-sm text-[var(--muted-foreground)] mt-1.5 font-medium">Atur profil, avatar, dan otorisasi keamanan personil sistem.</p>
     </div>
-    <div class="flex items-center gap-2">
-      <button onclick={() => navigate('/user-management')} class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] text-sm hover:bg-[var(--accent)]">
+    <!-- Actions Buttons -->
+    <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
+      <button onclick={() => navigate('/user-management')} class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm">
         <X class="w-4 h-4" /> Batal
       </button>
-      <button disabled={saving || notFound} onclick={save} class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50">
-        <Save class="w-4 h-4" /> Simpan
+      <button disabled={saving || notFound} onclick={save} class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none">
+        {#if saving}
+          <span class="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+          <span>Menyimpan...</span>
+        {:else}
+          <Save class="w-4 h-4" />
+          <span>Simpan Data</span>
+        {/if}
       </button>
     </div>
   </div>
@@ -142,48 +150,51 @@
   {#if users.error}<Notice text={users.error} />{/if}
 
   {#if users.loading && isEdit}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
-      Memuat data user...
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
+      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
+      <span>Memuat data user...</span>
     </div>
   {:else if notFound}
-    <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">
-      User tidak ditemukan.
+    <div class="bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-2xl p-4.5 text-sm font-semibold">
+      Akun pengguna tidak ditemukan di database.
     </div>
   {:else}
-    <section class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-4">
-      <h3 class="text-sm">Profil</h3>
-      <div class="grid md:grid-cols-2 gap-3">
-        <label class="space-y-1 text-sm">
-          <span class="text-xs text-[var(--muted-foreground)]">Nama</span>
-          <input bind:value={form.name} class="input" />
+    <!-- Form Segment: Profile -->
+    <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
+      <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Informasi Profil Personil</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">Nama Lengkap</span>
+          <input bind:value={form.name} class="input text-slate-900 dark:text-white font-semibold" placeholder="Nama lengkap personil QC" required />
         </label>
-        <label class="space-y-1 text-sm">
-          <span class="text-xs text-[var(--muted-foreground)]">Username</span>
-          <input bind:value={form.username} class="input" />
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">Username Kredensial</span>
+          <input bind:value={form.username} class="input font-mono-data text-indigo-600 dark:text-indigo-400 font-bold" placeholder="username_qc" required />
         </label>
-        <label class="space-y-1 text-sm md:col-span-2">
-          <span class="text-xs text-[var(--muted-foreground)]">Avatar URL (opsional)</span>
-          <input bind:value={form.avatar} class="input" />
+        <label class="space-y-1.5 text-xs font-bold text-slate-500 md:col-span-2">
+          <span class="tracking-wide text-[10px] uppercase">Tautan Gambar Avatar (Opsional)</span>
+          <input bind:value={form.avatar} class="input text-slate-900 dark:text-white font-semibold" placeholder="https://example.com/avatar.png" />
         </label>
       </div>
     </section>
 
-    <section class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-4">
-      <h3 class="text-sm">Akses</h3>
-      <div class="grid md:grid-cols-2 gap-3">
-        <label class="space-y-1 text-sm">
-          <span class="text-xs text-[var(--muted-foreground)]">Role</span>
-          <select bind:value={form.role} class="input">
+    <!-- Form Segment: Access Control -->
+    <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
+      <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Akses &amp; Tingkat Keamanan</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">Tingkat Hak Akses (Role)</span>
+          <select bind:value={form.role} class="input font-semibold text-xs py-2.5">
             {#each ROLE_OPTIONS as role (role.value)}
               <option value={role.value}>{role.label}</option>
             {/each}
           </select>
         </label>
-        <label class="space-y-1 text-sm">
-          <span class="text-xs text-[var(--muted-foreground)]">
-            {isEdit ? 'Password baru (kosongkan jika tidak diganti)' : 'Password'}
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">
+            {isEdit ? 'Kunci Keamanan Baru (Biarkan kosong jika tidak diganti)' : 'Kunci Keamanan (Password)'}
           </span>
-          <input type="password" bind:value={form.password} class="input" />
+          <input type="password" bind:value={form.password} class="input text-slate-900 dark:text-white font-semibold" placeholder="Min. 4 karakter" />
         </label>
       </div>
     </section>
