@@ -109,81 +109,102 @@
   };
 </script>
 
-<div class="space-y-6">
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+<div class="space-y-6 select-none font-sans">
+  <!-- Title Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
-      <h1>Riwayat Inspeksi</h1>
-      <p class="text-[var(--muted-foreground)] text-sm mt-1">Traceability data hasil inspeksi</p>
+      <h1 class="text-slate-900 dark:text-white tracking-tight">Riwayat Inspeksi</h1>
+      <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">Traceability data dan hasil ukur historis untuk analisis kualitas berlanjut.</p>
     </div>
-    <button onclick={exportCSV} class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm self-start">
+    <button 
+      onclick={exportCSV} 
+      class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium self-start sm:self-auto"
+    >
       <Download class="w-4 h-4" /> Export CSV
     </button>
   </div>
 
   {#if error}
-    <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center justify-between gap-3">
+    <div class="bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 rounded-2xl p-4.5 text-sm flex items-center justify-between gap-4">
       <span>{error}</span>
-      <button onclick={retry} class="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Coba lagi</button>
+      <button onclick={retry} class="px-3.5 py-1.5 bg-red-600 text-white rounded-xl text-xs font-bold">Coba lagi</button>
     </div>
   {/if}
 
   {#if loading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 text-sm text-[var(--muted-foreground)]">
-      Memuat riwayat inspeksi dari backend...
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
+      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
+      <span>Memuat arsip riwayat data...</span>
     </div>
   {/if}
 
-  <div class="flex flex-wrap gap-3">
-    <div class="relative flex-1 min-w-[200px]">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
+  <!-- Search & Filter Controls -->
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="relative flex-1 min-w-[240px]">
+      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
       <input
         value={search}
         oninput={onSearchInput}
-        class="w-full pl-9 pr-4 py-2 border border-[var(--border)] rounded-lg bg-[var(--card)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        placeholder="Cari ID, part, operator..."
+        class="input pl-10 pr-4 py-2.5"
+        placeholder="Cari ID, nama part, operator..."
       />
     </div>
-    <select value={statusFilter} onchange={onStatusChange} class="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--card)] text-sm">
+    <select value={statusFilter} onchange={onStatusChange} class="input min-w-[130px] w-auto py-2.5 px-3">
       <option value="all">Semua Status</option>
       <option value="OK">OK</option>
       <option value="NG">NG</option>
     </select>
-    <select value={partFilter} onchange={onPartChange} class="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--card)] text-sm">
-      <option value="all">Semua Part</option>
+    <select value={partFilter} onchange={onPartChange} class="input min-w-[160px] w-auto py-2.5 px-3">
+      <option value="all">Semua Jenis Part</option>
       {#each parts.data as part (part.id)}
         <option value={part.partCode}>{part.partName}</option>
       {/each}
     </select>
   </div>
 
-  <div class="text-sm text-[var(--muted-foreground)]">{filtered.length} hasil ditemukan</div>
+  <!-- Count Stats -->
+  <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
+    Ditemukan: <span class="text-indigo-500 font-mono-data">{filtered.length}</span> baris data
+  </div>
 
-  <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
+  <!-- Master Data Table -->
+  <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead class="bg-[var(--accent)]">
-          <tr class="text-left">
-            <th class="px-4 py-3">Part</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3">Confidence</th>
-            <th class="px-4 py-3">Waktu</th>
-            <th class="px-4 py-3">Detail</th>
+        <thead>
+          <tr class="bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 border-b border-[var(--border)] text-left font-bold text-xs uppercase tracking-wider">
+            <th class="px-5 py-4">Part / Kode</th>
+            <th class="px-5 py-4">Status</th>
+            <th class="px-5 py-4">Confidence</th>
+            <th class="px-5 py-4">Waktu Pengerjaan</th>
+            <th class="px-5 py-4 text-right">Detail</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody class="divide-y divide-[var(--border)] text-slate-800 dark:text-slate-200">
           {#each paginated as row (row.id)}
-            <tr class="border-b border-[var(--border)] hover:bg-[var(--accent)]/50">
-              <td class="px-4 py-2.5">
-                <div>{row.partName}</div>
-                <div class="text-xs text-[var(--muted-foreground)]">{row.partCode} | {row.vendor}</div>
+            {@const isOK = row.status === 'OK'}
+            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-premium duration-150">
+              <td class="px-5 py-3.5">
+                <div class="font-semibold text-slate-900 dark:text-white">{row.partName}</div>
+                <div class="text-[10px] text-[var(--muted-foreground)] font-semibold font-mono-data mt-1.5">Code: {row.partCode} &bull; Vendor: {row.vendor}</div>
               </td>
-              <td class="px-4 py-2.5">
-                <span class="px-2 py-0.5 rounded-full text-xs {row.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">{row.status}</span>
+              <td class="px-5 py-3.5">
+                <span class="inline-flex px-2.5 py-1 rounded-full text-[10px] font-extrabold tracking-wide uppercase {
+                  isOK 
+                    ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
+                    : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
+                }">
+                  {row.status}
+                </span>
               </td>
-              <td class="px-4 py-2.5">{row.confidenceScore}%</td>
-              <td class="px-4 py-2.5 text-xs">{new Date(row.timestamp).toLocaleString('id-ID')}</td>
-              <td class="px-4 py-2.5">
-                <button onclick={() => toggleExpand(row.id)} class="p-1 hover:bg-[var(--accent)] rounded" aria-label="Toggle detail">
+              <td class="px-5 py-3.5 font-mono-data font-bold text-xs text-slate-700 dark:text-slate-300">{row.confidenceScore}%</td>
+              <td class="px-5 py-3.5 text-xs text-slate-500 dark:text-slate-400 font-semibold">{new Date(row.timestamp).toLocaleString('id-ID')}</td>
+              <td class="px-5 py-3.5 text-right">
+                <button 
+                  onclick={() => toggleExpand(row.id)} 
+                  class="p-2 border border-[var(--border)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] rounded-xl transition-premium shadow-sm text-slate-500 dark:text-slate-400" 
+                  aria-label="Tampilkan detail"
+                >
                   {#if expandedId === row.id}
                     <ChevronUp class="w-4 h-4" />
                   {:else}
@@ -194,46 +215,68 @@
             </tr>
             {#if expandedId === row.id}
               <tr>
-                <td colspan="5" class="px-4 py-3 bg-[var(--accent)]">
+                <td colspan="5" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
                   {#if detailLoading[row.id]}
-                    <div class="text-xs text-[var(--muted-foreground)] py-4 text-center">
-                      Memuat detail pengukuran...
+                    <div class="text-xs text-[var(--muted-foreground)] font-bold py-6 text-center animate-pulse flex items-center justify-center gap-2">
+                      <span class="w-3.5 h-3.5 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
+                      <span>Menganalisis dan memuat rincian pengukuran...</span>
                     </div>
                   {:else if detailErrors[row.id]}
-                    <div class="text-xs text-red-600 py-4 text-center">
-                      Gagal memuat detail: {detailErrors[row.id]}
+                    <div class="text-xs text-rose-500 font-bold py-6 text-center border border-rose-500/10 rounded-xl bg-rose-500/5">
+                      Gagal memperoleh data: {detailErrors[row.id]}
                     </div>
                   {:else if details[row.id]}
                     {@const detail = details[row.id]}
-                    <div class="text-xs" style="font-weight: 500">Detail Pengukuran - Operator: {detail.operatorName}</div>
-                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
-                      {#each detail.measurements as measurement (measurement.dimensionName)}
-                        <div class="p-2 rounded border {measurement.status === 'OK' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}">
-                          <div class="text-xs text-[var(--muted-foreground)]">{measurement.dimensionName}</div>
-                          <div class="text-sm" style="font-weight: 500">
-                            <span class={measurement.status === 'OK' ? 'text-green-700' : 'text-red-700'}>{measurement.measured} {measurement.unit}</span>
-                          </div>
-                          <div class="text-[10px] text-[var(--muted-foreground)]">
-                            Nominal: {measurement.nominal} | Range: {measurement.lowerLimit} ~ {measurement.upperLimit}
-                          </div>
-                        </div>
-                      {/each}
-                    </div>
-                    {#if detail.frameUrl}
-                      <div class="mt-3 max-w-md relative">
-                        <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
-                        {#each detail.detections as detection (detection.id)}
-                          <div
-                            class="absolute pointer-events-none border-2 {detection.status === 'OK' ? 'border-green-400' : 'border-red-400'}"
-                            style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
-                          >
-                            <span class="absolute -top-5 left-0 px-1 py-0.5 bg-black/60 text-white text-[9px] rounded whitespace-nowrap">
-                              {detection.label}
-                            </span>
+                    <div class="space-y-4">
+                      <!-- Operator Metadata -->
+                      <div class="text-xs text-slate-700 dark:text-slate-300 font-bold border-l-2 border-indigo-500 pl-2">
+                        Hasil Analisis Dimensi &bull; Operator: <span class="text-slate-950 dark:text-white">{detail.operatorName}</span>
+                      </div>
+
+                      <!-- Measurement Cards Grid -->
+                      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {#each detail.measurements as measurement (measurement.dimensionName)}
+                          {@const mOK = measurement.status === 'OK'}
+                          <div class="p-3.5 rounded-xl border shadow-inner transition-premium hover:-translate-y-[1px] {
+                            mOK 
+                              ? 'bg-emerald-500/5 border-emerald-500/10 dark:border-emerald-500/5' 
+                              : 'bg-rose-500/5 border-rose-500/10 dark:border-rose-500/5'
+                          }">
+                            <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wide">{measurement.dimensionName}</div>
+                            <div class="text-base font-extrabold mt-2 flex items-baseline gap-1.5 font-mono-data">
+                              <span class={mOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                {measurement.measured} {measurement.unit}
+                              </span>
+                              <span class="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded uppercase {
+                                mOK ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                              }">
+                                {measurement.status}
+                              </span>
+                            </div>
+                            <div class="text-[10px] text-[var(--muted-foreground)] font-medium mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/40">
+                              Nominal: <span class="text-slate-700 dark:text-slate-300">{measurement.nominal}</span> &bull; Range: <span class="text-slate-700 dark:text-slate-300">{measurement.lowerLimit} ~ {measurement.upperLimit} {measurement.unit}</span>
+                            </div>
                           </div>
                         {/each}
                       </div>
-                    {/if}
+
+                      <!-- Camera Frame and Detections Overlay -->
+                      {#if detail.frameUrl}
+                        <div class="mt-4 max-w-xl relative rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
+                          <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
+                          {#each detail.detections as detection (detection.id)}
+                            <div
+                              class="absolute pointer-events-none border-2 {detection.status === 'OK' ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
+                              style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
+                            >
+                              <span class="absolute -top-6 left-0 px-2 py-0.5 bg-slate-900/90 text-white text-[9px] font-bold rounded-lg border border-slate-700/20 whitespace-nowrap shadow-md">
+                                {detection.label}
+                              </span>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
                   {/if}
                 </td>
               </tr>
@@ -241,8 +284,8 @@
           {/each}
           {#if !loading && paginated.length === 0}
             <tr>
-              <td colspan="5" class="px-4 py-12 text-center text-[var(--muted-foreground)]">
-                {inspections.data.length === 0 ? 'Belum ada data inspeksi dari backend.' : 'Tidak ada data yang cocok dengan filter.'}
+              <td colspan="5" class="px-5 py-16 text-center text-[var(--muted-foreground)] font-medium">
+                {inspections.data.length === 0 ? 'Belum ada rekaman arsip data inspeksi.' : 'Tidak ditemukan baris data yang cocok dengan kriteria filter.'}
               </td>
             </tr>
           {/if}
@@ -251,11 +294,26 @@
     </div>
   </div>
 
+  <!-- Pagination Controls -->
   {#if totalPages > 1}
-    <div class="flex items-center justify-center gap-2">
-      <button disabled={currentPage <= 1} onclick={goToPreviousPage} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Prev</button>
-      <span class="text-sm text-[var(--muted-foreground)]">{currentPage} / {totalPages}</span>
-      <button disabled={currentPage >= totalPages} onclick={goToNextPage} class="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm disabled:opacity-50">Next</button>
+    <div class="flex items-center justify-center gap-3.5 pt-4">
+      <button 
+        disabled={currentPage <= 1} 
+        onclick={goToPreviousPage} 
+        class="px-4 py-2 border border-[var(--border)] rounded-xl text-xs font-bold bg-[var(--card)] hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 disabled:opacity-50 transition-premium shadow-sm hover:shadow"
+      >
+        Prev
+      </button>
+      <span class="text-xs text-[var(--muted-foreground)] font-bold font-mono-data">
+        Halaman {currentPage} / {totalPages}
+      </span>
+      <button 
+        disabled={currentPage >= totalPages} 
+        onclick={goToNextPage} 
+        class="px-4 py-2 border border-[var(--border)] rounded-xl text-xs font-bold bg-[var(--card)] hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 disabled:opacity-50 transition-premium shadow-sm hover:shadow"
+      >
+        Next
+      </button>
     </div>
   {/if}
 </div>
