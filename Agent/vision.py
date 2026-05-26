@@ -4,9 +4,27 @@ from typing import Any
 import cv2
 import numpy as np
 
+ARUCO_SIZE_MM = 20.00
 PIXEL_TO_MM_RATIO = 0.05
 GUARDBAND_PERCENT = 0.2
 MIN_CONTOUR_AREA = 1000
+
+ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
+
+current_ratio = PIXEL_TO_MM_RATIO
+
+def update_dynamic_ratio(frame: np.ndarray) -> float:
+    global current_ratio
+    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(frame)
+    if ids is not None and len(corners) > 0:
+        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+        marker_corners = corners[0][0]
+        dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
+        if dist_px > 0:
+            current_ratio = ARUCO_SIZE_MM / float(dist_px)
+    return current_ratio
 
 
 def _normalize_kind(raw: dict[str, Any]) -> str:
@@ -202,7 +220,7 @@ def _status_for(value: float, spec: DimensionSpec) -> str:
     return "OK" if (spec.lower_limit + guard) <= value <= (spec.upper_limit - guard) else "NG"
 
 
-def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray) -> float | None:
+def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray, ratio: float) -> float | None:
     x, y, w_box, h_box = cv2.boundingRect(contour)
     if w_box <= 0 or h_box <= 0:
         return None
@@ -225,7 +243,7 @@ def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray) -> float | None:
 
     largest = max(readable, key=cv2.contourArea)
     (_, _), radius_px = cv2.minEnclosingCircle(largest)
-    return round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
+    return round(float(radius_px * 2 * ratio), 3)
 
 
 def _measure_dimension(
@@ -248,12 +266,18 @@ def _measure_dimension(
 
 
 def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
+
+    ratio = update_dynamic_ratio(frame)
+    
     fg_area = int(cv2.countNonZero(mask))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) <= MIN_CONTOUR_AREA:
         return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
 
     result_frame = frame.copy()
+
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
+    
     detections: list[ObjectDetection] = []
     active_view = inspection_view if inspection_view in {"top", "side"} else "top"
     active_specs = [spec for spec in part.dimensions if spec.view == active_view]
@@ -274,10 +298,16 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         (_, _), (rect_w, rect_h), _ = cv2.minAreaRect(contour)
         short_side_px = max(0.0, min(float(rect_w), float(rect_h)))
         long_side_px = max(0.0, max(float(rect_w), float(rect_h)))
-        diameter_mm = round(float(radius_px * 2 * PIXEL_TO_MM_RATIO), 3)
-        width_mm = round(short_side_px * PIXEL_TO_MM_RATIO, 3)
-        length_mm = round(long_side_px * PIXEL_TO_MM_RATIO, 3)
-        hole_mm = _hole_diameter_mm(mask, contour)
+        
+        mid_y = y + (h_box // 2)
+        precise_x_left = _refine_edge_1d(gray_frame, x, mid_y)
+        precise_x_right = _refine_edge_1d(gray_frame, x + w_box, mid_y)
+        refined_width_px = precise_x_right - precise_x_left
+
+        diameter_mm = round(float(radius_px * 2 * ratio), 3)
+        width_mm = round(refined_width_px * ratio, 3) 
+        length_mm = round(long_side_px * ratio, 3)
+        hole_mm = _hole_diameter_mm(mask, contour, ratio)
 
         measurements: list[Measurement] = []
         detection_ok = True
