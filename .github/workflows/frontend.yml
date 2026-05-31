@@ -1,0 +1,64 @@
+name: 'Build and Deploy to Cloud Run'
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  PROJECT_ID: 'development-and-operations'
+  REGION: 'asia-southeast2'
+  SERVICE: 'diminspect-fe'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/985223039758/locations/global/workloadIdentityPools/github/providers/diminspect-capstone'
+
+jobs:
+  build-and-run:
+    runs-on: 'ubuntu-latest'
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v5.0.0'
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3.5.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.11.1
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5.8.0
+        with:
+          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.SERVICE }}
+
+      - name: Build and push
+        id: build-and-push
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2.1.10'
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+
+      - name: 'Deploy Frontend to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2.7.3'
+        with:
+          service: '${{ env.SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ steps.meta.outputs.tags }}'
