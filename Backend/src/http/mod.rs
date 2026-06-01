@@ -5,11 +5,10 @@ pub mod router;
 use std::sync::Arc;
 
 use crate::auth::AuthService;
+use crate::cloudflare::CloudflareRealtimeClient;
 use crate::config::Config;
 use crate::ingestion::IngestionService;
-use crate::realtime::agent_registry::AgentRegistry;
-use crate::realtime::event_bus::EventBus;
-use crate::realtime::frame_bus::FrameBus;
+use crate::mqtt::MqttService;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
@@ -19,8 +18,7 @@ pub struct AppState {
     pub store: Arc<PostgresStore>,
     pub auth: Arc<AuthService>,
     pub ingestion: Arc<IngestionService>,
-    pub event_bus: Arc<EventBus>,
-    pub frame_bus: Arc<FrameBus>,
-    pub agent_registry: Arc<AgentRegistry>,
+    pub mqtt: Option<Arc<MqttService>>,
+    pub cloudflare_realtime: Option<Arc<CloudflareRealtimeClient>>,
     pub object_store: Option<Arc<R2Store>>,
 }

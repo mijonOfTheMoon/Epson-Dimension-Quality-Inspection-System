@@ -6,7 +6,7 @@ use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderValue, Method, Request};
 use axum::middleware::{from_fn_with_state, Next};
 use axum::response::Response;
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
@@ -14,39 +14,38 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::extract::extract_bearer_token;
 use crate::auth::AuthService;
+use crate::cloudflare::CloudflareRealtimeClient;
 use crate::config::Config;
 use crate::domain::SafeUser;
 use crate::http::handlers;
 use crate::http::AppState;
 use crate::ingestion::IngestionService;
-use crate::realtime::agent_registry::AgentRegistry;
-use crate::realtime::event_bus::EventBus;
-use crate::realtime::frame_bus::FrameBus;
-use crate::realtime::{ws_agent, ws_event, ws_frame};
+use crate::mqtt::MqttService;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
 pub fn build_router(config: Config, store: PostgresStore, object_store: Option<Arc<R2Store>>) -> Router {
     let store = Arc::new(store);
-    let event_bus = Arc::new(EventBus::new(config.event_replay_limit));
-    let frame_bus = Arc::new(FrameBus::new());
-    let agent_registry = Arc::new(AgentRegistry::new());
+    let mqtt = config
+        .mqtt
+        .clone()
+        .map(MqttService::new)
+        .map(Arc::new);
+    let cloudflare_realtime = config
+        .cloudflare_realtime
+        .clone()
+        .map(CloudflareRealtimeClient::new)
+        .map(Arc::new);
     let auth = Arc::new(AuthService::new(config.clone(), store.clone()));
-    let ingestion = Arc::new(IngestionService::new(
-        store.clone(),
-        event_bus.clone(),
-        frame_bus.clone(),
-        object_store.clone(),
-    ));
+    let ingestion = Arc::new(IngestionService::new(store.clone(), object_store.clone()));
 
     let state = AppState {
         config: config.clone(),
         store,
         auth,
         ingestion,
-        event_bus,
-        frame_bus,
-        agent_registry,
+        mqtt,
+        cloudflare_realtime,
         object_store,
     };
 
@@ -68,11 +67,12 @@ pub fn build_router(config: Config, store: PostgresStore, object_store: Option<A
         .route("/api/users/{id}", patch(handlers::users::update).delete(handlers::users::delete_user))
         .route("/api/agents", get(handlers::agents::list))
         .route("/api/agents/{stationId}/command", post(handlers::agents::command))
+        .route("/api/agent/status", post(handlers::agent_ingest::status))
+        .route("/api/agent/inspections", post(handlers::agent_ingest::inspection))
+        .route("/api/video/stations/{stationId}/viewer-session", post(handlers::video::viewer_session))
+        .route("/api/video/cloudflare/sessions/{sessionId}/renegotiate", put(handlers::video::renegotiate))
         .route("/api/quality-records", get(handlers::quality_records::list))
         .route("/api/quality-records/{id}/status", patch(handlers::quality_records::update_status))
-        .route("/ws", get(ws_event::ws_handler))
-        .route("/ws/frames", get(ws_frame::ws_handler))
-        .route("/ws/agent", get(ws_agent::ws_handler))
         .with_state(state.clone())
         .layer(CompressionLayer::new().br(true).deflate(true))
         .layer(TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {

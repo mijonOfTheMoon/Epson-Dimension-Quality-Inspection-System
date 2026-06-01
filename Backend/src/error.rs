@@ -22,6 +22,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("{0}")]
     NotFound(String),
+    #[error("{0}")]
+    ServiceUnavailable(String),
     #[error("Invalid request")]
     InvalidRequest(Vec<ValidationIssue>),
     #[error(transparent)]
@@ -58,6 +60,10 @@ impl IntoResponse for AppError {
             ),
             AppError::NotFound(message) => (
                 StatusCode::NOT_FOUND,
+                ErrorBody { message, issues: None },
+            ),
+            AppError::ServiceUnavailable(message) => (
+                StatusCode::SERVICE_UNAVAILABLE,
                 ErrorBody { message, issues: None },
             ),
             AppError::InvalidRequest(issues) => (

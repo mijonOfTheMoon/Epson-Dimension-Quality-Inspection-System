@@ -31,8 +31,8 @@ docker compose up --build
 ## Notes
 
 - API memakai relative path `/api/*`.
-- Realtime event stream memakai `/ws`.
-- Live frame stream memakai `/ws/frames`.
+- Live data non-video memakai REST polling yang menyesuaikan visibility tab.
+- Live video memakai Cloudflare Realtime/WebRTC lewat endpoint signaling backend.
 - Favicon memakai logo yang sama dengan navbar.
 - Frame thumbnail memakai signed URL dari backend jika R2 aktif.
 

@@ -9,8 +9,10 @@ from zoneinfo import ZoneInfo
 
 import cv2
 
-from agent_link import AgentLink
 from config import FRAME_FPS, FRAME_QUALITY, AgentConfig, load_config
+from http_client import BackendHttpClient
+from mqtt_link import MqttLink
+from webrtc_publisher import WebRTCPublisher
 from vision import (
     InspectionPayload,
     PartSpec,
@@ -83,11 +85,16 @@ class InspectionRunner:
         self._shift = "A"
         self._batch_no: str | None = None
         self._inspection_view = "top"
+        self._video_command: dict[str, Any] | None = None
+        self._video_session_id: str | None = None
+        self._video_track_name: str | None = None
         self._frame_interval = 1.0 / FRAME_FPS
-        self.link = AgentLink(config, self._enqueue_command)
+        self.http = BackendHttpClient(config)
+        self.mqtt = MqttLink(config, self._enqueue_command)
+        self.video = WebRTCPublisher(config, FRAME_FPS)
 
     def start(self) -> None:
-        self.link.start()
+        self.mqtt.start()
         self._main_loop()
 
     def shutdown(self, *_: Any) -> None:
@@ -109,6 +116,8 @@ class InspectionRunner:
             self._batch_no = str(batch_no) if batch_no else None
             view = str(command.get("inspectionView", "top"))
             self._inspection_view = view if view in {"top", "side"} else "top"
+            video = command.get("video")
+            self._video_command = video if isinstance(video, dict) else None
             self._running.set()
         elif kind == "stop":
             self._running.clear()
@@ -141,28 +150,49 @@ class InspectionRunner:
         return drained
 
     def _main_loop(self) -> None:
-        last_status = 0.0
+        self._send_status(phase="idle", running=False)
         while not self._stop.is_set():
-            now = monotonic()
-            if now - last_status >= STATUS_INTERVAL:
-                self.link.send_event(build_station_status(self.config, running=False, phase="idle"))
-                last_status = now
             if self._running.is_set():
                 self._run_inspection_session()
-                last_status = 0.0
             else:
                 sleep(0.5)
 
     def _send_status(self, *, phase: Phase, running: bool, fps: float = 0.0) -> None:
         active = self._part.part_code if self._part else None
-        self.link.send_event(build_station_status(
+        event = build_station_status(
             self.config, running=running, phase=phase, fps=fps, active_part_code=active,
-        ))
+        )
+        self.mqtt.publish_presence(
+            online=True,
+            running=running,
+            phase=phase,
+            fps=fps,
+            active_part_code=active,
+            video_session_id=self._video_session_id,
+            video_track_name=self._video_track_name,
+        )
+        self.http.send_status(event)
 
     def _send_frame(self, frame: cv2.Mat, encode_params: list[int]) -> None:
+        self.video.submit_frame(frame)
+
+    def _encode_jpeg(self, frame: cv2.Mat, encode_params: list[int]) -> bytes | None:
         ok, buffer = cv2.imencode(".jpg", frame, encode_params)
-        if ok:
-            self.link.send_frame(buffer.tobytes())
+        return buffer.tobytes() if ok else None
+
+    def _on_video_ready(self, session_id: str, track_name: str) -> None:
+        self._video_session_id = session_id
+        self._video_track_name = track_name
+        phase = "ready" if self._running.is_set() else "idle"
+        active = self._part.part_code if self._part else None
+        self.mqtt.publish_presence(
+            online=True,
+            running=self._running.is_set(),
+            phase=phase,
+            active_part_code=active,
+            video_session_id=session_id,
+            video_track_name=track_name,
+        )
 
     def _capture_calibration(self, cap: cv2.VideoCapture, encode_params: list[int]) -> list[cv2.Mat]:
         frames: list[cv2.Mat] = []
@@ -194,6 +224,12 @@ class InspectionRunner:
             return
 
         encode_params = [cv2.IMWRITE_JPEG_QUALITY, FRAME_QUALITY]
+        video_track_name = None
+        if self._video_command and self._video_command.get("enabled", False):
+            video_track_name = str(self._video_command.get("trackName", "") or "")
+        self._video_session_id = None
+        self._video_track_name = None
+        self.video.start(video_track_name, self._on_video_ready)
         phase: Phase = "calibrating"
         background = None
         stable_count = 0
@@ -238,6 +274,7 @@ class InspectionRunner:
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
 
                 manual_capture = self._drain_command("capture")
+                display = result.frame if result.inspection is not None else annotate_status(frame, phase, self._part)
 
                 if manual_capture and result.inspection is not None:
                     event = build_inspection_event(self.config, result.inspection, "manual")
@@ -246,7 +283,7 @@ class InspectionRunner:
                     event["shift"] = self._shift
                     if self._batch_no:
                         event["batchNo"] = self._batch_no
-                    self.link.send_event(event)
+                    self.http.send_inspection(event, self._encode_jpeg(display, encode_params))
                     phase = "locked"
                     clear_count = 0
                     stable_count = 0
@@ -273,8 +310,6 @@ class InspectionRunner:
                     else:
                         clear_count = 0
 
-                display = result.frame if result.inspection is not None else annotate_status(frame, phase, self._part)
-
                 if now - last_frame_sent >= self._frame_interval:
                     self._send_frame(display, encode_params)
                     last_frame_sent = now
@@ -284,6 +319,9 @@ class InspectionRunner:
                     last_status = now
 
         finally:
+            self.video.stop()
+            self._video_session_id = None
+            self._video_track_name = None
             cap.release()
             self._send_status(phase="idle", running=False)
 
@@ -296,7 +334,8 @@ def main() -> None:
         runner.start()
     finally:
         runner.shutdown()
-        runner.link.stop()
+        runner.video.stop()
+        runner.mqtt.stop()
 
 
 if __name__ == "__main__":

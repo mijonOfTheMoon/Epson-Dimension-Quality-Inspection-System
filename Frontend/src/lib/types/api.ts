@@ -115,6 +115,32 @@ export interface AgentInfo {
   connectedAt: string | null;
 }
 
+export interface AgentCommandResponse {
+  stationId: string;
+  command: AgentCommandType;
+  commandId: string;
+  delivery: 'published';
+  delivered: true;
+}
+
+export interface CloudflareSessionDescription {
+  sdp: string;
+  type: RTCSdpType;
+}
+
+export interface VideoViewerSession {
+  stationId: string;
+  provider: 'cloudflare-realtime';
+  appId: string;
+  viewerSessionId: string;
+  publisherSessionId: string;
+  trackName: string;
+  sessionDescription?: CloudflareSessionDescription;
+  requiresImmediateRenegotiation: boolean;
+  renegotiatePath: string;
+  iceServers: RTCIceServer[];
+}
+
 export interface AuthLoginResponse {
   user: User;
   token: string;

@@ -5,16 +5,18 @@ Sistem inspeksi dimensi berbasis computer vision dengan Agent Python OpenCV, Bac
 ## Architecture
 
 ```text
-[Agent PC: Python OpenCV] --WS--> [nginx proxy] --WS--> [Backend Rust Axum]
-                                      |
-[Browser: Svelte UI] -------HTTP/WS---+
-                                      |
-                         [PostgreSQL + TimescaleDB] + [Cloudflare R2 optional]
+[Browser: Svelte UI] ----REST----> [nginx proxy] ----REST----> [Backend Rust Axum]
+                                                              |
+[Agent PC: Python OpenCV] --MQTT--> [HiveMQ] <--MQTT command--+
+[Agent PC: Python OpenCV] --HTTP inspection/status----------->+
+[Agent PC: Python OpenCV] --WebRTC video--> [Cloudflare Realtime] <--WebRTC-- [Browser]
+                                                              |
+                                      [PostgreSQL + TimescaleDB] + [Cloudflare R2 optional]
 ```
 
 - Browser hanya bicara ke nginx proxy di `http://localhost`.
 - Backend port `4000` dan frontend port `8080` hanya exposed di Docker network.
-- Agent connect outbound ke `/ws/agent`; tidak butuh inbound port.
+- Agent standby via MQTT dan HTTP outbound; tidak butuh inbound port.
 - Frame capture disimpan ke Cloudflare R2 jika object store aktif.
 
 ## Run
@@ -30,9 +32,6 @@ Endpoint publik:
 | Frontend UI        | `http://localhost/`           |
 | REST API           | `http://localhost/api/*`      |
 | Health             | `http://localhost/api/health` |
-| Realtime events    | `ws://localhost/ws`           |
-| Agent socket       | `ws://localhost/ws/agent`     |
-| Live frame stream  | `ws://localhost/ws/frames`    |
 | PostgreSQL         | `localhost:5432`              |
 
 ## Main Features
@@ -63,6 +62,8 @@ APP_TIMEZONE=Asia/Jakarta
 JWT_SECRET=change-me-in-production-please-use-long-secret
 AGENT_TOKEN=change-me-agent-shared-token
 OBJECT_STORE_ENABLED=false
+MQTT_HOST=
+CLOUDFLARE_REALTIME_ENABLED=false
 ```
 
 Agent env:
@@ -70,24 +71,24 @@ Agent env:
 ```text
 STATION_ID=Station 1
 CAMERA_INDEX=0
-BACKEND_WS_URL=ws://localhost/ws/agent
+BACKEND_HTTP_URL=http://localhost:4000
 AGENT_TOKEN=change-me-agent-shared-token
+MQTT_HOST=
 ```
-
-Untuk domain HTTPS, gunakan `wss://your-domain.example.com/ws/agent`.
 
 ## Project Notes
 
 - Backend schema source of truth ada di `Backend/migrations/20240101000001_initial.up.sql`.
 - Tidak ada migration incremental untuk initial setup.
-- Frontend memakai relative path tetap: `/api/*`, `/ws`, dan `/ws/frames`.
+- Frontend memakai relative path `/api/*` dan polling untuk live data non-video.
 - Agent manual capture hanya mengirim inspection saat ada detection valid.
+- Panduan migrasi database ke Supabase + TimescaleDB ada di `docs/supabase.md`.
 
 ## Validation
 
 ```bash
-cd Frontend && npm run check && npm run build
+cd frontend && npm run check && npm run build
 cd Backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-cd Agent && python -m py_compile agent_link.py computer_vision.py config.py vision.py
+cd Agent && python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 docker compose config
 ```

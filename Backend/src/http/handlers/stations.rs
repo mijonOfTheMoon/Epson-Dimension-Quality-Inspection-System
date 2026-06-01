@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::extract::{Extension, Path, State};
 use axum::Json;
 use chrono::{SecondsFormat, Utc};
@@ -17,7 +19,43 @@ pub async fn list(
     Extension(current): Extension<CurrentUser>,
 ) -> AppResult<Json<Vec<StationStatusEvent>>> {
     require_auth(&current)?;
-    Ok(Json(state.store.list_stations().await?))
+    let mut stations = state.store.list_stations().await?;
+    if let Some(mqtt) = &state.mqtt {
+        let presences = mqtt.list_presence().await?;
+        let mut index = stations
+            .iter()
+            .enumerate()
+            .map(|(position, station)| (station.station_id.clone(), position))
+            .collect::<HashMap<_, _>>();
+        for presence in presences {
+            if presence.online {
+                if let Some(position) = index.get(&presence.station_id).copied() {
+                    let station = &mut stations[position];
+                    station.state = StationState::Online;
+                    station.running = Some(presence.running);
+                    station.phase = presence.phase.or(station.phase);
+                    station.active_part_code = presence.active_part_code.or(station.active_part_code.clone());
+                    station.timestamp = presence.updated_at.unwrap_or_else(iso_now);
+                } else {
+                    index.insert(presence.station_id.clone(), stations.len());
+                    stations.push(StationStatusEvent {
+                        event_type: StationEventType::StationStatus,
+                        event_id: format!("mqtt-presence-{}-{}", presence.station_id, Uuid::new_v4()),
+                        station_id: presence.station_id,
+                        timestamp: presence.updated_at.unwrap_or_else(iso_now),
+                        state: StationState::Online,
+                        fps: None,
+                        running: Some(presence.running),
+                        phase: presence.phase.or(Some(StationPhase::Idle)),
+                        active_part_code: presence.active_part_code,
+                        is_active: Some(true),
+                    });
+                }
+            }
+        }
+        stations.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    }
+    Ok(Json(stations))
 }
 
 pub async fn delete_station(
@@ -26,15 +64,22 @@ pub async fn delete_station(
     Path(station_id): Path<String>,
 ) -> AppResult<Json<StationStatusEvent>> {
     require_role(&current, SETTINGS_ROLES)?;
-    state.agent_registry.send(
-        &station_id,
-        AgentCommand {
-            kind: AgentCommandType::Stop,
-            part: None,
-            operator: None,
-            inspection_view: None,
-        },
-    );
+    let command = AgentCommand {
+        kind: AgentCommandType::Stop,
+        command_id: Some(Uuid::new_v4().to_string()),
+        issued_at: Some(iso_now()),
+        part: None,
+        operator: None,
+        inspection_view: None,
+        video: None,
+    };
+    if let Some(mqtt) = &state.mqtt {
+        if let Ok(Some(presence)) = mqtt.retained_presence(&station_id).await {
+            if presence.online {
+                let _ = mqtt.publish_command(&station_id, &command).await;
+            }
+        }
+    }
     let station = state
         .store
         .deactivate_station(&station_id)
@@ -59,4 +104,8 @@ pub async fn delete_station(
         Some(IngestEvent::Station(event)) => Ok(Json(event)),
         _ => Ok(Json(station)),
     }
+}
+
+fn iso_now() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }

@@ -1,6 +1,6 @@
 # DimInspect Agent
 
-Agent Python OpenCV berjalan di mesin operator dan connect outbound WebSocket ke backend lewat nginx proxy. Agent tidak butuh inbound port.
+Agent Python OpenCV berjalan di mesin operator dan connect outbound ke HiveMQ MQTT untuk standby command/presence. Data inspeksi/status dikirim ke backend lewat HTTP, dan live video dipublish ke Cloudflare Realtime/WebRTC saat sesi berjalan.
 
 ## Run
 
@@ -17,18 +17,29 @@ python computer_vision.py
 ```text
 STATION_ID=Station 1
 CAMERA_INDEX=0
-BACKEND_WS_URL=ws://localhost/ws/agent
+BACKEND_HTTP_URL=http://localhost:4000
 AGENT_TOKEN=change-me-agent-shared-token
-```
 
-Untuk domain HTTPS, gunakan `wss://your-domain.example.com/ws/agent`.
+MQTT_HOST=your-hivemq-host.s1.eu.hivemq.cloud
+MQTT_PORT=8883
+MQTT_USERNAME=diminspect
+MQTT_PASSWORD=change-me
+MQTT_TOPIC_PREFIX=diminspect/development
+MQTT_USE_TLS=true
+
+CLOUDFLARE_REALTIME_ENABLED=false
+CLOUDFLARE_REALTIME_APP_ID=
+CLOUDFLARE_REALTIME_APP_SECRET=
+CLOUDFLARE_REALTIME_API_BASE_URL=https://rtc.live.cloudflare.com/v1
+```
 
 ## Behavior
 
 - Saat idle, kamera tidak dibuka.
-- Agent tetap mengirim status `online` berkala agar UI tahu station hidup.
+- Agent publish retained MQTT presence agar UI/backend tahu station hidup tanpa membuat Cloud Run tetap warm.
 - Command inbound: `start`, `stop`, `capture`, `recalibrate`.
-- Frame stream dikirim sebagai JPEG binary saat running.
+- Frame live dipublish ke Cloudflare Realtime saat running.
+- Snapshot JPEG untuk histori dikirim bersama multipart HTTP inspection ingest.
 - Manual capture hanya mengirim `inspection.created` jika ada detection valid.
 - `STATION_ID` wajib unik per agent dan `AGENT_TOKEN` harus sama dengan backend.
 
@@ -55,5 +66,5 @@ Settings:  Restart on failure every 1 minute, up to 99 attempts
 ## Validation
 
 ```powershell
-python -m py_compile agent_link.py computer_vision.py config.py vision.py
+python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 ```

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
+
 use crate::domain::validation::validate_ingest_event;
 use crate::domain::*;
-use crate::realtime::event_bus::EventBus;
-use crate::realtime::frame_bus::FrameBus;
 use crate::storage::object_store::{upload_with_retry, R2Store};
 use crate::storage::postgres::PostgresStore;
 use crate::storage::DataStore;
@@ -11,27 +11,29 @@ use crate::storage::DataStore;
 #[derive(Clone)]
 pub struct IngestionService {
     store: Arc<PostgresStore>,
-    event_bus: Arc<EventBus>,
-    frame_bus: Arc<FrameBus>,
     object_store: Option<Arc<R2Store>>,
 }
 
 impl IngestionService {
     pub fn new(
         store: Arc<PostgresStore>,
-        event_bus: Arc<EventBus>,
-        frame_bus: Arc<FrameBus>,
         object_store: Option<Arc<R2Store>>,
     ) -> Self {
         Self {
             store,
-            event_bus,
-            frame_bus,
             object_store,
         }
     }
 
     pub async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>> {
+        self.ingest_with_snapshot(event, None).await
+    }
+
+    pub async fn ingest_with_snapshot(
+        &self,
+        event: IngestEvent,
+        snapshot: Option<Bytes>,
+    ) -> anyhow::Result<Option<IngestEvent>> {
         validate_ingest_event(&event).map_err(|error| anyhow::anyhow!(error.to_string()))?;
         let upload_context = match &event {
             IngestEvent::Inspection(event) => Some((
@@ -57,59 +59,32 @@ impl IngestionService {
                 if first_saved.is_none() {
                     first_saved = Some(saved.clone());
                 }
-                self.event_bus.publish(saved)?;
             }
         }
 
         if !saved_inspection_ids.is_empty() {
-            if let (Some((parent_event_id, station_id, captured_at)), Some(object_store)) =
-                (upload_context, self.object_store.clone())
+            if let (Some(jpeg), Some((parent_event_id, station_id, captured_at)), Some(object_store)) =
+                (snapshot, upload_context, self.object_store.clone())
             {
-                self.spawn_upload_frame(
-                    parent_event_id,
-                    station_id,
-                    captured_at,
-                    saved_inspection_ids,
-                    object_store,
+                let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
+                upload_with_retry(&object_store, &key, jpeg, 3).await?;
+                let updated = self.store.mark_frame_uploaded(&saved_inspection_ids, &key).await?;
+                if let Some(IngestEvent::Inspection(inspection)) = &mut first_saved {
+                    inspection.frame_object_key = Some(key.clone());
+                    inspection.frame_uploaded_at = Some(chrono::Utc::now().to_rfc3339());
+                }
+                tracing::info!(
+                    %parent_event_id,
+                    %station_id,
+                    %key,
+                    updated,
+                    expected = saved_inspection_ids.len(),
+                    "frame uploaded from agent HTTP ingest"
                 );
             }
         }
 
         Ok(first_saved)
-    }
-
-    fn spawn_upload_frame(
-        &self,
-        parent_event_id: String,
-        station_id: String,
-        captured_at: String,
-        inspection_event_ids: Vec<String>,
-        object_store: Arc<R2Store>,
-    ) {
-        let frame_bus = self.frame_bus.clone();
-        let store = self.store.clone();
-        tokio::spawn(async move {
-            let Some(jpeg) = frame_bus.latest_raw(&station_id) else {
-                tracing::debug!(%parent_event_id, %station_id, "no latest frame available for upload");
-                return;
-            };
-
-            let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
-            match upload_with_retry(&object_store, &key, jpeg, 3).await {
-                Ok(()) => match store.mark_frame_uploaded(&inspection_event_ids, &key).await {
-                    Ok(updated) => {
-                        let expected = inspection_event_ids.len();
-                        tracing::info!(%parent_event_id, %station_id, %key, updated, expected, "frame uploaded");
-                    }
-                    Err(error) => {
-                        tracing::warn!(%parent_event_id, %station_id, %key, %error, "failed to update frame metadata");
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!(%parent_event_id, %station_id, %key, %error, "frame upload failed");
-                }
-            }
-        });
     }
 }
 

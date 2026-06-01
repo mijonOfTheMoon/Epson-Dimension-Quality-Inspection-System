@@ -1,7 +1,9 @@
 import type {
   AgentCommandType,
+  AgentCommandResponse,
   AgentInfo,
   AuthLoginResponse,
+  CloudflareSessionDescription,
   DashboardSummary,
   DimensionView,
   InspectionCreatedEvent,
@@ -12,11 +14,11 @@ import type {
   StationStatusEvent,
   User,
   UserRole,
+  VideoViewerSession,
 } from '$lib/types/api';
 
 const TOKEN_KEY = 'diminspect_auth_token';
 export const AUTH_LOGOUT_EVENT = 'auth:logout';
-export const WS_BEARER_PROTOCOL = 'diminspect.v1.bearer';
 
 export const tokenStorage = {
   get(): string | null {
@@ -88,12 +90,6 @@ export function normalizeInspectionEvent(event: InspectionCreatedEvent): Inspect
     detections: event.detections ?? [],
     frameUrl: event.frameUrl,
   };
-}
-
-interface AgentCommandResponse {
-  stationId: string;
-  command: AgentCommandType;
-  delivered: true;
 }
 
 export const api = {
@@ -195,6 +191,18 @@ export const api = {
       `/api/agents/${encodeURIComponent(stationId)}/command`,
       { method: 'POST', body: JSON.stringify({ command: 'recalibrate' }) },
     );
+  },
+  createVideoViewerSession(stationId: string) {
+    return request<VideoViewerSession>(
+      `/api/video/stations/${encodeURIComponent(stationId)}/viewer-session`,
+      { method: 'POST' },
+    );
+  },
+  renegotiateVideoSession(path: string, sessionDescription: CloudflareSessionDescription) {
+    return request<unknown>(path, {
+      method: 'PUT',
+      body: JSON.stringify({ sessionDescription }),
+    });
   },
   createUser(input: { username: string; password: string; name: string; role: UserRole; avatar?: string }) {
     return request<User>('/api/users', {

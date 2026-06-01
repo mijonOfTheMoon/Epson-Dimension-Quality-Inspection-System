@@ -3,8 +3,8 @@
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
     RotateCcw, StopCircle, Trash2, Video, XCircle, Zap,
   } from 'lucide-svelte';
+  import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
   import { useAgents } from '$lib/hooks/useAgents.svelte';
-  import { useFrameStream } from '$lib/hooks/useFrameStream.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
@@ -99,8 +99,6 @@
 
   const merged = $derived(mergeStations(agents.data, stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
-  const visibleIds = $derived(visibleStations.map((s) => s.stationId));
-  const frameStream = useFrameStream(() => visibleIds);
 
   const latestInspections = $derived(inspections.data.slice(0, 10));
   const loading = $derived(inspections.loading || stations.loading || agents.loading || parts.loading);
@@ -182,6 +180,7 @@
       await fn();
       showToast(`${label}: ${stationId}`);
       await agents.refresh();
+      await stations.refresh();
       onSuccess?.();
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
@@ -302,7 +301,6 @@
         <div class={focusedStationId ? 'grid gap-6' : 'grid xl:grid-cols-2 gap-6'}>
           {#each visibleStations as station (station.stationId)}
             {@const isFocused = focusedStationId === station.stationId}
-            {@const frameUrl = frameStream.frames[station.stationId]}
             {@const isBusy = busy[station.stationId]}
             {@const phase = station.phase ?? (station.running ? 'ready' : 'idle')}
             {@const phaseMeta = PHASE_LABELS[phase]}
@@ -318,14 +316,7 @@
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <!-- Video Frame Container -->
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
-                {#if station.running && frameUrl}
-                  <img src={frameUrl} alt={station.stationId} class="w-full h-full object-contain" />
-                {:else}
-                  <div class="text-slate-500 text-xs flex flex-col items-center select-none font-medium">
-                    <Video class="w-10 h-10 mb-3 opacity-30 text-indigo-400" />
-                    <span>{station.online ? (station.running ? 'Menghubungkan frame...' : 'Kamera Siap - Konfigurasi lalu klik Mulai') : 'Agent Offline'}</span>
-                  </div>
-                {/if}
+                <CloudflareVideo stationId={station.stationId} online={station.online} running={station.running} />
 
                 <!-- Glowing Bounding Boxes (Object Detections) -->
                 {#each detections as detection (detection.id)}

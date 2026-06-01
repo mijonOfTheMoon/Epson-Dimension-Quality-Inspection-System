@@ -28,8 +28,27 @@ pub struct Config {
     pub jwt_expires_in: String,
     pub bcrypt_rounds: u32,
     pub agent_token: String,
-    pub event_replay_limit: usize,
+    pub mqtt: Option<MqttConfig>,
+    pub cloudflare_realtime: Option<CloudflareRealtimeConfig>,
     pub object_store: Option<ObjectStoreConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MqttConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub topic_prefix: String,
+    pub use_tls: bool,
+    pub retained_presence_timeout: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct CloudflareRealtimeConfig {
+    pub app_id: String,
+    pub app_secret: String,
+    pub api_base_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +79,8 @@ impl Config {
         if agent_token.len() < 8 {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
+        let mqtt = mqtt_config(&node_env)?;
+        let cloudflare_realtime = cloudflare_realtime_config()?;
         let object_store = object_store_config()?;
         let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
 
@@ -77,10 +98,63 @@ impl Config {
             jwt_expires_in: env_or("JWT_EXPIRES_IN", "7d"),
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
             agent_token,
-            event_replay_limit: parse_env("EVENT_REPLAY_LIMIT", 100)?,
+            mqtt,
+            cloudflare_realtime,
             object_store,
         })
     }
+}
+
+fn mqtt_config(node_env: &NodeEnv) -> anyhow::Result<Option<MqttConfig>> {
+    let host = env_or("MQTT_HOST", "");
+    if host.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let username = require_env("MQTT_USERNAME")?;
+    let password = require_env("MQTT_PASSWORD")?;
+    let default_prefix = format!(
+        "diminspect/{}",
+        match node_env {
+            NodeEnv::Development => "development",
+            NodeEnv::Test => "test",
+            NodeEnv::Production => "production",
+        }
+    );
+    let topic_prefix = env_or("MQTT_TOPIC_PREFIX", &default_prefix)
+        .trim()
+        .trim_matches('/')
+        .to_string();
+    if topic_prefix.is_empty() {
+        return Err(anyhow!("MQTT_TOPIC_PREFIX must not be empty when MQTT_HOST is set"));
+    }
+
+    Ok(Some(MqttConfig {
+        host,
+        port: parse_env("MQTT_PORT", 8883)?,
+        username,
+        password,
+        topic_prefix,
+        use_tls: parse_bool_env("MQTT_USE_TLS", true)?,
+        retained_presence_timeout: Duration::from_millis(parse_env(
+            "MQTT_RETAINED_PRESENCE_TIMEOUT_MS",
+            2_000_u64,
+        )?),
+    }))
+}
+
+fn cloudflare_realtime_config() -> anyhow::Result<Option<CloudflareRealtimeConfig>> {
+    if !parse_bool_env("CLOUDFLARE_REALTIME_ENABLED", false)? {
+        return Ok(None);
+    }
+
+    Ok(Some(CloudflareRealtimeConfig {
+        app_id: require_env("CLOUDFLARE_REALTIME_APP_ID")?,
+        app_secret: require_env("CLOUDFLARE_REALTIME_APP_SECRET")?,
+        api_base_url: env_or("CLOUDFLARE_REALTIME_API_BASE_URL", "https://rtc.live.cloudflare.com/v1")
+            .trim_end_matches('/')
+            .to_string(),
+    }))
 }
 
 fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
@@ -89,15 +163,12 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
     }
 
     let bucket = env_or("OBJECT_STORE_BUCKET", "diminspect-frames");
-    let account_id = env_or("OBJECT_STORE_ACCOUNT_ID", "");
-    let access_key_id = env_or("OBJECT_STORE_ACCESS_KEY_ID", "");
-    let secret_access_key = env_or("OBJECT_STORE_SECRET_ACCESS_KEY", "");
-    if [bucket.as_str(), account_id.as_str(), access_key_id.as_str(), secret_access_key.as_str()]
-        .iter()
-        .any(|value| value.trim().is_empty())
-    {
-        return Ok(None);
+    if bucket.trim().is_empty() {
+        return Err(anyhow!("OBJECT_STORE_BUCKET must not be empty when OBJECT_STORE_ENABLED=true"));
     }
+    let account_id = require_env("OBJECT_STORE_ACCOUNT_ID")?;
+    let access_key_id = require_env("OBJECT_STORE_ACCESS_KEY_ID")?;
+    let secret_access_key = require_env("OBJECT_STORE_SECRET_ACCESS_KEY")?;
 
     let signed_url_ttl = parse_env("OBJECT_STORE_SIGNED_URL_TTL_SECONDS", 86_400_u64)?;
     let upload_timeout = parse_env("OBJECT_STORE_UPLOAD_TIMEOUT_SECONDS", 10_u64)?;
@@ -113,6 +184,15 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn require_env(key: &str) -> anyhow::Result<String> {
+    let value = std::env::var(key).with_context(|| format!("{key} is required"))?;
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return Err(anyhow!("{key} must not be empty"));
+    }
+    Ok(value)
 }
 
 fn parse_env<T>(key: &str, default: T) -> anyhow::Result<T>

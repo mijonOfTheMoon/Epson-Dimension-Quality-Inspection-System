@@ -14,14 +14,38 @@ FRAME_QUALITY = 62
 class AgentConfig:
     station_id: str
     camera_index: int
-    backend_ws_url: str
+    backend_http_url: str
     agent_token: str
+    mqtt_host: str
+    mqtt_port: int
+    mqtt_username: str
+    mqtt_password: str
+    mqtt_topic_prefix: str
+    mqtt_use_tls: bool
+    cloudflare_realtime_enabled: bool
+    cloudflare_realtime_app_id: str
+    cloudflare_realtime_app_secret: str
+    cloudflare_realtime_api_base_url: str
 
 
 def load_config() -> AgentConfig:
     return AgentConfig(
         station_id=os.getenv("STATION_ID", "Station 1"),
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
-        backend_ws_url=os.getenv("BACKEND_WS_URL", "ws://localhost/ws/agent"),
+        backend_http_url=os.getenv("BACKEND_HTTP_URL", "http://localhost:4000"),
         agent_token=os.getenv("AGENT_TOKEN", "change-me-agent-shared-token"),
+        mqtt_host=os.getenv("MQTT_HOST", ""),
+        mqtt_port=int(os.getenv("MQTT_PORT", "8883")),
+        mqtt_username=os.getenv("MQTT_USERNAME", ""),
+        mqtt_password=os.getenv("MQTT_PASSWORD", ""),
+        mqtt_topic_prefix=os.getenv("MQTT_TOPIC_PREFIX", "diminspect/development").strip("/"),
+        mqtt_use_tls=os.getenv("MQTT_USE_TLS", "true").lower() in {"1", "true", "yes"},
+        cloudflare_realtime_enabled=os.getenv("CLOUDFLARE_REALTIME_ENABLED", "false").lower()
+        in {"1", "true", "yes"},
+        cloudflare_realtime_app_id=os.getenv("CLOUDFLARE_REALTIME_APP_ID", ""),
+        cloudflare_realtime_app_secret=os.getenv("CLOUDFLARE_REALTIME_APP_SECRET", ""),
+        cloudflare_realtime_api_base_url=os.getenv(
+            "CLOUDFLARE_REALTIME_API_BASE_URL",
+            "https://rtc.live.cloudflare.com/v1",
+        ).rstrip("/"),
     )

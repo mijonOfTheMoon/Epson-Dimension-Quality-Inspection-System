@@ -25,3 +25,4 @@ venv/
 agent_buffer.jsonl
 data/
 .docker-data/
+.codex-notes/

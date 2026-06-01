@@ -24,5 +24,7 @@ pub struct DuplicatedResponse {
 pub struct CommandDeliveredResponse {
     pub station_id: String,
     pub command: String,
+    pub command_id: String,
+    pub delivery: &'static str,
     pub delivered: bool,
 }

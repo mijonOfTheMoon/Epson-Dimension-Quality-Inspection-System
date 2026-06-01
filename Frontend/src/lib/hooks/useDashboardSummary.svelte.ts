@@ -1,7 +1,7 @@
 import { onMount } from 'svelte';
 import type { DashboardSummary } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
-import { subscribeRealtime } from '$lib/services/realtime';
+import { startVisibilityPolling } from '$lib/services/polling';
 
 const EMPTY: DashboardSummary = {
   total: 0,
@@ -14,15 +14,12 @@ const EMPTY: DashboardSummary = {
   recentInspections: [],
 };
 
-const REFRESH_DEBOUNCE_MS = 500;
-
 export function useDashboardSummary() {
   let data = $state<DashboardSummary>(EMPTY);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
-  let timer: number | undefined;
 
   const load = async (showLoading = true) => {
     if (!mounted) return;
@@ -41,28 +38,16 @@ export function useDashboardSummary() {
     }
   };
 
-  const scheduleRefresh = () => {
-    if (!mounted || timer !== undefined) return;
-    timer = window.setTimeout(() => {
-      timer = undefined;
-      void load(false);
-    }, REFRESH_DEBOUNCE_MS);
-  };
+  const refresh = () => load(false);
 
   onMount(() => {
     mounted = true;
     void load();
-    const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType === 'inspection.created' || event.eventType === 'station.status') {
-        scheduleRefresh();
-      }
-    });
+    const stopPolling = startVisibilityPolling(refresh, 5000, 30000);
     return () => {
       mounted = false;
       requestId += 1;
-      unsubscribe();
-      if (timer !== undefined) window.clearTimeout(timer);
-      timer = undefined;
+      stopPolling();
     };
   });
 

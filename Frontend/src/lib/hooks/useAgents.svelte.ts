@@ -1,7 +1,7 @@
 import { onMount } from 'svelte';
 import type { AgentInfo } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
-import { subscribeRealtime } from '$lib/services/realtime';
+import { startVisibilityPolling } from '$lib/services/polling';
 
 export function useAgents() {
   let data = $state<AgentInfo[]>([]);
@@ -9,7 +9,6 @@ export function useAgents() {
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
-  let refreshTimer: number | undefined;
 
   const load = async (showLoading = true) => {
     if (!mounted) return;
@@ -30,27 +29,14 @@ export function useAgents() {
 
   const refresh = () => load(false);
 
-  const scheduleRefresh = () => {
-    if (!mounted || refreshTimer !== undefined) return;
-    refreshTimer = window.setTimeout(() => {
-      refreshTimer = undefined;
-      void refresh();
-    }, 500);
-  };
-
   onMount(() => {
     mounted = true;
     void load();
-    const unsubscribe = subscribeRealtime((event) => {
-      if (event.eventType !== 'station.status') return;
-      scheduleRefresh();
-    });
+    const stopPolling = startVisibilityPolling(refresh, 3000, 15000);
     return () => {
       mounted = false;
       requestId += 1;
-      unsubscribe();
-      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-      refreshTimer = undefined;
+      stopPolling();
     };
   });
 

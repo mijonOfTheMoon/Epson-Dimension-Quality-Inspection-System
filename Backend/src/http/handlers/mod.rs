@@ -1,3 +1,4 @@
+pub mod agent_ingest;
 pub mod agents;
 pub mod auth;
 pub mod dashboard;
@@ -7,6 +8,7 @@ pub mod parts;
 pub mod quality_records;
 pub mod stations;
 pub mod users;
+pub mod video;
 
 use crate::domain::{SafeUser, UserRole};
 use crate::error::{AppError, AppResult};

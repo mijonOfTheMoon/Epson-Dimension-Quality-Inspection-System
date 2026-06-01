@@ -6,7 +6,7 @@ on:
 
 env:
   PROJECT_ID: 'development-and-operations'
-  REGION: 'asia-southeast2'
+  REGION: 'asia-southeast1'
   SERVICE: 'diminspect-fe'
   WORKLOAD_IDENTITY_PROVIDER: 'projects/985223039758/locations/global/workloadIdentityPools/github/providers/diminspect-capstone'
 
@@ -44,7 +44,7 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@v6.18.0
         with:
-          context: ./Frontend 
+          context: ./frontend
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
