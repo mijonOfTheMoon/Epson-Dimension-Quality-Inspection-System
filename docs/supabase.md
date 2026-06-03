@@ -121,9 +121,9 @@ Di Supabase Dashboard:
 1. Buat project baru.
 2. Pilih Postgres 17.
 3. Simpan database password di password manager.
-4. Ambil connection string untuk backend.
+4. Ambil connection string **Session Pooler** untuk backend.
 
-Untuk runtime backend, gunakan **Session Pooler** atau **Direct Connection**.
+Untuk Cloud Run, local `psql` dari jaringan IPv4, dan runtime backend saat ini, gunakan **Session Pooler**. Jangan pakai Direct Connection sebagai default, karena host `db.<project-ref>.supabase.co` memakai IPv6 kecuali project memiliki IPv4 add-on.
 
 ```text
 DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
@@ -131,7 +131,7 @@ DATABASE_SSL=true
 DATABASE_POOL_MAX=2
 ```
 
-Hindari Transaction Pooler untuk runtime saat ini, karena backend Rust SQLx memakai prepared statements secara default.
+Direct Connection hanya boleh dipakai jika environment sudah terbukti mendukung IPv6 atau project memakai Supabase IPv4 add-on. Transaction Pooler juga dihindari untuk runtime saat ini, karena backend Rust SQLx memakai prepared statements secara default.
 
 ## 5. Apply Schema
 
@@ -144,7 +144,7 @@ sqlx::migrate!("./migrations").run(&self.pool).await?;
 Cara manual untuk setup database dari workstation:
 
 ```powershell
-$env:SUPABASE_DB_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
+$env:SUPABASE_DB_URL="postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require"
 psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f .\backend\migrations\20240101000001_initial.up.sql
 ```
 
