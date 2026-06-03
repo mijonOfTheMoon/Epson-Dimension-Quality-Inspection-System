@@ -49,6 +49,9 @@ jobs:
         with:
           context: ./frontend
           push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_APP_TIMEZONE=${{ vars.VITE_APP_TIMEZONE || 'Asia/Jakarta' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -65,3 +68,4 @@ jobs:
           service: '${{ env.SERVICE }}'
           region: '${{ env.REGION }}'
           image: '${{ vars.DOCKERHUB_USERNAME }}/${{ env.SERVICE }}@${{ steps.build-and-push.outputs.digest }}'
+          flags: '--port=8080'
