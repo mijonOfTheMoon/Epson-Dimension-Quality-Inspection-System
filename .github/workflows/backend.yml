@@ -1,4 +1,4 @@
-name: 'Build and Deploy to Cloud Run'
+name: 'Build and Deploy Backend to Cloud Run'
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@v6.18.0
         with:
-          context: ./frontend
+          context: ./backend
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -56,7 +56,7 @@ jobs:
           project_id: '${{ env.PROJECT_ID }}'
           workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
 
-      - name: 'Deploy Frontend to Cloud Run'
+      - name: 'Deploy Backend to Cloud Run'
         uses: 'google-github-actions/deploy-cloudrun@v2.7.3'
         with:
           service: '${{ env.SERVICE }}'
