@@ -3,6 +3,9 @@ name: 'Build and Deploy Frontend to Cloud Run'
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
 
 env:
   PROJECT_ID: 'development-and-operations'

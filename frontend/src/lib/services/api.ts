@@ -19,6 +19,7 @@ import type {
 
 const TOKEN_KEY = 'diminspect_auth_token';
 export const AUTH_LOGOUT_EVENT = 'auth:logout';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 export const tokenStorage = {
   get(): string | null {
@@ -55,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   if (response.status === 401) {
     tokenStorage.clear();
