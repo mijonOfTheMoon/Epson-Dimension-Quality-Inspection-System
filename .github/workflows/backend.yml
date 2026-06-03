@@ -61,4 +61,4 @@ jobs:
         with:
           service: '${{ env.SERVICE }}'
           region: '${{ env.REGION }}'
-          image: '${{ steps.meta.outputs.tags }}'
+          image: '${{ vars.DOCKERHUB_USERNAME }}/${{ env.SERVICE }}@${{ steps.build-and-push.outputs.digest }}'
