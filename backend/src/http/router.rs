@@ -108,10 +108,17 @@ pub struct CurrentUser(pub Option<SafeUser>);
 
 fn cors_layer(config: &Config) -> CorsLayer {
     let base = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
 
-    if config.cors_origin == "*" {
+    if config.cors_origin.trim() == "*" {
         base.allow_origin(Any)
     } else {
         let origins = config
