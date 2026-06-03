@@ -1,4 +1,6 @@
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE SCHEMA IF NOT EXISTS partman;
+CREATE EXTENSION IF NOT EXISTS pg_partman WITH SCHEMA partman;
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version integer PRIMARY KEY,
@@ -49,18 +51,8 @@ CREATE TABLE IF NOT EXISTS inspections (
   trigger text,
   frame_object_key text,
   frame_uploaded_at timestamptz
-);
-
-SELECT create_hypertable(
-  'inspections', 'timestamp',
-  chunk_time_interval => INTERVAL '7 days',
-  if_not_exists => true
-);
-
-ALTER TABLE inspections SET (
-  timescaledb.compress,
-  timescaledb.compress_segmentby = 'station_id,part_code'
-);
+)
+PARTITION BY RANGE (timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_inspections_event_id
   ON inspections(event_id);
@@ -75,6 +67,24 @@ CREATE INDEX IF NOT EXISTS idx_inspections_partcode_status_ts
 CREATE INDEX IF NOT EXISTS idx_inspections_frame_uploaded
   ON inspections(frame_uploaded_at)
   WHERE frame_object_key IS NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM partman.part_config
+    WHERE parent_table = 'public.inspections'
+  ) THEN
+    PERFORM partman.create_parent(
+      p_parent_table := 'public.inspections',
+      p_control := 'timestamp',
+      p_type := 'range',
+      p_interval := '7 days',
+      p_premake := 8,
+      p_start_partition := '2024-01-01 00:00:00+00'
+    );
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS stations (
   station_id text PRIMARY KEY,
@@ -105,27 +115,20 @@ CREATE TABLE IF NOT EXISTS quality_records (
 CREATE INDEX IF NOT EXISTS idx_quality_records_date
   ON quality_records(date DESC);
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS dashboard_aggregates_daily
-WITH (timescaledb.continuous) AS
-SELECT
-  time_bucket('1 day', timestamp, 'Asia/Jakarta') AS bucket,
-  station_id,
-  part_code,
-  part_name,
-  COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
-  COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
-  COUNT(*)::bigint AS total
-FROM inspections
-GROUP BY bucket, station_id, part_code, part_name
-WITH NO DATA;
-
-SELECT add_continuous_aggregate_policy(
-  'dashboard_aggregates_daily',
-  start_offset => INTERVAL '30 days',
-  end_offset => INTERVAL '1 hour',
-  schedule_interval => INTERVAL '5 minutes',
-  if_not_exists => true
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM cron.job
+    WHERE jobname = 'partman-maintenance'
+  ) THEN
+    PERFORM cron.schedule(
+      'partman-maintenance',
+      '@daily',
+      $cron$call partman.run_maintenance_proc()$cron$
+    );
+  END IF;
+END $$;
 
 INSERT INTO schema_migrations (version) VALUES (1)
 ON CONFLICT (version) DO NOTHING;

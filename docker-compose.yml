@@ -1,13 +1,13 @@
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg17
+    image: supabase/postgres:17.6.1.084
     container_name: diminspect-postgres
     restart: unless-stopped
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "cron.database_name=diminspect"]
     environment:
       POSTGRES_DB: diminspect
       POSTGRES_USER: diminspect
       POSTGRES_PASSWORD: diminspect
-      TIMESCALEDB_TELEMETRY: "off"
     ports:
       - "5432:5432"
     volumes:
@@ -21,7 +21,7 @@ services:
 
   backend:
     build:
-      context: ./Backend
+      context: ./backend
       dockerfile: Dockerfile
     image: diminspect-backend:latest
     container_name: diminspect-backend
@@ -89,7 +89,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./Proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   postgres-data:

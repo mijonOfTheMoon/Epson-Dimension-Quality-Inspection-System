@@ -18,7 +18,7 @@ Service listen di `PORT` dan expose:
 
 ## Data
 
-- PostgreSQL + TimescaleDB.
+- PostgreSQL 17 dengan native partitioning untuk `inspections`, dikelola oleh `pg_partman`.
 - Schema clean source: `migrations/20240101000001_initial.up.sql`.
 - Static seed users dan seed parts ada di `src/storage/seed.rs`.
 - Dashboard summary dihitung langsung dari `inspections`.

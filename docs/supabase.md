@@ -1,168 +1,86 @@
-# Supabase + TimescaleDB Setup and Migration Guide
+# Supabase Postgres 17 + pg_partman Setup and Migration Guide
 
-Panduan ini menjelaskan langkah lengkap memindahkan database DimInspect dari PostgreSQL/Timescale lokal ke Supabase Postgres, sambil tetap memakai TimescaleDB untuk tabel time-series `inspections`.
+Panduan ini menjelaskan setup database DimInspect untuk Supabase Postgres 17 dan local Docker yang kompatibel. Schema tidak lagi memakai TimescaleDB. Tabel time-series `inspections` memakai native PostgreSQL range partitioning, lalu maintenance partisi dikelola oleh `pg_partman` dan `pg_cron`.
 
 ## Ringkasan Keputusan
 
-- Gunakan Supabase sebagai database Postgres terkelola.
-- Gunakan TimescaleDB hanya pada proyek Supabase Postgres 15.
-- Jangan pilih Supabase Postgres 17 jika wajib memakai `timescaledb`, karena extension tersebut deprecated/tidak tersedia untuk proyek Postgres 17.
+- Gunakan Supabase Postgres 17 sebagai target utama.
+- Jangan pakai `timescaledb` pada Postgres 17, karena extension tersebut tidak tersedia di Supabase Postgres 17.
+- Gunakan native partitioning pada tabel `inspections` dengan interval 7 hari.
+- Gunakan `pg_partman` untuk membuat partisi ke depan dan `pg_cron` untuk menjalankan maintenance harian.
 - Backend tetap memakai koneksi Postgres langsung lewat `DATABASE_URL`; frontend tidak perlu Supabase client.
-- Untuk Cloud Run, utamakan Session Pooler atau Direct Connection. Jangan pakai Transaction Pooler kecuali prepared statements SQLx sudah dimatikan.
 - Cloudflare R2 tetap dipakai untuk snapshot inspection. Supabase Storage tidak perlu dipakai dalam arsitektur ini.
-
-## Catatan Penting Tentang Timescale di Supabase
-
-Supabase menyediakan TimescaleDB Apache 2 Edition. Fitur dasar seperti hypertable dan `time_bucket()` adalah target utama migrasi ini. Beberapa fitur Timescale yang ada di migration lokal bisa tidak tersedia atau bisa ditolak tergantung versi extension dan lisensi:
-
-- `ALTER TABLE ... SET (timescaledb.compress, ...)`
-- `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)`
-- `add_continuous_aggregate_policy(...)`
-
-Backend DimInspect saat ini menghitung dashboard langsung dari tabel `inspections`, bukan dari `dashboard_aggregates_daily`, jadi continuous aggregate aman untuk dihilangkan jika Supabase menolak fitur tersebut.
 
 ## 1. Persiapan Lokal
 
-Pastikan repo sudah berada di kondisi yang ingin dimigrasikan.
+Pastikan repo berada di kondisi yang ingin dipakai:
 
 ```powershell
 cd "D:\My Files\Kuliah\Semester 6\Capstone Project"
 git status --short
 ```
 
-Pastikan database lokal masih bisa diakses:
+Jika database lama berisi data yang masih dibutuhkan, ambil backup dulu:
 
 ```powershell
-docker compose ps
-docker compose exec postgres pg_isready -U diminspect -d diminspect
-```
-
-Ambil backup sebelum migrasi:
-
-```powershell
-New-Item -ItemType Directory -Force -Path .\backups | Out-Null
-docker compose exec -T postgres pg_dump `
+New-Item -ItemType Directory -Force .\backups
+docker compose exec postgres pg_dump `
   -U diminspect `
   -d diminspect `
   --format=custom `
-  --file=- > .\backups\diminspect-before-supabase.dump
+  --file=/tmp/diminspect-before-pg-partman.dump
+docker compose cp postgres:/tmp/diminspect-before-pg-partman.dump .\backups\diminspect-before-pg-partman.dump
 ```
 
-Backup SQL plain juga berguna untuk review manual:
+Migration ini adalah clean reset. Karena initial migration SQLx berubah, database lokal yang sudah pernah menjalankan migration lama dapat terkena checksum mismatch. Reset volume sekali:
 
 ```powershell
-docker compose exec -T postgres pg_dump `
-  -U diminspect `
-  -d diminspect `
-  --schema=public `
-  --no-owner `
-  --no-privileges `
-  --file=- > .\backups\diminspect-before-supabase.sql
+docker compose down -v
+docker compose up --build
 ```
 
-## 2. Buat Supabase Project
+`docker compose down -v` menghapus named volume `postgres-data`, jadi jalankan hanya setelah backup jika data lokal masih diperlukan.
 
-1. Buka Supabase Dashboard.
-2. Buat project baru.
-3. Pilih region yang dekat dengan Cloud Run backend. Jika Cloud Run di Asia Tenggara, pilih region Supabase terdekat yang tersedia.
-4. Pilih Postgres 15 jika ingin TimescaleDB.
-5. Simpan database password di password manager.
-6. Tunggu project selesai provisioning.
+## 2. Local Database
 
-Jangan lanjut ke migrasi schema sampai project benar-benar aktif.
+`docker-compose.yml` memakai image:
 
-## 3. Ambil Connection String
+```yaml
+image: supabase/postgres:17.6.1.084
+```
 
-Di Supabase Dashboard:
-
-1. Buka project.
-2. Klik **Connect**.
-3. Simpan tiga connection string berikut jika tersedia:
-   - Direct connection: untuk migration, `pg_dump`, `psql`, dan task admin.
-   - Session Pooler: direkomendasikan untuk runtime Cloud Run jika Direct Connection/IPv6 tidak cocok.
-   - Transaction Pooler: hanya dipakai kalau library tidak memakai prepared statements.
-
-Untuk backend Rust SQLx di repo ini, gunakan:
+Service Postgres tetap memakai database/user/password lokal:
 
 ```text
-DATABASE_URL=<Session Pooler atau Direct Connection string>
-DATABASE_SSL=true
-DATABASE_POOL_MAX=2
+POSTGRES_DB=diminspect
+POSTGRES_USER=diminspect
+POSTGRES_PASSWORD=diminspect
 ```
 
-Catatan:
+Command Postgres local juga menyetel:
 
-- Supabase Transaction Pooler tidak mendukung prepared statements dengan aman untuk semua client.
-- SQLx memakai prepared statement/cache secara default.
-- Jika nanti ingin memakai Transaction Pooler, tambahkan perubahan kode untuk `statement_cache_capacity(0)` di `Backend/src/storage/postgres.rs`, lalu test penuh.
-
-## 4. Enable TimescaleDB Extension
-
-Jalankan lewat Supabase SQL Editor atau `psql`.
-
-```sql
-create schema if not exists extensions;
-create extension if not exists timescaledb with schema extensions;
-
-select
-  extname,
-  extversion,
-  extnamespace::regnamespace as schema
-from pg_extension
-where extname = 'timescaledb';
+```text
+cron.database_name=diminspect
 ```
 
-Expected:
+Ini diperlukan supaya `pg_cron` bisa dibuat dan menjalankan job di database local `diminspect`.
 
-- Ada satu row `timescaledb`.
-- Schema biasanya `extensions`.
+## 3. Schema Source of Truth
 
-Jika `timescaledb` tidak tersedia, project kemungkinan Postgres 17 atau region/plan tidak menyediakan extension tersebut. Buat project Postgres 15, atau pakai opsi alternatif di bagian "Jika Harus Pakai Postgres 17".
+Schema utama ada di:
 
-## 5. Apply Schema DimInspect
+```text
+backend/migrations/20240101000001_initial.up.sql
+```
 
-Ada dua opsi. Untuk Supabase, mulai dari opsi aman.
+Perubahan utama:
 
-### Opsi A: Supabase-Safe Schema
-
-Gunakan SQL berikut jika Supabase menolak compression atau continuous aggregate. Ini mempertahankan hypertable `inspections`, indexes, dan semua tabel aplikasi.
+- `timescaledb`, hypertable, compression, continuous aggregate, dan `time_bucket()` dihapus.
+- `pg_partman` dibuat di schema `partman`.
+- `pg_cron` dibuat untuk maintenance otomatis.
+- `inspections` dibuat sebagai native partitioned table:
 
 ```sql
-create schema if not exists extensions;
-create extension if not exists timescaledb with schema extensions;
-
-create table if not exists schema_migrations (
-  version integer primary key,
-  applied_at timestamptz not null default now()
-);
-
-create table if not exists event_log (
-  event_id text primary key,
-  event_type text not null,
-  station_id text not null,
-  timestamp timestamptz not null
-);
-
-create index if not exists idx_event_log_timestamp
-  on event_log(timestamp desc);
-
-create table if not exists users (
-  id text primary key,
-  username text not null unique,
-  password text not null,
-  name text not null,
-  role text not null,
-  avatar text
-);
-
-create table if not exists parts (
-  id text primary key,
-  part_name text not null,
-  part_code text not null unique,
-  vendor text not null,
-  dimensions jsonb not null
-);
-
 create table if not exists inspections (
   event_id text not null,
   station_id text not null,
@@ -180,368 +98,152 @@ create table if not exists inspections (
   trigger text,
   frame_object_key text,
   frame_uploaded_at timestamptz
-);
-
-select create_hypertable(
-  'inspections',
-  'timestamp',
-  chunk_time_interval => interval '7 days',
-  if_not_exists => true
-);
-
-create index if not exists idx_inspections_event_id
-  on inspections(event_id);
-create index if not exists idx_inspections_timestamp
-  on inspections(timestamp desc);
-create index if not exists idx_inspections_status_part
-  on inspections(status, part_code);
-create index if not exists idx_inspections_station_ts
-  on inspections(station_id, timestamp desc);
-create index if not exists idx_inspections_partcode_status_ts
-  on inspections(part_code, status, timestamp desc);
-create index if not exists idx_inspections_frame_uploaded
-  on inspections(frame_uploaded_at)
-  where frame_object_key is not null;
-
-create table if not exists stations (
-  station_id text primary key,
-  event_id text not null,
-  timestamp timestamptz not null,
-  state text not null check (state in ('online', 'offline')),
-  fps double precision,
-  running boolean not null default false,
-  phase text,
-  active_part_code text,
-  is_active boolean not null default true
-);
-
-create table if not exists quality_records (
-  id text primary key,
-  date date not null,
-  part_code text not null,
-  part_name text not null,
-  vendor text not null,
-  total_scanned integer not null default 0,
-  ng_count integer not null default 0,
-  ng_rate numeric(6, 2) not null default 0,
-  request_status text not null,
-  status_history jsonb not null,
-  unique (date, part_code)
-);
-
-create index if not exists idx_quality_records_date
-  on quality_records(date desc);
-
-insert into schema_migrations (version)
-values (1)
-on conflict (version) do nothing;
+)
+partition by range (timestamp);
 ```
 
-### Opsi B: Pakai Migration Existing
+`pg_partman` mendaftarkan parent table:
 
-Jika ingin mencoba migration existing apa adanya:
+```sql
+select partman.create_parent(
+  p_parent_table := 'public.inspections',
+  p_control := 'timestamp',
+  p_type := 'range',
+  p_interval := '7 days',
+  p_premake := 8,
+  p_start_partition := '2024-01-01 00:00:00+00'
+);
+```
+
+Backend tetap aman karena query dashboard, history, dan quality tracking langsung membaca `inspections` dengan SQL Postgres biasa.
+
+## 4. Verifikasi Local
+
+Setelah `docker compose up --build`, cek extension:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "select extname from pg_extension where extname in ('pg_partman', 'pg_cron') order by extname;"
+```
+
+Cek parent table `inspections` adalah partitioned table:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "select relname, relkind from pg_class where relname = 'inspections';"
+```
+
+Nilai `relkind` harus `p`.
+
+Cek konfigurasi `pg_partman`:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "select parent_table, control, partition_interval, premake from partman.part_config where parent_table = 'public.inspections';"
+```
+
+Cek child partitions:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "select inhrelid::regclass as partition_name from pg_inherits where inhparent = 'public.inspections'::regclass order by 1;"
+```
+
+Cek cron job:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "select jobname, schedule, command from cron.job where command like '%run_maintenance_proc%';"
+```
+
+Jalankan maintenance manual jika perlu:
+
+```powershell
+docker compose exec postgres psql -U diminspect -d diminspect -c "call partman.run_maintenance_proc();"
+```
+
+## 5. Setup Supabase
+
+Buat project Supabase dengan Postgres 17. Ambil connection string direct atau session pooler, lalu simpan sebagai secret/backend env:
+
+```text
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+DATABASE_SSL=true
+DATABASE_POOL_MAX=2
+```
+
+Untuk Cloud Run, gunakan Session Pooler atau Direct Connection. Hindari Transaction Pooler kecuali prepared statements SQLx sudah dimatikan.
+
+Apply schema bisa dilakukan dengan menjalankan backend sekali memakai `DATABASE_URL` Supabase, karena backend menjalankan `sqlx::migrate!("./migrations")` saat init. Alternatif manual:
 
 ```powershell
 $env:SUPABASE_DB_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
-psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f .\Backend\migrations\20240101000001_initial.up.sql
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f .\backend\migrations\20240101000001_initial.up.sql
 ```
 
-Jika gagal di bagian compression atau continuous aggregate, rollback schema kosong lalu pakai Opsi A:
+Setelah schema dibuat, ulangi query verifikasi extension, `partman.part_config`, child partitions, dan cron job pada database Supabase.
 
-```sql
-drop materialized view if exists dashboard_aggregates_daily;
-drop table if exists quality_records cascade;
-drop table if exists stations cascade;
-drop table if exists inspections cascade;
-drop table if exists parts cascade;
-drop table if exists users cascade;
-drop table if exists event_log cascade;
-drop table if exists schema_migrations cascade;
-```
+## 6. Import Data Lama
 
-## 6. Verifikasi Schema dan Hypertable
+Jika ingin restore data dari backup lama, pastikan data `inspections.timestamp` berada pada atau setelah `2024-01-01`. Jika ada data lebih lama, buat partisi lama dulu sebelum restore.
 
-Jalankan:
-
-```sql
-select table_name
-from information_schema.tables
-where table_schema = 'public'
-order by table_name;
-
-select hypertable_schema, hypertable_name, num_dimensions
-from timescaledb_information.hypertables
-where hypertable_name = 'inspections';
-
-select indexname
-from pg_indexes
-where schemaname = 'public'
-  and tablename = 'inspections'
-order by indexname;
-```
-
-Expected:
-
-- Tabel utama muncul: `event_log`, `users`, `parts`, `inspections`, `stations`, `quality_records`, `schema_migrations`.
-- `inspections` muncul sebagai hypertable.
-- Index inspection sudah ada.
-
-## 7. Migrasi Data Dari Database Lama
-
-Matikan backend lama dulu agar tidak ada write baru saat dump.
+Restore contoh:
 
 ```powershell
-docker compose stop backend
-```
-
-Export data table aplikasi:
-
-```powershell
-New-Item -ItemType Directory -Force -Path .\backups | Out-Null
-docker compose exec -T postgres pg_dump `
-  -U diminspect `
-  -d diminspect `
+$env:SUPABASE_DB_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
+pg_restore `
+  --dbname=$env:SUPABASE_DB_URL `
   --data-only `
-  --no-owner `
-  --no-privileges `
   --disable-triggers `
-  --table=public.schema_migrations `
   --table=public.event_log `
   --table=public.users `
   --table=public.parts `
   --table=public.inspections `
   --table=public.stations `
   --table=public.quality_records `
-  --file=- > .\backups\diminspect-data-only.sql
+  .\backups\diminspect-before-pg-partman.dump
 ```
 
-Import ke Supabase:
+Jika restore dari database Timescale lama gagal pada `inspections`, export/import data table tersebut secara eksplisit dengan `COPY` atau dump data-only yang tidak membawa definisi hypertable.
+
+## 7. Validasi Aplikasi
+
+Jalankan check berikut setelah database local/Supabase siap:
 
 ```powershell
-$env:SUPABASE_DB_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
-psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f .\backups\diminspect-data-only.sql
+docker compose config
+cd backend
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cd ..\frontend
+npm run check
+npm run build
 ```
 
-Jika import gagal karena row seed sudah ada, berarti backend pernah start dan sudah seed `users`/`parts`. Untuk database baru, paling bersih adalah:
+Validasi perilaku:
 
-1. Stop backend.
-2. Truncate target Supabase.
-3. Import ulang.
+- `GET /api/health` hijau.
+- Login user seed berhasil.
+- Agent ingest `POST /api/agent/inspections` menulis row baru ke `inspections`.
+- Dashboard, History, dan Quality Tracking load normal.
+- Query history tetap order by `timestamp desc`.
+- R2 thumbnail tetap muncul jika object store aktif.
 
-```sql
-truncate table
-  quality_records,
-  stations,
-  inspections,
-  parts,
-  users,
-  event_log,
-  schema_migrations
-restart identity;
-```
+## 8. Catatan Legacy TimescaleDB
 
-Lalu ulangi import.
+TimescaleDB masih bisa dipakai pada Supabase Postgres 15, tetapi bukan jalur yang direkomendasikan untuk proyek ini. Untuk Postgres 17, Supabase mengarahkan migrasi ke native partitioning dan `pg_partman`.
 
-## 8. Verifikasi Data
+Fitur Timescale yang sudah dihapus dari schema DimInspect:
 
-Bandingkan count lokal dan Supabase.
+- `create extension timescaledb`
+- `create_hypertable(...)`
+- `alter table ... set (timescaledb.compress, ...)`
+- continuous aggregate `dashboard_aggregates_daily`
+- `time_bucket(...)`
+- `add_continuous_aggregate_policy(...)`
 
-Lokal:
-
-```powershell
-docker compose exec -T postgres psql -U diminspect -d diminspect -c "
-select 'users' table_name, count(*) from users
-union all select 'parts', count(*) from parts
-union all select 'inspections', count(*) from inspections
-union all select 'stations', count(*) from stations
-union all select 'quality_records', count(*) from quality_records
-union all select 'event_log', count(*) from event_log;
-"
-```
-
-Supabase:
-
-```sql
-select 'users' table_name, count(*) from users
-union all select 'parts', count(*) from parts
-union all select 'inspections', count(*) from inspections
-union all select 'stations', count(*) from stations
-union all select 'quality_records', count(*) from quality_records
-union all select 'event_log', count(*) from event_log;
-```
-
-Smoke test query:
-
-```sql
-select
-  time_bucket('1 day', timestamp) as day,
-  count(*) filter (where status = 'OK') as ok,
-  count(*) filter (where status = 'NG') as ng
-from inspections
-group by day
-order by day desc
-limit 7;
-```
-
-## 9. Update Backend Environment
-
-Untuk local `.env` backend:
-
-```text
-DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
-DATABASE_SSL=true
-DATABASE_POOL_MAX=2
-APP_TIMEZONE=Asia/Jakarta
-```
-
-Untuk Cloud Run, simpan sebagai Secret Manager:
-
-```powershell
-gcloud secrets create diminspect-database-url --replication-policy=automatic
-Set-Content -Path .\tmp-db-url.txt -Value "postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
-gcloud secrets versions add diminspect-database-url --data-file=.\tmp-db-url.txt
-Remove-Item .\tmp-db-url.txt
-```
-
-Deploy backend Cloud Run dengan env:
-
-```powershell
-gcloud run deploy diminspect-backend `
-  --image <your-backend-image> `
-  --region <cloud-run-region> `
-  --allow-unauthenticated `
-  --set-secrets DATABASE_URL=diminspect-database-url:latest `
-  --set-env-vars DATABASE_SSL=true,DATABASE_POOL_MAX=2,APP_TIMEZONE=Asia/Jakarta
-```
-
-Tambahkan env lain yang sudah dipakai arsitektur Cloud Run:
-
-```text
-JWT_SECRET=...
-AGENT_TOKEN=...
-MQTT_HOST=...
-MQTT_USERNAME=...
-MQTT_PASSWORD=...
-MQTT_TOPIC_PREFIX=diminspect/production
-OBJECT_STORE_ENABLED=true
-OBJECT_STORE_BUCKET=...
-OBJECT_STORE_ACCOUNT_ID=...
-OBJECT_STORE_ACCESS_KEY_ID=...
-OBJECT_STORE_SECRET_ACCESS_KEY=...
-CLOUDFLARE_REALTIME_ENABLED=true
-CLOUDFLARE_REALTIME_APP_ID=...
-CLOUDFLARE_REALTIME_APP_SECRET=...
-```
-
-## 10. Jalankan Backend ke Supabase
-
-Local smoke test:
-
-```powershell
-cd Backend
-$env:DATABASE_URL="postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
-$env:DATABASE_SSL="true"
-$env:DATABASE_POOL_MAX="2"
-cargo run
-```
-
-Test endpoint:
-
-```powershell
-curl http://localhost:4000/api/health
-```
-
-Login dari frontend, lalu cek:
-
-- Dashboard load.
-- History menampilkan data lama.
-- Quality Tracking load.
-- Live Tracking bisa melihat station dari MQTT presence.
-
-## 11. RLS dan Supabase Data API
-
-Aplikasi ini tidak memakai Supabase Data API dari frontend. Browser tetap hanya bicara ke backend DimInspect.
-
-Rekomendasi:
-
-- Jangan taruh `service_role` key di frontend.
-- Jangan menambahkan Supabase anon key ke frontend jika tidak ada kebutuhan.
-- Jika nanti tabel public diekspos ke Data API, aktifkan RLS dan tulis policy yang benar.
-- Untuk sekarang, backend memakai Postgres connection string dan authorization tetap dilakukan oleh backend.
-
-Opsional hardening jika ingin mencegah akses Data API accidental:
-
-```sql
-alter table users enable row level security;
-alter table parts enable row level security;
-alter table inspections enable row level security;
-alter table stations enable row level security;
-alter table quality_records enable row level security;
-alter table event_log enable row level security;
-```
-
-Jangan lakukan ini kalau ada rencana memakai Supabase client langsung sebelum policy siap.
-
-## 12. Rollback Plan
-
-Simpan database lama sampai production baru stabil.
-
-Rollback aplikasi:
-
-1. Set `DATABASE_URL` kembali ke database lama.
-2. Set `DATABASE_SSL=false` jika kembali ke docker/local DB.
-3. Deploy ulang backend.
-4. Jangan drop Supabase project sampai semua data diverifikasi.
-
-Rollback data:
-
-```powershell
-docker compose exec -T postgres pg_restore `
-  -U diminspect `
-  -d diminspect `
-  --clean `
-  --if-exists `
-  .\backups\diminspect-before-supabase.dump
-```
-
-## 13. Jika Harus Pakai Supabase Postgres 17
-
-Jika project Supabase harus Postgres 17, jangan pakai TimescaleDB. Pilih salah satu:
-
-1. Tetap pakai tabel normal `inspections` plus index yang sudah ada.
-2. Migrasi ke native Postgres range partitioning.
-3. Gunakan `pg_partman` untuk maintenance partition jika extension tersedia.
-
-Minimal schema change untuk Postgres 17:
-
-- Hapus `create extension timescaledb`.
-- Hapus `create_hypertable(...)`.
-- Hapus `ALTER TABLE ... timescaledb.compress`.
-- Hapus continuous aggregate dan policy.
-- Pertahankan semua index biasa.
-
-Backend saat ini masih bisa berjalan karena query dashboard/history memakai SQL Postgres biasa.
-
-## 14. Checklist Final
-
-- [ ] Supabase project memakai Postgres 15 jika TimescaleDB wajib.
-- [ ] `timescaledb` enabled dan terverifikasi.
-- [ ] Schema berhasil dibuat.
-- [ ] `inspections` terverifikasi sebagai hypertable.
-- [ ] Data lama berhasil diimport.
-- [ ] Count lokal dan Supabase cocok.
-- [ ] Backend env memakai Supabase `DATABASE_URL`.
-- [ ] `DATABASE_SSL=true`.
-- [ ] Pool kecil untuk Cloud Run, misalnya `DATABASE_POOL_MAX=2`.
-- [ ] Backend health check hijau.
-- [ ] Login, Dashboard, History, Quality Tracking berhasil.
-- [ ] Agent HTTP ingest berhasil menulis inspection baru.
-- [ ] R2 thumbnail history masih muncul.
+Backend DimInspect tidak bergantung pada fitur tersebut karena aggregate dashboard dihitung langsung dari `inspections`.
 
 ## Referensi
 
-- Supabase TimescaleDB extension: https://supabase.com/docs/guides/database/extensions/timescaledb
+- Supabase pg_partman extension: https://supabase.com/docs/guides/database/extensions/pg_partman
+- Supabase migration from TimescaleDB to pg_partman: https://supabase.com/docs/guides/database/migrating-to-pg-partman
+- Supabase Postgres 17 upgrade notes: https://supabase.com/docs/guides/platform/upgrading#upgrading-to-postgres-17
 - Supabase Postgres connection strings/pooler: https://supabase.com/docs/guides/database/connecting-to-postgres/serverless-drivers
 - Supabase migration from Postgres: https://supabase.com/docs/guides/platform/migrating-to-supabase/postgres
-- Supabase Postgres 17 upgrade notes: https://supabase.com/docs/guides/platform/upgrading#upgrading-to-postgres-17
-- Supabase guide for migrating from TimescaleDB to pg_partman: https://supabase.com/docs/guides/database/migrating-to-pg-partman

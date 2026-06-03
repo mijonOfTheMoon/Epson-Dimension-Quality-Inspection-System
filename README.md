@@ -1,6 +1,6 @@
 # DimInspect
 
-Sistem inspeksi dimensi berbasis computer vision dengan Agent Python OpenCV, Backend Rust Axum, Frontend Svelte 5, PostgreSQL + TimescaleDB, dan nginx reverse proxy.
+Sistem inspeksi dimensi berbasis computer vision dengan Agent Python OpenCV, Backend Rust Axum, Frontend Svelte 5, PostgreSQL 17 + native partitioning/pg_partman, dan nginx reverse proxy.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ Sistem inspeksi dimensi berbasis computer vision dengan Agent Python OpenCV, Bac
 [Agent PC: Python OpenCV] --HTTP inspection/status----------->+
 [Agent PC: Python OpenCV] --WebRTC video--> [Cloudflare Realtime] <--WebRTC-- [Browser]
                                                               |
-                                      [PostgreSQL + TimescaleDB] + [Cloudflare R2 optional]
+                                      [PostgreSQL 17 + pg_partman] + [Cloudflare R2 optional]
 ```
 
 - Browser hanya bicara ke nginx proxy di `http://localhost`.
@@ -78,17 +78,18 @@ MQTT_HOST=
 
 ## Project Notes
 
-- Backend schema source of truth ada di `Backend/migrations/20240101000001_initial.up.sql`.
+- Backend schema source of truth ada di `backend/migrations/20240101000001_initial.up.sql`.
 - Tidak ada migration incremental untuk initial setup.
+- Database local dan Supabase Postgres 17 memakai native range partitioning untuk `inspections`, dengan maintenance partisi lewat `pg_partman` dan `pg_cron`.
 - Frontend memakai relative path `/api/*` dan polling untuk live data non-video.
 - Agent manual capture hanya mengirim inspection saat ada detection valid.
-- Panduan migrasi database ke Supabase + TimescaleDB ada di `docs/supabase.md`.
+- Panduan migrasi database ke Supabase Postgres 17 + pg_partman ada di `docs/supabase.md`.
 
 ## Validation
 
 ```bash
 cd frontend && npm run check && npm run build
-cd Backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-cd Agent && python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
+cd backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd agent && python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 docker compose config
 ```
