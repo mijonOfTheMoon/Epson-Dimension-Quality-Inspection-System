@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
 use crate::config::CloudflareRealtimeConfig;
+use crate::error::{AppError, AppResult};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,7 +100,7 @@ impl CloudflareRealtimeClient {
         &self,
         correlation_id: &str,
         session_description: SessionDescription,
-    ) -> anyhow::Result<NewSessionResponse> {
+    ) -> AppResult<NewSessionResponse> {
         let url = format!(
             "{}/apps/{}/sessions/new?correlationId={}",
             self.config.api_base_url,
@@ -120,15 +121,16 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime create session response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            return Err(anyhow!(
-                "Cloudflare Realtime create session failed: {}",
-                body.error_description
-                    .or(body.error_code)
-                    .unwrap_or_else(|| status.to_string())
-            ));
+            let msg = body.error_description
+                .or(body.error_code)
+                .unwrap_or_else(|| status.to_string());
+            return Err(AppError::CloudflareUpstream {
+                status: status.as_u16(),
+                message: format!("Cloudflare session gagal: {msg}"),
+            });
         }
         if body.session_id.is_empty() {
-            return Err(anyhow!("Cloudflare Realtime create session did not return a sessionId"));
+            return Err(anyhow!("Cloudflare Realtime create session did not return a sessionId").into());
         }
         Ok(body)
     }
@@ -138,7 +140,7 @@ impl CloudflareRealtimeClient {
         viewer_session_id: &str,
         publisher_session_id: &str,
         track_name: &str,
-    ) -> anyhow::Result<TracksResponse> {
+    ) -> AppResult<TracksResponse> {
         let url = format!(
             "{}/apps/{}/sessions/{}/tracks/new",
             self.config.api_base_url, self.config.app_id, viewer_session_id
@@ -165,13 +167,14 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime pull track response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            return Err(anyhow!(
-                "Cloudflare Realtime pull track failed: {}",
-                body.error_description
-                    .clone()
-                    .or(body.error_code.clone())
-                    .unwrap_or_else(|| status.to_string())
-            ));
+            let msg = body.error_description
+                .clone()
+                .or(body.error_code.clone())
+                .unwrap_or_else(|| status.to_string());
+            return Err(AppError::CloudflareUpstream {
+                status: status.as_u16(),
+                message: format!("Cloudflare pull track gagal: {msg}"),
+            });
         }
         Ok(body)
     }
@@ -180,7 +183,7 @@ impl CloudflareRealtimeClient {
         &self,
         session_id: &str,
         session_description: SessionDescription,
-    ) -> anyhow::Result<RenegotiateResponse> {
+    ) -> AppResult<RenegotiateResponse> {
         let url = format!(
             "{}/apps/{}/sessions/{}/renegotiate",
             self.config.api_base_url, self.config.app_id, session_id
@@ -199,13 +202,14 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime renegotiate response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            return Err(anyhow!(
-                "Cloudflare Realtime renegotiate failed: {}",
-                body.error_description
-                    .clone()
-                    .or(body.error_code.clone())
-                    .unwrap_or_else(|| status.to_string())
-            ));
+            let msg = body.error_description
+                .clone()
+                .or(body.error_code.clone())
+                .unwrap_or_else(|| status.to_string());
+            return Err(AppError::CloudflareUpstream {
+                status: status.as_u16(),
+                message: format!("Cloudflare renegotiate gagal: {msg}"),
+            });
         }
         Ok(body)
     }

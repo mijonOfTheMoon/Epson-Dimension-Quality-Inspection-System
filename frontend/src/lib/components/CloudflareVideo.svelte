@@ -16,16 +16,19 @@
   let connecting = $state(false);
 
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
-  const videoReadyRetryMs = 1000;
+  const videoReadyRetryMs = 1500;
   const videoReadyTimeoutMs = 20000;
+  /** Max retry attempts for stale-session / transient errors before giving up */
+  const maxSessionRetries = 3;
 
-  const sleep = (ms: number, isCancelled: () => boolean) =>
+  const sleep = (ms: number, signal: AbortSignal) =>
     new Promise<void>((resolve) => {
+      if (signal.aborted) { resolve(); return; }
       const timeout = window.setTimeout(resolve, ms);
-      if (isCancelled()) {
+      signal.addEventListener('abort', () => {
         window.clearTimeout(timeout);
         resolve();
-      }
+      }, { once: true });
     });
 
   const isVideoPendingError = (error: unknown) => {
@@ -33,8 +36,21 @@
     if (error.status !== 404 && error.status !== 503) return false;
     return (
       error.message.includes('Video agent belum tersedia') ||
-      error.message.includes('Track video agent belum tersedia')
+      error.message.includes('Track video agent belum tersedia') ||
+      error.message.includes('Agent offline') ||
+      error.message.includes('Presence agent tidak ditemukan')
     );
+  };
+
+  /** Returns true for errors that indicate stale/expired Cloudflare session */
+  const isStaleSessionError = (error: unknown) => {
+    if (!(error instanceof ApiRequestError)) return false;
+    // Cloudflare upstream errors forwarded from backend (new behavior)
+    const msg = error.message.toLowerCase();
+    if (msg.includes('cloudflare') && (msg.includes('gagal') || msg.includes('failed'))) return true;
+    // Legacy: backend returned generic 500 for Cloudflare errors
+    if (error.status === 500) return true;
+    return false;
   };
 
   const waitForIceGathering = (peer: RTCPeerConnection, timeoutMs = 3000) => {
@@ -84,13 +100,16 @@
 
   const closePeer = () => {
     if (pc) {
-      pc.close();
+      try { pc.close(); } catch { /* already closed */ }
       pc = null;
     }
     if (videoEl) videoEl.srcObject = null;
   };
 
-  const connectOnce = async (targetStationId: string) => {
+  const connectOnce = async (targetStationId: string, signal: AbortSignal) => {
+    // Always close any existing peer before creating a new one
+    closePeer();
+
     const peer = new RTCPeerConnection({ iceServers: defaultIceServers });
     peer.ontrack = (event) => {
       if (!videoEl) return;
@@ -99,25 +118,33 @@
     peer.addTransceiver('video', { direction: 'recvonly' });
     pc = peer;
 
+    // Bail early if already cancelled
+    if (signal.aborted) { closePeer(); return; }
+
     const initialOffer = await peer.createOffer();
     await peer.setLocalDescription(initialOffer);
     await waitForIceGathering(peer);
+    if (signal.aborted) { closePeer(); return; }
     if (!peer.localDescription) throw new Error('Gagal membuat offer WebRTC');
+
     const session = await api.createVideoViewerSession(targetStationId, {
       sdp: peer.localDescription.sdp,
       type: peer.localDescription.type,
     });
+    if (signal.aborted) { closePeer(); return; }
     if (!session.sessionDescription) {
       throw new Error('Cloudflare belum mengirim jawaban session video');
     }
     await peer.setRemoteDescription(session.sessionDescription);
     await waitForPeerConnection(peer);
+    if (signal.aborted) { closePeer(); return; }
 
     const pull = await api.pullVideoTrack(
       session.viewerSessionId,
       session.publisherSessionId,
       session.trackName,
     );
+    if (signal.aborted) { closePeer(); return; }
     if (pull.requiresImmediateRenegotiation && !pull.sessionDescription) {
       throw new Error('Cloudflare meminta renegosiasi tanpa offer video');
     }
@@ -126,6 +153,7 @@
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       await waitForIceGathering(peer);
+      if (signal.aborted) { closePeer(); return; }
       if (!peer.localDescription) throw new Error('Gagal membuat jawaban WebRTC');
       await api.renegotiateVideoSession(session.renegotiatePath, {
         sdp: peer.localDescription.sdp,
@@ -138,7 +166,7 @@
     targetStationId: string,
     isOnline: boolean,
     isRunning: boolean,
-    isCancelled: () => boolean,
+    signal: AbortSignal,
   ) => {
     untrack(closePeer);
     if (!isOnline) {
@@ -154,25 +182,39 @@
     connecting = true;
     message = 'Menghubungkan Cloudflare Realtime...';
     const deadline = Date.now() + videoReadyTimeoutMs;
+    let sessionRetries = 0;
     try {
-      while (!isCancelled()) {
+      while (!signal.aborted) {
         try {
-          await connectOnce(targetStationId);
-          if (!isCancelled()) message = '';
+          await connectOnce(targetStationId, signal);
+          if (!signal.aborted) message = '';
           return;
         } catch (err) {
           closePeer();
-          if (isVideoPendingError(err) && Date.now() < deadline && !isCancelled()) {
+          if (signal.aborted) return;
+
+          // Agent not ready yet — wait and retry until deadline
+          if (isVideoPendingError(err) && Date.now() < deadline) {
             message = 'Menunggu video agent...';
-            await sleep(videoReadyRetryMs, isCancelled);
+            await sleep(videoReadyRetryMs, signal);
             continue;
           }
-          if (!isCancelled()) message = getErrorMessage(err);
+
+          // Stale/expired Cloudflare session — retry with a fresh session
+          if (isStaleSessionError(err) && sessionRetries < maxSessionRetries) {
+            sessionRetries++;
+            message = `Sesi expired, mencoba ulang (${sessionRetries}/${maxSessionRetries})...`;
+            // Exponential backoff: 1s, 2s, 4s
+            await sleep(1000 * (2 ** (sessionRetries - 1)), signal);
+            continue;
+          }
+
+          if (!signal.aborted) message = getErrorMessage(err);
           return;
         }
       }
     } finally {
-      if (!isCancelled()) connecting = false;
+      if (!signal.aborted) connecting = false;
     }
   };
 
@@ -180,10 +222,10 @@
     const targetStationId = stationId;
     const isOnline = online;
     const isRunning = running;
-    let cancelled = false;
-    void connect(targetStationId, isOnline, isRunning, () => cancelled);
+    const controller = new AbortController();
+    void connect(targetStationId, isOnline, isRunning, controller.signal);
     return () => {
-      cancelled = true;
+      controller.abort();
       untrack(closePeer);
     };
   });

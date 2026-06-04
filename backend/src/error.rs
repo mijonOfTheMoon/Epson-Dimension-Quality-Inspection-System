@@ -26,6 +26,8 @@ pub enum AppError {
     ServiceUnavailable(String),
     #[error("Invalid request")]
     InvalidRequest(Vec<ValidationIssue>),
+    #[error("{message}")]
+    CloudflareUpstream { status: u16, message: String },
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -70,6 +72,13 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 ErrorBody { message: "Invalid request".into(), issues: Some(issues) },
             ),
+            AppError::CloudflareUpstream { status, message } => {
+                tracing::warn!(status, message = %message, "cloudflare upstream error");
+                (
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                    ErrorBody { message, issues: None },
+                )
+            }
             AppError::Internal(error) => {
                 tracing::error!(error = %error, "internal server error");
                 (
