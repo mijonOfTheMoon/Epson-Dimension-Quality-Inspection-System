@@ -46,13 +46,14 @@ MQTT_PORT=8883
 MQTT_USERNAME=...
 MQTT_PASSWORD=...
 MQTT_TOPIC_PREFIX=diminspect/development
+MQTT_PRESENCE_STALE_AFTER_MS=15000
 
 CLOUDFLARE_REALTIME_ENABLED=false
 CLOUDFLARE_REALTIME_APP_ID=...
 CLOUDFLARE_REALTIME_APP_SECRET=...
 ```
 
-Backend membaca retained MQTT presence sebelum publish command. Video subscriber dibuat lewat backend supaya Cloudflare app secret tidak dikirim ke browser.
+Backend membaca retained MQTT presence sebelum publish command dan menganggap presence stale sebagai offline setelah `MQTT_PRESENCE_STALE_AFTER_MS`. Video subscriber dibuat lewat backend supaya Cloudflare app secret tidak dikirim ke browser.
 
 ## Validation
 

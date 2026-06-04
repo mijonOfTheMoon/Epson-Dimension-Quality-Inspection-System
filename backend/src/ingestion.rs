@@ -35,17 +35,19 @@ impl IngestionService {
         snapshot: Option<Bytes>,
     ) -> anyhow::Result<Option<IngestEvent>> {
         validate_ingest_event(&event).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        let upload_context = match &event {
-            IngestEvent::Inspection(event) => Some((
-                event.event_id.clone(),
-                event.station_id.clone(),
-                event.timestamp.clone(),
-            )),
-            IngestEvent::Station(_) => None,
-        };
-        let events = match event {
-            IngestEvent::Inspection(event) => split_inspection_objects(event),
-            IngestEvent::Station(event) => vec![IngestEvent::Station(event)],
+        let (events, upload_context) = match event {
+            IngestEvent::Station(event) => {
+                let saved = self.store.upsert_station_status(event).await?;
+                return Ok(Some(IngestEvent::Station(saved)));
+            }
+            IngestEvent::Inspection(event) => {
+                let upload_context = Some((
+                    event.event_id.clone(),
+                    event.station_id.clone(),
+                    event.timestamp.clone(),
+                ));
+                (split_inspection_objects(event), upload_context)
+            }
         };
 
         let mut first_saved = None;

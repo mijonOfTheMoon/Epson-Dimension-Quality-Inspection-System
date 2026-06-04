@@ -62,13 +62,7 @@ class MqttLink:
 
     def stop(self) -> None:
         try:
-            info = self._client.publish(
-                self.presence_topic,
-                payload=json.dumps(self._offline_payload(), separators=(",", ":")),
-                qos=1,
-                retain=True,
-            )
-            info.wait_for_publish(timeout=2)
+            self.publish_offline(wait=True)
         finally:
             self._client.disconnect()
             self._client.loop_stop()
@@ -111,6 +105,17 @@ class MqttLink:
                 qos=1,
                 retain=True,
             )
+
+    def publish_offline(self, *, wait: bool = False) -> None:
+        with self._lock:
+            info = self._client.publish(
+                self.presence_topic,
+                payload=json.dumps(self._offline_payload(), separators=(",", ":")),
+                qos=1,
+                retain=True,
+            )
+        if wait:
+            info.wait_for_publish(timeout=2)
 
     def _offline_payload(self) -> dict[str, Any]:
         return {

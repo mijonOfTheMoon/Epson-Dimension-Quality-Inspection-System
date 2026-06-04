@@ -42,6 +42,7 @@ pub struct MqttConfig {
     pub topic_prefix: String,
     pub use_tls: bool,
     pub retained_presence_timeout: Duration,
+    pub presence_stale_after: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +140,10 @@ fn mqtt_config(node_env: &NodeEnv) -> anyhow::Result<Option<MqttConfig>> {
         retained_presence_timeout: Duration::from_millis(parse_env(
             "MQTT_RETAINED_PRESENCE_TIMEOUT_MS",
             2_000_u64,
+        )?),
+        presence_stale_after: Duration::from_millis(parse_env(
+            "MQTT_PRESENCE_STALE_AFTER_MS",
+            15_000_u64,
         )?),
     }))
 }

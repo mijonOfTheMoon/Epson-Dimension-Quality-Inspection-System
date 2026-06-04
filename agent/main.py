@@ -40,7 +40,7 @@ def configure_logging(level_name: str) -> None:
         normalized = "INFO"
         level = logging.INFO
     logging.basicConfig(
-        level=logging.WARNING,
+        level=level,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
     for logger_name in ("main", "http_client", "mqtt_link", "webrtc_publisher"):
@@ -74,13 +74,14 @@ def build_station_status(
     phase: Phase = "idle",
     fps: float = 0.0,
     active_part_code: str | None = None,
+    state: str = "online",
 ) -> dict[str, Any]:
     event: dict[str, Any] = {
         "eventId": str(uuid4()),
         "eventType": "station.status",
         "stationId": config.station_id,
         "timestamp": now_iso(),
-        "state": "online",
+        "state": state,
         "fps": round(fps, 2),
         "running": running,
         "phase": phase,
@@ -105,6 +106,7 @@ class InspectionRunner:
         self._video_command: dict[str, Any] | None = None
         self._video_session_id: str | None = None
         self._video_track_name: str | None = None
+        self._offline_sent = threading.Event()
         self._frame_interval = 1.0 / FRAME_FPS
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
@@ -168,10 +170,16 @@ class InspectionRunner:
 
     def _main_loop(self) -> None:
         self._send_status(phase="idle", running=False)
+        last_idle_status = monotonic()
         while not self._stop.is_set():
             if self._running.is_set():
                 self._run_inspection_session()
+                last_idle_status = monotonic()
             else:
+                now = monotonic()
+                if now - last_idle_status >= STATUS_INTERVAL:
+                    self._send_status(phase="idle", running=False)
+                    last_idle_status = now
                 sleep(0.5)
 
     def _send_status(self, *, phase: Phase, running: bool, fps: float = 0.0) -> None:
@@ -188,6 +196,21 @@ class InspectionRunner:
             video_session_id=self._video_session_id,
             video_track_name=self._video_track_name,
         )
+        self.http.send_status(event)
+
+    def _send_offline_status(self) -> None:
+        if self._offline_sent.is_set():
+            return
+        self._offline_sent.set()
+        active = self._part.part_code if self._part else None
+        event = build_station_status(
+            self.config,
+            running=False,
+            phase="idle",
+            active_part_code=active,
+            state="offline",
+        )
+        self.mqtt.publish_offline()
         self.http.send_status(event)
 
     def _send_frame(self, frame: cv2.Mat, encode_params: list[int]) -> None:
@@ -340,7 +363,17 @@ class InspectionRunner:
             self._video_session_id = None
             self._video_track_name = None
             cap.release()
-            self._send_status(phase="idle", running=False)
+            if self._stop.is_set():
+                self._send_offline_status()
+            else:
+                self._send_status(phase="idle", running=False)
+
+    def close(self) -> None:
+        self.shutdown()
+        self.video.stop()
+        self._send_offline_status()
+        self.mqtt.stop()
+        self.http.close()
 
 
 def main() -> None:
@@ -351,9 +384,7 @@ def main() -> None:
     try:
         runner.start()
     finally:
-        runner.shutdown()
-        runner.video.stop()
-        runner.mqtt.stop()
+        runner.close()
 
 
 if __name__ == "__main__":

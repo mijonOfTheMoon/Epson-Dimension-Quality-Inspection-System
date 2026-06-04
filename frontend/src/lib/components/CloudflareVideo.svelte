@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Video } from 'lucide-svelte';
-  import { api, getErrorMessage } from '$lib/services/api';
+  import { ApiRequestError, api, getErrorMessage } from '$lib/services/api';
 
   interface Props {
     stationId: string;
@@ -16,6 +16,26 @@
   let connecting = $state(false);
 
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
+  const videoReadyRetryMs = 1000;
+  const videoReadyTimeoutMs = 20000;
+
+  const sleep = (ms: number, isCancelled: () => boolean) =>
+    new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(resolve, ms);
+      if (isCancelled()) {
+        window.clearTimeout(timeout);
+        resolve();
+      }
+    });
+
+  const isVideoPendingError = (error: unknown) => {
+    if (!(error instanceof ApiRequestError)) return false;
+    if (error.status !== 404 && error.status !== 503) return false;
+    return (
+      error.message.includes('Video agent belum tersedia') ||
+      error.message.includes('Track video agent belum tersedia')
+    );
+  };
 
   const waitForIceGathering = (peer: RTCPeerConnection, timeoutMs = 3000) => {
     if (peer.iceGatheringState === 'complete') return Promise.resolve();
@@ -70,66 +90,89 @@
     if (videoEl) videoEl.srcObject = null;
   };
 
-  const connect = async (targetStationId: string, isOnline: boolean, isRunning: boolean) => {
+  const connectOnce = async (targetStationId: string) => {
+    const peer = new RTCPeerConnection({ iceServers: defaultIceServers });
+    peer.ontrack = (event) => {
+      if (!videoEl) return;
+      videoEl.srcObject = event.streams[0] ?? new MediaStream([event.track]);
+    };
+    peer.addTransceiver('video', { direction: 'recvonly' });
+    pc = peer;
+
+    const initialOffer = await peer.createOffer();
+    await peer.setLocalDescription(initialOffer);
+    await waitForIceGathering(peer);
+    if (!peer.localDescription) throw new Error('Gagal membuat offer WebRTC');
+    const session = await api.createVideoViewerSession(targetStationId, {
+      sdp: peer.localDescription.sdp,
+      type: peer.localDescription.type,
+    });
+    if (!session.sessionDescription) {
+      throw new Error('Cloudflare belum mengirim jawaban session video');
+    }
+    await peer.setRemoteDescription(session.sessionDescription);
+    await waitForPeerConnection(peer);
+
+    const pull = await api.pullVideoTrack(
+      session.viewerSessionId,
+      session.publisherSessionId,
+      session.trackName,
+    );
+    if (pull.requiresImmediateRenegotiation && !pull.sessionDescription) {
+      throw new Error('Cloudflare meminta renegosiasi tanpa offer video');
+    }
+    if (pull.sessionDescription) {
+      await peer.setRemoteDescription(pull.sessionDescription);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      await waitForIceGathering(peer);
+      if (!peer.localDescription) throw new Error('Gagal membuat jawaban WebRTC');
+      await api.renegotiateVideoSession(session.renegotiatePath, {
+        sdp: peer.localDescription.sdp,
+        type: peer.localDescription.type,
+      });
+    }
+  };
+
+  const connect = async (
+    targetStationId: string,
+    isOnline: boolean,
+    isRunning: boolean,
+    isCancelled: () => boolean,
+  ) => {
     untrack(closePeer);
     if (!isOnline) {
+      connecting = false;
       message = 'Agent Offline';
       return;
     }
     if (!isRunning) {
+      connecting = false;
       message = 'Kamera Siap - Konfigurasi lalu klik Mulai';
       return;
     }
     connecting = true;
     message = 'Menghubungkan Cloudflare Realtime...';
+    const deadline = Date.now() + videoReadyTimeoutMs;
     try {
-      const peer = new RTCPeerConnection({ iceServers: defaultIceServers });
-      peer.ontrack = (event) => {
-        if (!videoEl) return;
-        videoEl.srcObject = event.streams[0] ?? new MediaStream([event.track]);
-      };
-      peer.addTransceiver('video', { direction: 'recvonly' });
-      pc = peer;
-
-      const initialOffer = await peer.createOffer();
-      await peer.setLocalDescription(initialOffer);
-      await waitForIceGathering(peer);
-      if (!peer.localDescription) throw new Error('Gagal membuat offer WebRTC');
-      const session = await api.createVideoViewerSession(targetStationId, {
-        sdp: peer.localDescription.sdp,
-        type: peer.localDescription.type,
-      });
-      if (!session.sessionDescription) {
-        throw new Error('Cloudflare belum mengirim jawaban session video');
+      while (!isCancelled()) {
+        try {
+          await connectOnce(targetStationId);
+          if (!isCancelled()) message = '';
+          return;
+        } catch (err) {
+          closePeer();
+          if (isVideoPendingError(err) && Date.now() < deadline && !isCancelled()) {
+            message = 'Menunggu video agent...';
+            await sleep(videoReadyRetryMs, isCancelled);
+            continue;
+          }
+          if (!isCancelled()) message = getErrorMessage(err);
+          return;
+        }
       }
-      await peer.setRemoteDescription(session.sessionDescription);
-      await waitForPeerConnection(peer);
-
-      const pull = await api.pullVideoTrack(
-        session.viewerSessionId,
-        session.publisherSessionId,
-        session.trackName,
-      );
-      if (pull.requiresImmediateRenegotiation && !pull.sessionDescription) {
-        throw new Error('Cloudflare meminta renegosiasi tanpa offer video');
-      }
-      if (pull.sessionDescription) {
-        await peer.setRemoteDescription(pull.sessionDescription);
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        await waitForIceGathering(peer);
-        if (!peer.localDescription) throw new Error('Gagal membuat jawaban WebRTC');
-        await api.renegotiateVideoSession(session.renegotiatePath, {
-          sdp: peer.localDescription.sdp,
-          type: peer.localDescription.type,
-        });
-      }
-      message = '';
-    } catch (err) {
-      closePeer();
-      message = getErrorMessage(err);
     } finally {
-      connecting = false;
+      if (!isCancelled()) connecting = false;
     }
   };
 
@@ -137,8 +180,12 @@
     const targetStationId = stationId;
     const isOnline = online;
     const isRunning = running;
-    void connect(targetStationId, isOnline, isRunning);
-    return () => untrack(closePeer);
+    let cancelled = false;
+    void connect(targetStationId, isOnline, isRunning, () => cancelled);
+    return () => {
+      cancelled = true;
+      untrack(closePeer);
+    };
   });
 </script>
 

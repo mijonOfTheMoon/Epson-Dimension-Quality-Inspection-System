@@ -10,6 +10,10 @@ use crate::domain::*;
 pub trait DataStore: Send + Sync {
     async fn init(&self) -> anyhow::Result<()>;
     async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>>;
+    async fn upsert_station_status(
+        &self,
+        event: StationStatusEvent,
+    ) -> anyhow::Result<StationStatusEvent>;
     async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>>;
     async fn find_inspection(&self, event_id: &str) -> anyhow::Result<Option<InspectionCreatedEvent>>;
     async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>>;

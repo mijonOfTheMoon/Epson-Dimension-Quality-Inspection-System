@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
@@ -63,7 +63,10 @@ impl MqttService {
         format!("{}/stations/+/presence", self.config.topic_prefix)
     }
 
-    pub async fn retained_presence(&self, station_id: &str) -> anyhow::Result<Option<StationPresence>> {
+    pub async fn retained_presence(
+        &self,
+        station_id: &str,
+    ) -> anyhow::Result<Option<StationPresence>> {
         let topic = self.presence_topic(station_id);
         let (client, mut eventloop) = self.client("presence");
         client
@@ -79,7 +82,8 @@ impl MqttService {
                     if publish.payload.is_empty() {
                         return Ok(None);
                     }
-                    return parse_presence(&publish.payload).map(Some);
+                    return parse_presence(&publish.payload)
+                        .map(|presence| Some(self.apply_presence_freshness(presence)));
                 }
                 Ok(Ok(_)) => {}
                 Ok(Err(error)) => return Err(anyhow!(error).context("failed while reading MQTT presence")),
@@ -106,7 +110,7 @@ impl MqttService {
                         continue;
                     }
                     match parse_presence(&publish.payload) {
-                        Ok(presence) => presences.push(presence),
+                        Ok(presence) => presences.push(self.apply_presence_freshness(presence)),
                         Err(error) => tracing::warn!(topic = %publish.topic, %error, "invalid MQTT presence payload"),
                     }
                 }
@@ -173,6 +177,18 @@ impl MqttService {
         }
         AsyncClient::new(options, 16)
     }
+
+    fn apply_presence_freshness(&self, mut presence: StationPresence) -> StationPresence {
+        if is_stale(presence.updated_at.as_deref(), self.config.presence_stale_after) {
+            presence.online = false;
+            presence.running = false;
+            presence.phase = Some(StationPhase::Idle);
+            presence.active_part_code = None;
+            presence.video_session_id = None;
+            presence.video_track_name = None;
+        }
+        presence
+    }
 }
 
 fn parse_presence(bytes: &[u8]) -> anyhow::Result<StationPresence> {
@@ -181,6 +197,22 @@ fn parse_presence(bytes: &[u8]) -> anyhow::Result<StationPresence> {
         presence.updated_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
     }
     Ok(presence)
+}
+
+fn is_stale(updated_at: Option<&str>, stale_after: Duration) -> bool {
+    let Some(updated_at) = updated_at else {
+        return false;
+    };
+    let Ok(parsed) = DateTime::parse_from_rfc3339(updated_at) else {
+        return true;
+    };
+    match Utc::now()
+        .signed_duration_since(parsed.with_timezone(&Utc))
+        .to_std()
+    {
+        Ok(age) => age > stale_after,
+        Err(_) => false,
+    }
 }
 
 fn safe_topic_segment(value: &str) -> String {

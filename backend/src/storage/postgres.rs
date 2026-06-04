@@ -9,7 +9,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
-use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
+use sqlx::{Executor, FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -229,6 +229,13 @@ impl PostgresStore {
         tx: &mut Transaction<'_, Postgres>,
         event: &StationStatusEvent,
     ) -> anyhow::Result<()> {
+        Self::upsert_station_on(&mut **tx, event).await
+    }
+
+    async fn upsert_station_on<'e, E>(executor: E, event: &StationStatusEvent) -> anyhow::Result<()>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         sqlx::query(
             r#"
             INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code, is_active)
@@ -253,12 +260,11 @@ impl PostgresStore {
         .bind(event.phase.map(StationPhase::as_str))
         .bind(&event.active_part_code)
         .bind(event.is_active)
-        .execute(&mut **tx)
+        .execute(executor)
         .await?;
 
         Ok(())
     }
-
 }
 
 #[async_trait]
@@ -283,6 +289,14 @@ impl DataStore for PostgresStore {
 
         tx.commit().await?;
         Ok(Some(event))
+    }
+
+    async fn upsert_station_status(
+        &self,
+        event: StationStatusEvent,
+    ) -> anyhow::Result<StationStatusEvent> {
+        Self::upsert_station_on(&self.pool, &event).await?;
+        Ok(event)
     }
 
     async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>> {

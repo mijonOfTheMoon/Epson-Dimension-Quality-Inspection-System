@@ -28,29 +28,40 @@ pub async fn list(
             .map(|(position, station)| (station.station_id.clone(), position))
             .collect::<HashMap<_, _>>();
         for presence in presences {
-            if presence.online {
-                if let Some(position) = index.get(&presence.station_id).copied() {
-                    let station = &mut stations[position];
-                    station.state = StationState::Online;
-                    station.running = Some(presence.running);
-                    station.phase = presence.phase.or(station.phase);
-                    station.active_part_code = presence.active_part_code.or(station.active_part_code.clone());
-                    station.timestamp = presence.updated_at.unwrap_or_else(iso_now);
+            let state = if presence.online {
+                StationState::Online
+            } else {
+                StationState::Offline
+            };
+            if let Some(position) = index.get(&presence.station_id).copied() {
+                let station = &mut stations[position];
+                station.state = state;
+                station.running = Some(presence.online && presence.running);
+                station.phase = if presence.online {
+                    presence.phase.or(station.phase)
                 } else {
-                    index.insert(presence.station_id.clone(), stations.len());
-                    stations.push(StationStatusEvent {
-                        event_type: StationEventType::StationStatus,
-                        event_id: format!("mqtt-presence-{}-{}", presence.station_id, Uuid::new_v4()),
-                        station_id: presence.station_id,
-                        timestamp: presence.updated_at.unwrap_or_else(iso_now),
-                        state: StationState::Online,
-                        fps: None,
-                        running: Some(presence.running),
-                        phase: presence.phase.or(Some(StationPhase::Idle)),
-                        active_part_code: presence.active_part_code,
-                        is_active: Some(true),
-                    });
-                }
+                    Some(StationPhase::Idle)
+                };
+                station.active_part_code = if presence.online {
+                    presence.active_part_code.or(station.active_part_code.clone())
+                } else {
+                    None
+                };
+                station.timestamp = presence.updated_at.unwrap_or_else(iso_now);
+            } else if presence.online {
+                index.insert(presence.station_id.clone(), stations.len());
+                stations.push(StationStatusEvent {
+                    event_type: StationEventType::StationStatus,
+                    event_id: format!("mqtt-presence-{}-{}", presence.station_id, Uuid::new_v4()),
+                    station_id: presence.station_id,
+                    timestamp: presence.updated_at.unwrap_or_else(iso_now),
+                    state,
+                    fps: None,
+                    running: Some(presence.running),
+                    phase: presence.phase.or(Some(StationPhase::Idle)),
+                    active_part_code: presence.active_part_code,
+                    is_active: Some(true),
+                });
             }
         }
         stations.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
