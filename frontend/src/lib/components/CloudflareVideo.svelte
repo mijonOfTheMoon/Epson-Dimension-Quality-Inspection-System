@@ -14,6 +14,7 @@
   let pc: RTCPeerConnection | null = null;
   let message = $state('Kamera Siap - Konfigurasi lalu klik Mulai');
   let connecting = $state(false);
+  let pendingStream = $state<MediaStream | null>(null);
   let prevStationId = '';
   let prevOnline = false;
   let prevRunning = false;
@@ -21,7 +22,6 @@
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
   const videoReadyRetryMs = 1500;
   const videoReadyTimeoutMs = 20000;
-  /** Max retry attempts for stale-session / transient errors before giving up */
   const maxSessionRetries = 3;
 
   const sleep = (ms: number, signal: AbortSignal) =>
@@ -45,7 +45,6 @@
     );
   };
 
-  /** Returns true for errors that indicate stale/expired Cloudflare session */
   const isStaleSessionError = (error: unknown) => {
     if (!(error instanceof ApiRequestError)) return false;
     const msg = error.message.toLowerCase();
@@ -124,17 +123,24 @@
       try { pc.close(); } catch { /* already closed */ }
       pc = null;
     }
+    pendingStream = null;
     if (videoEl) videoEl.srcObject = null;
   };
 
   const connectOnce = async (targetStationId: string, signal: AbortSignal) => {
     closePeer();
 
-    const peer = new RTCPeerConnection({ iceServers: defaultIceServers });
+    const peer = new RTCPeerConnection({
+      iceServers: defaultIceServers,
+      bundlePolicy: 'max-bundle',
+    });
+
     peer.ontrack = (event) => {
-      if (!videoEl) return;
-      videoEl.srcObject = event.streams[0] ?? new MediaStream([event.track]);
+      const stream = event.streams[0] ?? new MediaStream([event.track]);
+      pendingStream = stream;
+      if (videoEl) videoEl.srcObject = stream;
     };
+
     peer.addTransceiver('video', { direction: 'recvonly' });
     pc = peer;
 
@@ -154,7 +160,9 @@
     if (!session.sessionDescription) {
       throw new Error('Cloudflare belum mengirim jawaban session video');
     }
-    await peer.setRemoteDescription(session.sessionDescription);
+    await peer.setRemoteDescription(
+      new RTCSessionDescription(session.sessionDescription),
+    );
     await waitForPeerConnection(peer, signal);
     if (signal.aborted) { closePeer(); return; }
 
@@ -168,7 +176,9 @@
       throw new Error('Cloudflare meminta renegosiasi tanpa offer video');
     }
     if (pull.sessionDescription) {
-      await peer.setRemoteDescription(pull.sessionDescription);
+      await peer.setRemoteDescription(
+        new RTCSessionDescription(pull.sessionDescription),
+      );
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       await waitForIceGathering(peer, signal);
@@ -237,6 +247,12 @@
       if (!signal.aborted) connecting = false;
     }
   };
+
+  $effect(() => {
+    if (videoEl && pendingStream) {
+      videoEl.srcObject = pendingStream;
+    }
+  });
 
   let activeController: AbortController | null = null;
 
