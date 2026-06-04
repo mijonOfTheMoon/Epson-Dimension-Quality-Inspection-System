@@ -36,10 +36,13 @@ export const tokenStorage = {
 
 export class ApiRequestError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  retryAfterMs?: number;
+
+  constructor(message: string, status?: number, retryAfterMs?: number) {
     super(message);
     this.name = 'ApiRequestError';
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -70,11 +73,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = await response.json() as { message?: string };
       if (body.message) message = body.message;
     } catch { /* ignore */ }
-    throw new ApiRequestError(message, response.status);
+    throw new ApiRequestError(message, response.status, parseRetryAfter(response.headers.get('Retry-After')));
   }
 
   if (response.status === 204) return undefined as T;
   return await response.json() as T;
+}
+
+function parseRetryAfter(value: string | null) {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return undefined;
+  return Math.max(0, timestamp - Date.now());
 }
 
 export function normalizeInspectionEvent(event: InspectionCreatedEvent): InspectionResult {

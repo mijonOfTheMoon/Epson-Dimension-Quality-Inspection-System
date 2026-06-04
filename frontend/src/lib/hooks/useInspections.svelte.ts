@@ -1,17 +1,23 @@
 import { onMount } from 'svelte';
 import type { InspectionResult } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
+import { createPollingBackoff } from '$lib/services/backoff';
 import { startVisibilityPolling } from '$lib/services/polling';
 
-export function useInspections(limit = 1000) {
+export function useInspections(limit = 1000, visibleMs = 3000, hiddenMs = 15000) {
   let data = $state<InspectionResult[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
+  let inFlight = false;
+  const backoff = createPollingBackoff();
 
   const load = async (showLoading = true) => {
     if (!mounted) return;
+    if (inFlight) return;
+    if (!showLoading && !backoff.canRequest()) return;
+    inFlight = true;
     const current = ++requestId;
     if (showLoading) loading = true;
     try {
@@ -19,9 +25,12 @@ export function useInspections(limit = 1000) {
       if (!mounted || current !== requestId) return;
       data = next;
       error = null;
+      backoff.reset();
     } catch (err) {
+      backoff.recordFailure(err);
       if (mounted && current === requestId && showLoading) error = getErrorMessage(err);
     } finally {
+      inFlight = false;
       if (mounted && current === requestId && (showLoading || loading)) loading = false;
     }
   };
@@ -31,7 +40,7 @@ export function useInspections(limit = 1000) {
   onMount(() => {
     mounted = true;
     void load();
-    const stopPolling = startVisibilityPolling(refresh, 3000, 15000);
+    const stopPolling = startVisibilityPolling(refresh, visibleMs, hiddenMs);
 
     return () => {
       mounted = false;

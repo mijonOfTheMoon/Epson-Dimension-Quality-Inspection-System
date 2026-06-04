@@ -15,7 +15,8 @@ COPY . .
 RUN npm run build
 
 FROM ${NGINX_IMAGE} AS runtime
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV API_PROXY_PASS=https://api.diminspect.web.id
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build --chown=101:101 /app/dist /usr/share/nginx/html
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1

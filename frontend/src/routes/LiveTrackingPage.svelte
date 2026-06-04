@@ -4,14 +4,13 @@
     RotateCcw, StopCircle, Trash2, Video, XCircle, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
-  import { useAgents } from '$lib/hooks/useAgents.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
   import { auth } from '$lib/stores/auth.svelte';
   import type {
-    AgentInfo, DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
+    DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
   } from '$lib/types/api';
 
   interface MergedStation {
@@ -38,7 +37,7 @@
     locked: { text: 'Terkunci', tone: 'bg-violet-500/10 border border-violet-500/20 text-violet-500', icon: CheckCircle },
   };
 
-  function mergeStations(agents: AgentInfo[], stations: StationStatusEvent[]): MergedStation[] {
+  function mergeStations(stations: StationStatusEvent[]): MergedStation[] {
     const map = new Map<string, MergedStation>();
     for (const station of stations) {
       map.set(station.stationId, {
@@ -48,17 +47,6 @@
         fps: station.fps,
         phase: station.phase,
         activePartCode: station.activePartCode,
-      });
-    }
-    for (const agent of agents) {
-      const existing = map.get(agent.stationId);
-      map.set(agent.stationId, {
-        stationId: agent.stationId,
-        online: agent.online,
-        running: agent.running,
-        fps: existing?.fps,
-        phase: agent.online ? (existing?.phase ?? 'idle') : 'idle',
-        activePartCode: existing?.activePartCode,
       });
     }
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
@@ -82,9 +70,8 @@
     }
   };
 
-  const inspections = useInspections(40);
+  const inspections = useInspections(40, 10000, 30000);
   const stations = useStations();
-  const agents = useAgents();
   const parts = useParts();
 
   let busy = $state<Record<string, boolean>>({});
@@ -97,12 +84,12 @@
   let boxesDisabled = $state(readBoxesDisabled());
   const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
 
-  const merged = $derived(mergeStations(agents.data, stations.data));
+  const merged = $derived(mergeStations(stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
 
   const latestInspections = $derived(inspections.data.slice(0, 10));
-  const loading = $derived(inspections.loading || stations.loading || agents.loading || parts.loading);
-  const error = $derived(inspections.error || stations.error || agents.error || parts.error);
+  const loading = $derived(inspections.loading || stations.loading || parts.loading);
+  const error = $derived(inspections.error || stations.error || parts.error);
 
   const latestGroupsByStation = $derived.by(() => {
     const map = new Map<string, StationInspectionGroup>();
@@ -179,7 +166,6 @@
     try {
       await fn();
       showToast(`${label}: ${stationId}`);
-      await agents.refresh();
       await stations.refresh();
       onSuccess?.();
     } catch (err) {
@@ -197,7 +183,6 @@
       if (selectedDetectionKey?.stationId === stationId) selectedDetectionKey = null;
       menuStationId = null;
       stations.reload();
-      await agents.refresh();
       showToast(`Kamera dihapus dari tampilan: ${stationId}`);
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
@@ -209,7 +194,6 @@
   const retry = () => {
     inspections.reload();
     stations.reload();
-    agents.reload();
     parts.reload();
   };
 

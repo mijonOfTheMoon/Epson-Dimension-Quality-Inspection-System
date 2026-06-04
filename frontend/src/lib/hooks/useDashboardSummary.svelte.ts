@@ -1,6 +1,7 @@
 import { onMount } from 'svelte';
 import type { DashboardSummary } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
+import { createPollingBackoff } from '$lib/services/backoff';
 import { startVisibilityPolling } from '$lib/services/polling';
 
 const EMPTY: DashboardSummary = {
@@ -20,20 +21,28 @@ export function useDashboardSummary() {
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
+  let inFlight = false;
+  const backoff = createPollingBackoff();
 
   const load = async (showLoading = true) => {
     if (!mounted) return;
+    if (inFlight) return;
+    if (!showLoading && !backoff.canRequest()) return;
+    inFlight = true;
     const current = ++requestId;
     if (showLoading) loading = true;
     try {
       const next = await api.getDashboardSummary();
       if (mounted && current === requestId) {
         data = next;
+        backoff.reset();
         if (showLoading) error = null;
       }
     } catch (err) {
+      backoff.recordFailure(err);
       if (mounted && current === requestId && showLoading) error = getErrorMessage(err);
     } finally {
+      inFlight = false;
       if (mounted && current === requestId && (showLoading || loading)) loading = false;
     }
   };

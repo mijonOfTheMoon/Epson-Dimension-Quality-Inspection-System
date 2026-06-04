@@ -45,6 +45,8 @@ def configure_logging(level_name: str) -> None:
     )
     for logger_name in ("main", "http_client", "mqtt_link", "webrtc_publisher"):
         logging.getLogger(logger_name).setLevel(level)
+    for noisy_logger in ("aioice", "aiortc"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     if normalized != level_name.upper():
         logging.getLogger(__name__).warning("Invalid AGENT_LOG_LEVEL=%s; using INFO", level_name)
 
@@ -107,6 +109,7 @@ class InspectionRunner:
         self._video_session_id: str | None = None
         self._video_track_name: str | None = None
         self._offline_sent = threading.Event()
+        self._last_http_status_at = 0.0
         self._frame_interval = 1.0 / FRAME_FPS
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
@@ -178,11 +181,26 @@ class InspectionRunner:
             else:
                 now = monotonic()
                 if now - last_idle_status >= STATUS_INTERVAL:
-                    self._send_status(phase="idle", running=False)
+                    self._send_status(
+                        phase="idle",
+                        running=False,
+                        send_http=self._http_status_due(),
+                    )
                     last_idle_status = now
                 sleep(0.5)
 
-    def _send_status(self, *, phase: Phase, running: bool, fps: float = 0.0) -> None:
+    def _http_status_due(self) -> bool:
+        interval = max(5.0, self.config.http_status_interval_seconds)
+        return monotonic() - self._last_http_status_at >= interval
+
+    def _send_status(
+        self,
+        *,
+        phase: Phase,
+        running: bool,
+        fps: float = 0.0,
+        send_http: bool = True,
+    ) -> None:
         active = self._part.part_code if self._part else None
         event = build_station_status(
             self.config, running=running, phase=phase, fps=fps, active_part_code=active,
@@ -196,7 +214,9 @@ class InspectionRunner:
             video_session_id=self._video_session_id,
             video_track_name=self._video_track_name,
         )
-        self.http.send_status(event)
+        if send_http:
+            self._last_http_status_at = monotonic()
+            self.http.send_status(event)
 
     def _send_offline_status(self) -> None:
         if self._offline_sent.is_set():
@@ -211,6 +231,7 @@ class InspectionRunner:
             state="offline",
         )
         self.mqtt.publish_offline()
+        self._last_http_status_at = monotonic()
         self.http.send_status(event)
 
     def _send_frame(self, frame: cv2.Mat, encode_params: list[int]) -> None:
@@ -355,7 +376,12 @@ class InspectionRunner:
                     last_frame_sent = now
 
                 if now - last_status >= STATUS_INTERVAL:
-                    self._send_status(phase=phase, running=True, fps=fps)
+                    self._send_status(
+                        phase=phase,
+                        running=True,
+                        fps=fps,
+                        send_http=self._http_status_due(),
+                    )
                     last_status = now
 
         finally:

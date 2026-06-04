@@ -74,6 +74,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      API_PROXY_PASS: http://backend:4000
     expose:
       - "8080"
 

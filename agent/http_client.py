@@ -2,6 +2,8 @@ import json
 import logging
 import queue
 import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from time import monotonic
 from typing import Any
 
@@ -22,6 +24,8 @@ class BackendHttpClient:
         self._status_failed = False
         self._status_failure_count = 0
         self._next_status_warning_at = 0.0
+        self._status_backoff_until = 0.0
+        self._status_backoff_seconds = 1.0
         self._worker = threading.Thread(
             target=self._status_worker,
             name="agent-status-http",
@@ -84,6 +88,7 @@ class BackendHttpClient:
                 except queue.Empty:
                     continue
                 try:
+                    self._wait_for_status_backoff()
                     self._post_status(session, payload)
                 finally:
                     self._status_queue.task_done()
@@ -104,9 +109,12 @@ class BackendHttpClient:
             self._status_failed = False
             self._status_failure_count = 0
             self._next_status_warning_at = 0.0
+            self._status_backoff_until = 0.0
+            self._status_backoff_seconds = 1.0
         except requests.RequestException as exc:
             self._status_failed = True
             self._status_failure_count += 1
+            self._apply_status_backoff(exc)
             now = monotonic()
             if now >= self._next_status_warning_at:
                 suppressed = max(0, self._status_failure_count - 1)
@@ -115,3 +123,39 @@ class BackendHttpClient:
                 else:
                     logger.warning("Status ingest failed: %s", exc)
                 self._next_status_warning_at = now + 30.0
+
+    def _wait_for_status_backoff(self) -> None:
+        delay = self._status_backoff_until - monotonic()
+        if delay > 0:
+            self._stop.wait(delay)
+
+    def _apply_status_backoff(self, exc: requests.RequestException) -> None:
+        response = getattr(exc, "response", None)
+        status_code = response.status_code if response is not None else None
+        retry_after = _retry_after_seconds(response.headers.get("Retry-After")) if response is not None else None
+        should_backoff = (
+            status_code == 429
+            or (status_code is not None and status_code >= 500)
+            or isinstance(exc, (requests.ConnectionError, requests.Timeout))
+        )
+        if not should_backoff:
+            return
+        delay = retry_after if retry_after is not None else self._status_backoff_seconds
+        self._status_backoff_until = monotonic() + min(delay, 60.0)
+        self._status_backoff_seconds = min(self._status_backoff_seconds * 2.0, 60.0)
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
