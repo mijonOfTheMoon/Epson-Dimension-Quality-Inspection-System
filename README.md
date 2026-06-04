@@ -90,6 +90,6 @@ MQTT_HOST=
 ```bash
 cd frontend && npm run check && npm run build
 cd backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-cd agent && python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
+cd agent && python -m py_compile main.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 docker compose config
 ```

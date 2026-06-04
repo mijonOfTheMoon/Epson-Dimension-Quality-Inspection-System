@@ -70,6 +70,7 @@ pub fn build_router(config: Config, store: PostgresStore, object_store: Option<A
         .route("/api/agent/status", post(handlers::agent_ingest::status))
         .route("/api/agent/inspections", post(handlers::agent_ingest::inspection))
         .route("/api/video/stations/{stationId}/viewer-session", post(handlers::video::viewer_session))
+        .route("/api/video/cloudflare/sessions/{sessionId}/tracks/pull", post(handlers::video::pull_track))
         .route("/api/video/cloudflare/sessions/{sessionId}/renegotiate", put(handlers::video::renegotiate))
         .route("/api/quality-records", get(handlers::quality_records::list))
         .route("/api/quality-records/{id}/status", patch(handlers::quality_records::update_status))

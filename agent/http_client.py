@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import Any
 
 import requests
 
 from config import AgentConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BackendHttpClient:
@@ -36,7 +39,7 @@ class BackendHttpClient:
             response.raise_for_status()
             return True
         except requests.RequestException as exc:
-            print(f"[agent-http] inspection ingest failed: {exc}")
+            logger.warning("Inspection ingest failed: %s", exc)
             return False
 
     def _post_json(self, path: str, payload: dict[str, Any]) -> bool:
@@ -50,5 +53,5 @@ class BackendHttpClient:
             response.raise_for_status()
             return True
         except requests.RequestException as exc:
-            print(f"[agent-http] status ingest failed: {exc}")
+            logger.warning("Status ingest failed: %s", exc)
             return False

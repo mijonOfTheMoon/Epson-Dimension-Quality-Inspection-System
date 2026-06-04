@@ -12,6 +12,7 @@ FRAME_QUALITY = 62
 
 @dataclass(frozen=True)
 class AgentConfig:
+    agent_log_level: str
     station_id: str
     camera_index: int
     backend_http_url: str
@@ -30,6 +31,7 @@ class AgentConfig:
 
 def load_config() -> AgentConfig:
     return AgentConfig(
+        agent_log_level=os.getenv("AGENT_LOG_LEVEL", "INFO").strip() or "INFO",
         station_id=os.getenv("STATION_ID", "Station 1"),
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
         backend_http_url=os.getenv("BACKEND_HTTP_URL", "http://localhost:4000"),

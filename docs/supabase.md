@@ -335,7 +335,7 @@ Python agent syntax check:
 
 ```powershell
 cd agent
-python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
+python -m py_compile main.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 ```
 
 ## Referensi

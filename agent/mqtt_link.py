@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from datetime import datetime
 from typing import Any, Callable
@@ -12,6 +13,7 @@ import paho.mqtt.client as mqtt
 from config import AgentConfig
 
 CommandHandler = Callable[[dict[str, Any]], None]
+logger = logging.getLogger(__name__)
 
 
 def _safe_topic_segment(value: str) -> str:
@@ -128,7 +130,7 @@ class MqttLink:
         _properties: mqtt.Properties | None,
     ) -> None:
         if reason_code.is_failure:
-            print(f"[mqtt] connect failed: {reason_code}")
+            logger.warning("MQTT connect failed: %s", reason_code)
             return
         self._connected.set()
         client.subscribe(self.commands_topic, qos=1)
@@ -144,7 +146,7 @@ class MqttLink:
     ) -> None:
         self._connected.clear()
         if reason_code.is_failure:
-            print(f"[mqtt] disconnected: {reason_code}")
+            logger.warning("MQTT disconnected: %s", reason_code)
 
     def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
         try:

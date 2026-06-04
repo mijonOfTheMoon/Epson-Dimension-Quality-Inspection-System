@@ -14,6 +14,7 @@ import type {
   StationStatusEvent,
   User,
   UserRole,
+  VideoTrackPullResponse,
   VideoViewerSession,
 } from '$lib/types/api';
 
@@ -193,10 +194,16 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ command: 'recalibrate' }) },
     );
   },
-  createVideoViewerSession(stationId: string) {
+  createVideoViewerSession(stationId: string, sessionDescription: CloudflareSessionDescription) {
     return request<VideoViewerSession>(
       `/api/video/stations/${encodeURIComponent(stationId)}/viewer-session`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ sessionDescription }) },
+    );
+  },
+  pullVideoTrack(viewerSessionId: string, publisherSessionId: string, trackName: string) {
+    return request<VideoTrackPullResponse>(
+      `/api/video/cloudflare/sessions/${encodeURIComponent(viewerSessionId)}/tracks/pull`,
+      { method: 'POST', body: JSON.stringify({ publisherSessionId, trackName }) },
     );
   },
   renegotiateVideoSession(path: string, sessionDescription: CloudflareSessionDescription) {

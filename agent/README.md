@@ -9,13 +9,14 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-python computer_vision.py
+python main.py
 ```
 
 ## Environment
 
 ```text
 STATION_ID=Station 1
+AGENT_LOG_LEVEL=INFO
 CAMERA_INDEX=0
 BACKEND_HTTP_URL=http://localhost:4000
 AGENT_TOKEN=change-me-agent-shared-token
@@ -42,6 +43,7 @@ CLOUDFLARE_REALTIME_API_BASE_URL=https://rtc.live.cloudflare.com/v1
 - Snapshot JPEG untuk histori dikirim bersama multipart HTTP inspection ingest.
 - Manual capture hanya mengirim `inspection.created` jika ada detection valid.
 - `STATION_ID` wajib unik per agent dan `AGENT_TOKEN` harus sama dengan backend.
+- `AGENT_LOG_LEVEL` opsional; gunakan `INFO` untuk operasional normal, `DEBUG` saat troubleshooting lokal.
 
 ## Vision Defaults
 
@@ -57,7 +59,7 @@ CALIBRATION_FRAMES=30
 ```text
 Action:    Start a program
 Program:   D:\path\Agent\.venv\Scripts\python.exe
-Arguments: D:\path\Agent\computer_vision.py
+Arguments: D:\path\Agent\main.py
 Start in:  D:\path\Agent
 Trigger:   At log on
 Settings:  Restart on failure every 1 minute, up to 99 attempts
@@ -66,5 +68,5 @@ Settings:  Restart on failure every 1 minute, up to 99 attempts
 ## Validation
 
 ```powershell
-python -m py_compile computer_vision.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
+python -m py_compile main.py config.py http_client.py mqtt_link.py webrtc_publisher.py vision.py
 ```

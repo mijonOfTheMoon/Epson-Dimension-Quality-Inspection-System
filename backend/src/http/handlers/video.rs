@@ -10,13 +10,13 @@ use crate::http::AppState;
 
 use super::{require_auth, APP_ROLES};
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IceServer {
     pub urls: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewerSessionResponse {
     pub station_id: String,
@@ -31,7 +31,20 @@ pub struct ViewerSessionResponse {
     pub ice_servers: Vec<IceServer>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewerSessionBody {
+    pub session_description: SessionDescription,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullTrackBody {
+    pub publisher_session_id: String,
+    pub track_name: String,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenegotiateBody {
     pub session_description: SessionDescription,
@@ -41,6 +54,7 @@ pub async fn viewer_session(
     State(state): State<AppState>,
     Extension(current): Extension<CurrentUser>,
     Path(station_id): Path<String>,
+    Json(body): Json<ViewerSessionBody>,
 ) -> AppResult<Json<ViewerSessionResponse>> {
     require_auth(&current)?;
     let cloudflare = state
@@ -65,12 +79,13 @@ pub async fn viewer_session(
         .video_track_name
         .ok_or_else(|| AppError::NotFound("Track video agent belum tersedia".into()))?;
 
-    let viewer_session_id = cloudflare
-        .create_session(&format!("viewer-{station_id}-{}", Uuid::new_v4()))
+    let viewer_session = cloudflare
+        .create_session(
+            &format!("viewer-{station_id}-{}", Uuid::new_v4()),
+            body.session_description,
+        )
         .await?;
-    let tracks = cloudflare
-        .pull_track(&viewer_session_id, &publisher_session_id, &track_name)
-        .await?;
+    let viewer_session_id = viewer_session.session_id;
 
     Ok(Json(ViewerSessionResponse {
         station_id,
@@ -79,8 +94,8 @@ pub async fn viewer_session(
         viewer_session_id: viewer_session_id.clone(),
         publisher_session_id,
         track_name,
-        session_description: tracks.session_description,
-        requires_immediate_renegotiation: tracks.requires_immediate_renegotiation,
+        session_description: viewer_session.session_description,
+        requires_immediate_renegotiation: false,
         renegotiate_path: format!(
             "/api/video/cloudflare/sessions/{}/renegotiate",
             urlencoding::encode(&viewer_session_id)
@@ -89,6 +104,23 @@ pub async fn viewer_session(
             urls: "stun:stun.cloudflare.com:3478".into(),
         }],
     }))
+}
+
+pub async fn pull_track(
+    State(state): State<AppState>,
+    Extension(current): Extension<CurrentUser>,
+    Path(session_id): Path<String>,
+    Json(body): Json<PullTrackBody>,
+) -> AppResult<Json<crate::cloudflare::TracksResponse>> {
+    require_auth(&current)?;
+    let cloudflare = state
+        .cloudflare_realtime
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into()))?;
+    let response = cloudflare
+        .pull_track(&session_id, &body.publisher_session_id, &body.track_name)
+        .await?;
+    Ok(Json(response))
 }
 
 pub async fn renegotiate(

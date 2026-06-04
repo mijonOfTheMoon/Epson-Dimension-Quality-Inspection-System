@@ -1,3 +1,4 @@
+import logging
 import queue
 import signal
 import threading
@@ -30,6 +31,22 @@ STABILITY_FRAMES = 5
 CLEAR_FRAMES = 10
 
 Phase = str  # 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked'
+
+
+def configure_logging(level_name: str) -> None:
+    normalized = level_name.upper()
+    level = logging.getLevelName(normalized)
+    if not isinstance(level, int):
+        normalized = "INFO"
+        level = logging.INFO
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+    for logger_name in ("main", "http_client", "mqtt_link", "webrtc_publisher"):
+        logging.getLogger(logger_name).setLevel(level)
+    if normalized != level_name.upper():
+        logging.getLogger(__name__).warning("Invalid AGENT_LOG_LEVEL=%s; using INFO", level_name)
 
 
 def now_iso() -> str:
@@ -328,6 +345,7 @@ class InspectionRunner:
 
 def main() -> None:
     config = load_config()
+    configure_logging(config.agent_log_level)
     runner = InspectionRunner(config)
     signal.signal(signal.SIGINT, runner.shutdown)
     try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from fractions import Fraction
 from typing import Any, Callable
@@ -12,6 +13,7 @@ import requests
 from config import AgentConfig
 
 VideoReadyHandler = Callable[[str, str], None]
+logger = logging.getLogger(__name__)
 
 try:
     from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
@@ -63,10 +65,10 @@ class WebRTCPublisher:
         if not track_name or not self.config.cloudflare_realtime_enabled:
             return
         if RTCPeerConnection is None or RTCSessionDescription is None or VideoFrame is None:
-            print("[webrtc] aiortc/av are not installed; live video publishing disabled")
+            logger.warning("aiortc/av are not installed; live video publishing disabled")
             return
         if not self.config.cloudflare_realtime_app_id or not self.config.cloudflare_realtime_app_secret:
-            print("[webrtc] Cloudflare Realtime credentials are missing; live video publishing disabled")
+            logger.warning("Cloudflare Realtime credentials are missing; live video publishing disabled")
             return
         loop = self._ensure_loop()
         future = asyncio.run_coroutine_threadsafe(self._start_async(track_name, on_ready), loop)
@@ -105,23 +107,32 @@ class WebRTCPublisher:
         transceiver = next((item for item in pc.getTransceivers() if item.sender is sender), None)
         mid = transceiver.mid if transceiver is not None else "0"
 
-        session_id = await asyncio.to_thread(self._create_session)
-        answer = await asyncio.to_thread(
+        local_description = {
+            "sdp": pc.localDescription.sdp,
+            "type": pc.localDescription.type,
+        }
+        session_id, session_answer = await asyncio.to_thread(self._create_session, local_description)
+        await pc.setRemoteDescription(
+            RTCSessionDescription(sdp=session_answer["sdp"], type=session_answer["type"])  # type: ignore[operator]
+        )
+        if not await self._wait_for_connection(pc):
+            raise RuntimeError(
+                "Cloudflare Realtime session did not connect "
+                f"(state={pc.connectionState}, ice={pc.iceConnectionState})"
+            )
+
+        await asyncio.to_thread(
             self._publish_track,
             session_id,
             track_name,
             mid,
-            {
-                "sdp": pc.localDescription.sdp,
-                "type": pc.localDescription.type,
-            },
+            local_description,
         )
-        await pc.setRemoteDescription(RTCSessionDescription(sdp=answer["sdp"], type=answer["type"]))  # type: ignore[operator]
         with self._lock:
             self._pc = pc
             self._track = track
         on_ready(session_id, track_name)
-        print(f"[webrtc] publishing track {track_name} in Cloudflare session {session_id}")
+        logger.info("Cloudflare Realtime publishing started for track %s", track_name)
 
     async def _stop_async(self) -> None:
         with self._lock:
@@ -146,7 +157,23 @@ class WebRTCPublisher:
         except asyncio.TimeoutError:
             pass
 
-    def _create_session(self) -> str:
+    async def _wait_for_connection(self, pc: Any) -> bool:
+        if pc.connectionState == "connected":
+            return True
+        done = asyncio.Event()
+
+        @pc.on("connectionstatechange")
+        def on_connection_state_change() -> None:
+            if pc.connectionState == "connected":
+                done.set()
+
+        try:
+            await asyncio.wait_for(done.wait(), timeout=15)
+            return True
+        except asyncio.TimeoutError:
+            return pc.connectionState == "connected"
+
+    def _create_session(self, session_description: dict[str, str]) -> tuple[str, dict[str, str]]:
         url = (
             f"{self.config.cloudflare_realtime_api_base_url}/apps/"
             f"{self.config.cloudflare_realtime_app_id}/sessions/new"
@@ -154,14 +181,17 @@ class WebRTCPublisher:
         response = requests.post(
             url,
             headers={"Authorization": f"Bearer {self.config.cloudflare_realtime_app_secret}"},
-            json={},
+            json={"sessionDescription": session_description},
             timeout=10,
         )
-        response.raise_for_status()
+        self._raise_for_status(response, "create session")
         payload = response.json()
         if payload.get("errorCode"):
             raise RuntimeError(payload.get("errorDescription") or payload["errorCode"])
-        return str(payload["sessionId"])
+        answer = payload.get("sessionDescription")
+        if not answer:
+            raise RuntimeError("Cloudflare Realtime did not return a sessionDescription answer")
+        return str(payload["sessionId"]), {"sdp": str(answer["sdp"]), "type": str(answer["type"])}
 
     def _publish_track(
         self,
@@ -169,7 +199,7 @@ class WebRTCPublisher:
         track_name: str,
         mid: str,
         session_description: dict[str, str],
-    ) -> dict[str, str]:
+    ) -> None:
         url = (
             f"{self.config.cloudflare_realtime_api_base_url}/apps/"
             f"{self.config.cloudflare_realtime_app_id}/sessions/{session_id}/tracks/new"
@@ -184,18 +214,24 @@ class WebRTCPublisher:
             json=body,
             timeout=10,
         )
-        response.raise_for_status()
+        self._raise_for_status(response, "publish track")
         payload = response.json()
         if payload.get("errorCode"):
             raise RuntimeError(payload.get("errorDescription") or payload["errorCode"])
-        answer = payload.get("sessionDescription")
-        if not answer:
-            raise RuntimeError("Cloudflare Realtime did not return a sessionDescription answer")
-        return {"sdp": str(answer["sdp"]), "type": str(answer["type"])}
+
+    @staticmethod
+    def _raise_for_status(response: requests.Response, action: str) -> None:
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            body = response.text[:500]
+            raise RuntimeError(
+                f"Cloudflare Realtime {action} failed: HTTP {response.status_code} {body}"
+            ) from exc
 
     @staticmethod
     def _log_future_error(future: "asyncio.Future[Any]") -> None:
         try:
             future.result()
         except Exception as exc:
-            print(f"[webrtc] publisher error: {exc}")
+            logger.error("Cloudflare Realtime publisher error: %s", exc)

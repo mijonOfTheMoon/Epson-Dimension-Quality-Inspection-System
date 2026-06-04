@@ -141,6 +141,12 @@ export interface VideoViewerSession {
   iceServers: RTCIceServer[];
 }
 
+export interface VideoTrackPullResponse {
+  requiresImmediateRenegotiation: boolean;
+  sessionDescription?: CloudflareSessionDescription;
+  tracks: unknown[];
+}
+
 export interface AuthLoginResponse {
   user: User;
   token: string;

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::CloudflareRealtimeConfig;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDescription {
     pub sdp: String,
@@ -11,13 +11,19 @@ pub struct SessionDescription {
     pub kind: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NewSessionRequest {
+    session_description: SessionDescription,
+}
+
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TrackRequest<'a> {
     tracks: Vec<TrackObject<'a>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TrackObject<'a> {
     location: &'a str,
@@ -26,21 +32,26 @@ struct TrackObject<'a> {
     kind: &'a str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenegotiateRequest {
     pub session_description: SessionDescription,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct NewSessionResponse {
-    session_id: String,
-    error_code: Option<String>,
-    error_description: Option<String>,
+pub struct NewSessionResponse {
+    #[serde(default)]
+    pub session_id: String,
+    #[serde(default)]
+    pub session_description: Option<SessionDescription>,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    #[serde(default)]
+    pub error_description: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TracksResponse {
     #[serde(default)]
@@ -55,7 +66,7 @@ pub struct TracksResponse {
     pub error_description: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenegotiateResponse {
     #[serde(default)]
@@ -84,7 +95,11 @@ impl CloudflareRealtimeClient {
         &self.config.app_id
     }
 
-    pub async fn create_session(&self, correlation_id: &str) -> anyhow::Result<String> {
+    pub async fn create_session(
+        &self,
+        correlation_id: &str,
+        session_description: SessionDescription,
+    ) -> anyhow::Result<NewSessionResponse> {
         let url = format!(
             "{}/apps/{}/sessions/new?correlationId={}",
             self.config.api_base_url,
@@ -95,7 +110,7 @@ impl CloudflareRealtimeClient {
             .http
             .post(url)
             .bearer_auth(&self.config.app_secret)
-            .json(&serde_json::json!({}))
+            .json(&NewSessionRequest { session_description })
             .send()
             .await
             .context("Cloudflare Realtime create session failed")?;
@@ -112,7 +127,10 @@ impl CloudflareRealtimeClient {
                     .unwrap_or_else(|| status.to_string())
             ));
         }
-        Ok(body.session_id)
+        if body.session_id.is_empty() {
+            return Err(anyhow!("Cloudflare Realtime create session did not return a sessionId"));
+        }
+        Ok(body)
     }
 
     pub async fn pull_track(
