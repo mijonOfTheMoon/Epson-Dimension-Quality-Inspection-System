@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import {
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
     RotateCcw, Send, StopCircle, Trash2, Video, XCircle, Zap,
@@ -79,11 +80,14 @@
   let toast = $state<{ text: string; tone: 'info' | 'error' } | null>(null);
   let selectedPart = $state<Record<string, string>>({});
   let inspectionView = $state<Record<string, DimensionView>>({});
+  let pendingStart = $state<Record<string, boolean>>({});
   let focusedStationId = $state<string | null>(null);
   let menuStationId = $state<string | null>(null);
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
   let boxesDisabled = $state(readBoxesDisabled());
   const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
+  const stationRefreshBurstMs = [250, 750, 1500, 3000];
+  const stationRefreshTimers: number[] = [];
 
   const merged = $derived(mergeStations(stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
@@ -117,11 +121,45 @@
   const defaultPartCode = $derived(parts.data[0]?.partCode ?? '');
   const partForCode = (partCode: string) => partByCode.get(partCode);
   const partCodeForStation = (station: MergedStation) => selectedPart[station.stationId] ?? station.activePartCode ?? defaultPartCode;
-  const partSupportsSideView = (part?: PartType) => part?.dimensions.some((dimension) => dimension.view === 'side') ?? false;
+  const partSupportsSideOrientation = (part?: PartType) => part?.dimensions.some((dimension) => dimension.view === 'side') ?? false;
   const viewForStation = (stationId: string, part?: PartType): DimensionView => {
     const selected = inspectionView[stationId] ?? 'top';
-    return partSupportsSideView(part) ? selected : 'top';
+    return partSupportsSideOrientation(part) ? selected : 'top';
   };
+
+  const setPendingStart = (stationId: string, value: boolean) => {
+    if (value) {
+      pendingStart = { ...pendingStart, [stationId]: true };
+      return;
+    }
+    if (!pendingStart[stationId]) return;
+    const next = { ...pendingStart };
+    delete next[stationId];
+    pendingStart = next;
+  };
+
+  const scheduleStationRefreshBurst = () => {
+    for (const delay of stationRefreshBurstMs) {
+      const timer = window.setTimeout(() => {
+        void stations.refresh();
+      }, delay);
+      stationRefreshTimers.push(timer);
+    }
+  };
+
+  $effect(() => {
+    const stationById = new Map(merged.map((station) => [station.stationId, station]));
+    const next = { ...pendingStart };
+    let changed = false;
+    for (const stationId of Object.keys(next)) {
+      const station = stationById.get(stationId);
+      if (!station?.online || station.running) {
+        delete next[stationId];
+        changed = true;
+      }
+    }
+    if (changed) pendingStart = next;
+  });
 
   let latestHandledInspectionId: string | null = null;
   $effect(() => {
@@ -168,8 +206,8 @@
     try {
       await fn();
       showToast(`${label}: ${stationId}`);
-      await stations.refresh();
       onSuccess?.();
+      await stations.refresh();
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally {
@@ -200,7 +238,9 @@
   };
 
   const onlineCount = $derived(merged.filter((s) => s.online).length);
-  const runningCount = $derived(merged.filter((s) => s.running).length);
+  const optimisticRunningCount = $derived(
+    merged.filter((s) => s.running || pendingStart[s.stationId]).length,
+  );
 
   const sessionStats = $derived.by(() => {
     let total = 0, ok = 0, ng = 0;
@@ -255,6 +295,12 @@
       sendingTelegramLive = false;
     }
   };
+
+  onDestroy(() => {
+    for (const timer of stationRefreshTimers) {
+      window.clearTimeout(timer);
+    }
+  });
 </script>
 
 <div class="space-y-6 select-none font-sans">
@@ -283,7 +329,7 @@
       </span>
       <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-bold shadow-sm">
         <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-        {runningCount} Berjalan
+        {optimisticRunningCount} Berjalan
       </span>
     </div>
   </div>
@@ -340,13 +386,14 @@
           {#each visibleStations as station (station.stationId)}
             {@const isFocused = focusedStationId === station.stationId}
             {@const isBusy = busy[station.stationId]}
-            {@const phase = station.phase ?? (station.running ? 'ready' : 'idle')}
+            {@const optimisticRunning = station.running || Boolean(pendingStart[station.stationId])}
+            {@const phase = station.phase ?? (optimisticRunning ? 'calibrating' : 'idle')}
             {@const phaseMeta = PHASE_LABELS[phase]}
             {@const PhaseIcon = phaseMeta.icon}
             {@const partCode = partCodeForStation(station)}
             {@const selectedPartType = partForCode(partCode)}
             {@const activePart = partForCode(station.activePartCode ?? '') ?? selectedPartType}
-            {@const hasSideView = partSupportsSideView(selectedPartType)}
+            {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
             {@const latestGroup = latestGroupsByStation.get(station.stationId)}
             {@const detections = boxesDisabled ? [] : (latestGroup?.detections ?? [])}
@@ -354,7 +401,7 @@
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <!-- Video Frame Container -->
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
-                <CloudflareVideo stationId={station.stationId} online={station.online} running={station.running} />
+                <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} />
 
                 <!-- Glowing Bounding Boxes (Object Detections) -->
                 {#each detections as detection (detection.id)}
@@ -381,7 +428,7 @@
                   }">
                     {station.online ? 'CONNECTED' : 'OFFLINE'}
                   </span>
-                  {#if station.running}
+                  {#if optimisticRunning}
                     <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-md inline-flex items-center gap-1 {phaseMeta.tone}">
                       <PhaseIcon class="w-3.5 h-3.5" />
                       {phaseMeta.text}
@@ -391,7 +438,7 @@
 
                 <!-- Action Controls Overlay -->
                 <div class="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-30">
-                  {#if station.fps && station.running}
+                  {#if station.fps && optimisticRunning}
                     <span class="text-[10px] font-mono bg-slate-900/80 backdrop-blur-md text-slate-200 border border-slate-700/30 px-2.5 py-1 rounded-full shadow-md font-bold">{station.fps.toFixed(1)} FPS</span>
                   {/if}
                   <button
@@ -442,7 +489,7 @@
 
                 <!-- Operator / Admin Control Buttons -->
                 {#if canControl}
-                  {#if !station.running}
+                  {#if !optimisticRunning}
                     <div class={isFocused ? 'grid md:grid-cols-[minmax(0,1fr)_150px_140px] gap-2.5' : 'grid grid-cols-1 sm:grid-cols-2 gap-2.5'}>
                       <select
                         disabled={!station.online || isBusy || parts.data.length === 0}
@@ -456,17 +503,25 @@
                         {/each}
                       </select>
                       <select
-                        disabled={!station.online || isBusy || !hasSideView}
+                        disabled={!station.online || isBusy || !hasSideOrientation}
                         value={view}
                         onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
                         class="input text-xs font-medium"
                       >
-                        <option value="top">Tampak Atas</option>
-                        <option value="side">Tampak Samping</option>
+                        <option value="top">Menghadap Kamera</option>
+                        <option value="side">Menyamping dari Kamera</option>
                       </select>
                       <button
                         disabled={!station.online || isBusy || !partCode}
-                        onclick={() => runCommand(station.stationId, 'Mulai', () => api.startAgent(station.stationId, partCode, view))}
+                        onclick={() => runCommand(
+                          station.stationId,
+                          'Mulai',
+                          () => api.startAgent(station.stationId, partCode, view),
+                          () => {
+                            setPendingStart(station.stationId, true);
+                            scheduleStationRefreshBurst();
+                          },
+                        )}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <Play class="w-4 h-4 fill-white" /> Mulai
@@ -475,13 +530,13 @@
                   {:else}
                     <div class={isFocused ? 'grid grid-cols-[1.2fr_1fr_1fr_1fr] gap-2' : 'grid grid-cols-2 gap-2'}>
                       <select
-                        disabled={!station.online || isBusy || !hasSideView}
+                        disabled={!station.online || isBusy || !hasSideOrientation}
                         value={view}
                         onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
                         class="input text-xs font-semibold {isFocused ? '' : 'col-span-2'}"
                       >
-                        <option value="top">Atas</option>
-                        <option value="side">Samping</option>
+                        <option value="top">Menghadap Kamera</option>
+                        <option value="side">Menyamping dari Kamera</option>
                       </select>
                       <button
                         disabled={!station.online || isBusy || phase === 'calibrating'}
@@ -489,7 +544,10 @@
                           station.stationId,
                           'Capture',
                           () => api.captureNow(station.stationId, view),
-                          refreshInspectionsSoon,
+                          () => {
+                            refreshInspectionsSoon();
+                            scheduleStationRefreshBurst();
+                          },
                         )}
                         title="Simpan data inspeksi"
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
@@ -505,7 +563,15 @@
                       </button>
                       <button
                         disabled={!station.online || isBusy}
-                        onclick={() => runCommand(station.stationId, 'Berhenti', () => api.stopAgent(station.stationId))}
+                        onclick={() => runCommand(
+                          station.stationId,
+                          'Berhenti',
+                          () => api.stopAgent(station.stationId),
+                          () => {
+                            setPendingStart(station.stationId, false);
+                            scheduleStationRefreshBurst();
+                          },
+                        )}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <StopCircle class="w-4 h-4" /> Stop

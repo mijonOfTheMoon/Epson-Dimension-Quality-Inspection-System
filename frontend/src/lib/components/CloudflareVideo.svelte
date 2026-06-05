@@ -20,9 +20,11 @@
   let prevRunning = false;
 
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
-  const videoReadyRetryMs = 1500;
+  const videoReadyRetryMs = 500;
   const videoReadyTimeoutMs = 20000;
   const maxSessionRetries = 3;
+  const backgroundRetryBaseMs = 5000;
+  const backgroundRetryMaxMs = 30000;
 
   const sleep = (ms: number, signal: AbortSignal) =>
     new Promise<void>((resolve) => {
@@ -118,6 +120,38 @@
     });
   };
 
+  const waitForPeerDisconnect = (peer: RTCPeerConnection, signal: AbortSignal) => {
+    const isTerminal = () =>
+      peer.connectionState === 'failed' ||
+      peer.connectionState === 'closed';
+    if (isTerminal()) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let disconnectTimeout: number | undefined;
+      function cleanup() {
+        if (disconnectTimeout != null) { window.clearTimeout(disconnectTimeout); disconnectTimeout = undefined; }
+        peer.removeEventListener('connectionstatechange', onState);
+        peer.removeEventListener('iceconnectionstatechange', onState);
+        signal.removeEventListener('abort', onAbort);
+      }
+      function done() { cleanup(); resolve(); }
+      function onState() {
+        if (isTerminal()) { done(); return; }
+        if (peer.connectionState === 'disconnected' || peer.iceConnectionState === 'disconnected') {
+          if (disconnectTimeout == null) {
+            disconnectTimeout = window.setTimeout(done, 5000);
+          }
+        } else if (disconnectTimeout != null) {
+          window.clearTimeout(disconnectTimeout);
+          disconnectTimeout = undefined;
+        }
+      }
+      function onAbort() { done(); }
+      peer.addEventListener('connectionstatechange', onState);
+      peer.addEventListener('iceconnectionstatechange', onState);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  };
+
   const closePeer = () => {
     if (pc) {
       try { pc.close(); } catch { /* already closed */ }
@@ -163,7 +197,6 @@
     await peer.setRemoteDescription(
       new RTCSessionDescription(session.sessionDescription),
     );
-    await waitForPeerConnection(peer, signal);
     if (signal.aborted) { closePeer(); return; }
 
     const pull = await api.pullVideoTrack(
@@ -189,6 +222,8 @@
         type: peer.localDescription.type,
       });
     }
+    if (signal.aborted) { closePeer(); return; }
+    await waitForPeerConnection(peer, signal);
   };
 
   const connect = async (
@@ -210,38 +245,68 @@
     }
     connecting = true;
     message = 'Menghubungkan Cloudflare Realtime...';
-    const deadline = Date.now() + videoReadyTimeoutMs;
-    let sessionRetries = 0;
+    let backgroundRetryDelay = backgroundRetryBaseMs;
+
     try {
       while (!signal.aborted) {
-        try {
-          await connectOnce(targetStationId, signal);
-          if (!signal.aborted) message = '';
-          return;
-        } catch (err) {
-          closePeer();
+        const deadline = Date.now() + videoReadyTimeoutMs;
+        let sessionRetries = 0;
+        let connected = false;
+
+        while (!signal.aborted) {
+          try {
+            await connectOnce(targetStationId, signal);
+            if (!signal.aborted) {
+              message = '';
+              backgroundRetryDelay = backgroundRetryBaseMs;
+              connected = true;
+            }
+            break;
+          } catch (err) {
+            closePeer();
+            if (signal.aborted) return;
+            if (isPeerClosedError(err)) return;
+
+            if (isVideoPendingError(err) && Date.now() < deadline) {
+              message = 'Menunggu video agent...';
+              await sleep(videoReadyRetryMs, signal);
+              continue;
+            }
+
+            if (isStaleSessionError(err) && sessionRetries < maxSessionRetries) {
+              sessionRetries++;
+              message = `Sesi expired, mencoba ulang (${sessionRetries}/${maxSessionRetries})...`;
+              await sleep(1000 * (2 ** (sessionRetries - 1)), signal);
+              continue;
+            }
+
+            if (!signal.aborted) message = getErrorMessage(err);
+            break;
+          }
+        }
+
+        if (signal.aborted) return;
+
+        if (connected && pc) {
+          connecting = false;
+          await waitForPeerDisconnect(pc, signal);
           if (signal.aborted) return;
 
-          if (isPeerClosedError(err)) {
-            return;
-          }
-
-          if (isVideoPendingError(err) && Date.now() < deadline) {
-            message = 'Menunggu video agent...';
-            await sleep(videoReadyRetryMs, signal);
-            continue;
-          }
-
-          if (isStaleSessionError(err) && sessionRetries < maxSessionRetries) {
-            sessionRetries++;
-            message = `Sesi expired, mencoba ulang (${sessionRetries}/${maxSessionRetries})...`;
-            await sleep(1000 * (2 ** (sessionRetries - 1)), signal);
-            continue;
-          }
-
-          if (!signal.aborted) message = getErrorMessage(err);
-          return;
+          closePeer();
+          message = 'Koneksi terputus, menghubungkan ulang...';
+          connecting = true;
+          await sleep(1000, signal);
+          if (signal.aborted) return;
+          continue;
         }
+
+        await sleep(backgroundRetryDelay, signal);
+        if (signal.aborted) return;
+        backgroundRetryDelay = Math.min(
+          Math.round(backgroundRetryDelay * 1.5),
+          backgroundRetryMaxMs,
+        );
+        message = 'Mencoba menghubungkan ulang...';
       }
     } finally {
       if (!signal.aborted) connecting = false;

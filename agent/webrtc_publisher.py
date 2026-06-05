@@ -115,12 +115,6 @@ class WebRTCPublisher:
         await pc.setRemoteDescription(
             RTCSessionDescription(sdp=session_answer["sdp"], type=session_answer["type"])  # type: ignore[operator]
         )
-        if not await self._wait_for_connection(pc):
-            raise RuntimeError(
-                "Cloudflare Realtime session did not connect "
-                f"(state={pc.connectionState}, ice={pc.iceConnectionState})"
-            )
-
         await asyncio.to_thread(
             self._publish_track,
             session_id,
@@ -132,7 +126,16 @@ class WebRTCPublisher:
             self._pc = pc
             self._track = track
         on_ready(session_id, track_name)
-        logger.info("Cloudflare Realtime publishing started for track %s", track_name)
+        logger.info("Cloudflare Realtime track published for %s", track_name)
+        if await self._wait_for_connection(pc):
+            logger.info("Cloudflare Realtime session connected for track %s", track_name)
+        else:
+            logger.warning(
+                "Cloudflare Realtime session did not report connected before timeout "
+                "(state=%s, ice=%s)",
+                pc.connectionState,
+                pc.iceConnectionState,
+            )
 
     async def _stop_async(self) -> None:
         with self._lock:

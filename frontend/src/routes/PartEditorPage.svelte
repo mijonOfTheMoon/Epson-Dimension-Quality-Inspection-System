@@ -39,8 +39,8 @@
   ];
 
   const VIEW_OPTIONS: { value: DimensionView; label: string }[] = [
-    { value: 'top', label: 'Tampak Atas' },
-    { value: 'side', label: 'Tampak Samping' },
+    { value: 'top', label: 'Menghadap Kamera' },
+    { value: 'side', label: 'Menyamping dari Kamera' },
   ];
 
   const parts = useParts();
@@ -271,7 +271,7 @@
           <thead>
             <tr class="bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 border-b border-[var(--border)] text-left font-bold text-xs uppercase tracking-wider">
               <th class="px-4 py-3.5 w-[200px]">Nama Dimensi</th>
-              <th class="px-4 py-3.5 w-[160px]">Sudut Kamera</th>
+              <th class="px-4 py-3.5 w-[160px]">Orientasi Barang</th>
               <th class="px-4 py-3.5 w-[160px]">Kategori Ukur</th>
               <th class="px-4 py-3.5 w-[130px] text-right">Nominal Value</th>
               <th class="px-4 py-3.5 w-[130px] text-right">Min (Batas Bawah)</th>
