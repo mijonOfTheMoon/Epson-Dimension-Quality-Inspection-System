@@ -88,7 +88,8 @@
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
 
   const latestInspections = $derived(inspections.data.slice(0, 10));
-  const loading = $derived(inspections.loading || stations.loading || parts.loading);
+  const cameraLoading = $derived(stations.loading && merged.length === 0);
+  const supportingDataLoading = $derived((inspections.loading || parts.loading) && merged.length > 0);
   const error = $derived(inspections.error || stations.error || parts.error);
 
   const latestGroupsByStation = $derived.by(() => {
@@ -256,6 +257,18 @@
     </div>
   {/if}
 
+  {#if cameraLoading}
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
+      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
+      <span>Memuat daftar kamera tersedia...</span>
+    </div>
+  {:else if supportingDataLoading}
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
+      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
+      <span>Memuat data pendukung live tracking...</span>
+    </div>
+  {/if}
+
   <!-- Main Tracking Workspace -->
   <div class="grid lg:grid-cols-[1fr_360px] gap-6">
     <!-- Camera Streams Grid -->
@@ -267,7 +280,7 @@
         </span>
       </div>
 
-      {#if loading && merged.length === 0}
+      {#if cameraLoading}
         <div class="grid sm:grid-cols-2 gap-4">
           {#each [0, 1] as i (i)}
             <div class="aspect-video bg-slate-100 dark:bg-slate-900 rounded-xl animate-pulse"></div>

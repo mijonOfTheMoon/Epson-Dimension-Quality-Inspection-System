@@ -11,6 +11,10 @@ use crate::config::MqttConfig;
 use crate::domain::StationPhase;
 use crate::realtime::agent_registry::AgentInfo;
 
+const PRESENCE_LIST_EMPTY_TIMEOUT: Duration = Duration::from_millis(500);
+const PRESENCE_LIST_IDLE_TIMEOUT: Duration = Duration::from_millis(150);
+const PRESENCE_LIST_POLL_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StationPresence {
@@ -101,16 +105,20 @@ impl MqttService {
             .context("failed to subscribe MQTT presence list")?;
 
         let mut presences = Vec::new();
-        let deadline = Instant::now() + self.config.retained_presence_timeout;
+        let empty_timeout = self.config.retained_presence_timeout.min(PRESENCE_LIST_EMPTY_TIMEOUT);
+        let mut deadline = Instant::now() + empty_timeout;
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            match tokio::time::timeout(remaining.min(Duration::from_millis(250)), eventloop.poll()).await {
+            match tokio::time::timeout(remaining.min(PRESENCE_LIST_POLL_TIMEOUT), eventloop.poll()).await {
                 Ok(Ok(Event::Incoming(Packet::Publish(publish)))) => {
                     if publish.payload.is_empty() {
                         continue;
                     }
                     match parse_presence(&publish.payload) {
-                        Ok(presence) => presences.push(self.apply_presence_freshness(presence)),
+                        Ok(presence) => {
+                            presences.push(self.apply_presence_freshness(presence));
+                            deadline = Instant::now() + PRESENCE_LIST_IDLE_TIMEOUT;
+                        }
                         Err(error) => tracing::warn!(topic = %publish.topic, %error, "invalid MQTT presence payload"),
                     }
                 }
