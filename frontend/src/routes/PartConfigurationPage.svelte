@@ -16,8 +16,8 @@
   };
 
   const VIEW_LABELS: Record<DimensionView, string> = {
-    top: 'Tampak Atas',
-    side: 'Tampak Samping',
+    top: 'Menghadap Kamera',
+    side: 'Menyamping dari Kamera',
   };
 
   const parts = useParts();
@@ -43,9 +43,9 @@
   const viewSummary = (part: PartType) => {
     const top = part.dimensions.filter((dimension) => dimension.view === 'top').length;
     const side = part.dimensions.filter((dimension) => dimension.view === 'side').length;
-    if (top > 0 && side > 0) return `Atas ${top} / Samping ${side}`;
-    if (side > 0) return `Samping ${side}`;
-    return `Atas ${top}`;
+    if (top > 0 && side > 0) return `Menghadap Kamera ${top} / Menyamping dari Kamera ${side}`;
+    if (side > 0) return `Menyamping dari Kamera ${side}`;
+    return `Menghadap Kamera ${top}`;
   };
 
   const remove = async (part: PartType) => {
@@ -119,7 +119,7 @@
             <th class="px-5 py-4">Nama Produk</th>
             <th class="px-5 py-4">Vendor Partner</th>
             <th class="px-5 py-4 text-center">Jumlah Dimensi</th>
-            <th class="px-5 py-4">Perspektif Kamera</th>
+            <th class="px-5 py-4">Orientasi Barang</th>
             <th class="px-5 py-4 text-right">Aksi</th>
           </tr>
         </thead>
@@ -171,7 +171,7 @@
                       <thead>
                         <tr class="bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 border-b border-[var(--border)] text-left font-bold text-[10px] uppercase tracking-wider">
                           <th class="px-4 py-3">Nama Dimensi</th>
-                          <th class="px-4 py-3">Sudut Kamera</th>
+                          <th class="px-4 py-3">Orientasi Barang</th>
                           <th class="px-4 py-3">Kategori</th>
                           <th class="px-4 py-3 text-right">Nilai Nominal</th>
                           <th class="px-4 py-3 text-right">Batas Bawah (Min)</th>

@@ -20,7 +20,7 @@
   let prevRunning = false;
 
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
-  const videoReadyRetryMs = 1500;
+  const videoReadyRetryMs = 500;
   const videoReadyTimeoutMs = 20000;
   const maxSessionRetries = 3;
 
@@ -163,7 +163,6 @@
     await peer.setRemoteDescription(
       new RTCSessionDescription(session.sessionDescription),
     );
-    await waitForPeerConnection(peer, signal);
     if (signal.aborted) { closePeer(); return; }
 
     const pull = await api.pullVideoTrack(
@@ -189,6 +188,8 @@
         type: peer.localDescription.type,
       });
     }
+    if (signal.aborted) { closePeer(); return; }
+    await waitForPeerConnection(peer, signal);
   };
 
   const connect = async (

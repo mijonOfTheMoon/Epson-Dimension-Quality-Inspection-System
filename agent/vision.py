@@ -46,6 +46,10 @@ def _normalize_kind(raw: dict[str, Any]) -> str:
     return "width"
 
 
+def _orientation_label(view: str) -> str:
+    return "Menyamping dari Kamera" if view == "side" else "Menghadap Kamera"
+
+
 @dataclass(frozen=True)
 class DimensionSpec:
     id: str
@@ -348,7 +352,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         if not measurements and part.dimensions:
             detection_ok = False
             measurements.append(Measurement(
-                dimensionName=f"Dimensi {active_view}",
+                dimensionName=f"Dimensi {_orientation_label(active_view)}",
                 measured=0.0,
                 nominal=0.0,
                 upperLimit=0.0,
