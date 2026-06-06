@@ -27,7 +27,11 @@ impl AuthService {
         jwt::verify(token, &self.config.jwt_secret)
     }
 
-    pub async fn login(&self, username: &str, password: &str) -> anyhow::Result<Option<LoginResult>> {
+    pub async fn login(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> anyhow::Result<Option<LoginResult>> {
         let Some(user) = self.store.find_user_by_username(username).await? else {
             return Ok(None);
         };

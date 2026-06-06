@@ -15,7 +15,10 @@ pub struct LoginBody {
     password: String,
 }
 
-pub async fn login(State(state): State<AppState>, Json(body): Json<LoginBody>) -> AppResult<Json<crate::auth::service::LoginResult>> {
+pub async fn login(
+    State(state): State<AppState>,
+    Json(body): Json<LoginBody>,
+) -> AppResult<Json<crate::auth::service::LoginResult>> {
     if body.username.trim().is_empty() || body.password.is_empty() {
         return Err(AppError::BadRequest("Invalid request".into()));
     }
@@ -25,7 +28,9 @@ pub async fn login(State(state): State<AppState>, Json(body): Json<LoginBody>) -
     }
 }
 
-pub async fn me(Extension(current): Extension<CurrentUser>) -> AppResult<Json<crate::domain::SafeUser>> {
+pub async fn me(
+    Extension(current): Extension<CurrentUser>,
+) -> AppResult<Json<crate::domain::SafeUser>> {
     Ok(Json(require_auth(&current)?))
 }
 

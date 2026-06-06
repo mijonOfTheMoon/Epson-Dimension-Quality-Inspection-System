@@ -1,5 +1,4 @@
 import type {
-  AgentCommandType,
   AgentCommandResponse,
   AgentInfo,
   AuthLoginResponse,

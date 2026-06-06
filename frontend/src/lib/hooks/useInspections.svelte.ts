@@ -54,6 +54,5 @@ export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000) 
     get loading() { return loading; },
     get error() { return error; },
     reload() { void load(); },
-    refresh,
   };
 }

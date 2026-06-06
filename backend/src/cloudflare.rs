@@ -111,7 +111,9 @@ impl CloudflareRealtimeClient {
             .http
             .post(url)
             .bearer_auth(&self.config.app_secret)
-            .json(&NewSessionRequest { session_description })
+            .json(&NewSessionRequest {
+                session_description,
+            })
             .send()
             .await
             .context("Cloudflare Realtime create session failed")?;
@@ -121,7 +123,8 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime create session response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            let msg = body.error_description
+            let msg = body
+                .error_description
                 .or(body.error_code)
                 .unwrap_or_else(|| status.to_string());
             return Err(AppError::CloudflareUpstream {
@@ -130,7 +133,9 @@ impl CloudflareRealtimeClient {
             });
         }
         if body.session_id.is_empty() {
-            return Err(anyhow!("Cloudflare Realtime create session did not return a sessionId").into());
+            return Err(
+                anyhow!("Cloudflare Realtime create session did not return a sessionId").into(),
+            );
         }
         Ok(body)
     }
@@ -167,7 +172,8 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime pull track response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            let msg = body.error_description
+            let msg = body
+                .error_description
                 .clone()
                 .or(body.error_code.clone())
                 .unwrap_or_else(|| status.to_string());
@@ -192,7 +198,9 @@ impl CloudflareRealtimeClient {
             .http
             .put(url)
             .bearer_auth(&self.config.app_secret)
-            .json(&RenegotiateRequest { session_description })
+            .json(&RenegotiateRequest {
+                session_description,
+            })
             .send()
             .await
             .context("Cloudflare Realtime renegotiate request failed")?;
@@ -202,7 +210,8 @@ impl CloudflareRealtimeClient {
             .await
             .context("Cloudflare Realtime renegotiate response was invalid")?;
         if !status.is_success() || body.error_code.is_some() {
-            let msg = body.error_description
+            let msg = body
+                .error_description
                 .clone()
                 .or(body.error_code.clone())
                 .unwrap_or_else(|| status.to_string());

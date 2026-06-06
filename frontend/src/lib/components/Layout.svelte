@@ -3,7 +3,7 @@
   import { Link, navigate } from 'svelte-routing';
   import {
     LayoutDashboard, History, AlertTriangle, LogOut, Menu, Video,
-    ChevronUp, Moon, Sun, Package, Users, Activity, Bell,
+    ChevronUp, Moon, Sun, Package, Users,
   } from 'lucide-svelte';
   import { auth } from '$lib/stores/auth.svelte';
   import { theme } from '$lib/stores/theme.svelte';

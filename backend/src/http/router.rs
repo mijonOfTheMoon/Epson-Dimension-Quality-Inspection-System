@@ -24,13 +24,13 @@ use crate::mqtt::MqttService;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
 
-pub fn build_router(config: Config, store: PostgresStore, object_store: Option<Arc<R2Store>>) -> Router {
+pub fn build_router(
+    config: Config,
+    store: PostgresStore,
+    object_store: Option<Arc<R2Store>>,
+) -> Router {
     let store = Arc::new(store);
-    let mqtt = config
-        .mqtt
-        .clone()
-        .map(MqttService::new)
-        .map(Arc::new);
+    let mqtt = config.mqtt.clone().map(MqttService::new).map(Arc::new);
     let cloudflare_realtime = config
         .cloudflare_realtime
         .clone()
@@ -56,33 +56,77 @@ pub fn build_router(config: Config, store: PostgresStore, object_store: Option<A
         .route("/api/auth/me", get(handlers::auth::me))
         .route("/api/auth/logout", post(handlers::auth::logout))
         .route("/api/dashboard/summary", get(handlers::dashboard::summary))
-        .route("/api/inspections", get(handlers::inspections::list).post(handlers::inspections::create))
-        .route("/api/inspections/{event_id}", get(handlers::inspections::get_detail))
-        .route("/api/inspections/{event_id}/frame/refresh-url", post(handlers::inspections::refresh_frame_url))
+        .route(
+            "/api/inspections",
+            get(handlers::inspections::list).post(handlers::inspections::create),
+        )
+        .route(
+            "/api/inspections/{event_id}",
+            get(handlers::inspections::get_detail),
+        )
+        .route(
+            "/api/inspections/{event_id}/frame/refresh-url",
+            post(handlers::inspections::refresh_frame_url),
+        )
         .route("/api/stations", get(handlers::stations::list))
-        .route("/api/stations/{stationId}", delete(handlers::stations::delete_station))
-        .route("/api/parts", get(handlers::parts::list).post(handlers::parts::create))
-        .route("/api/parts/{id}", patch(handlers::parts::update).delete(handlers::parts::delete_part))
-        .route("/api/users", get(handlers::users::list).post(handlers::users::create))
-        .route("/api/users/{id}", patch(handlers::users::update).delete(handlers::users::delete_user))
+        .route(
+            "/api/stations/{stationId}",
+            delete(handlers::stations::delete_station),
+        )
+        .route(
+            "/api/parts",
+            get(handlers::parts::list).post(handlers::parts::create),
+        )
+        .route(
+            "/api/parts/{id}",
+            patch(handlers::parts::update).delete(handlers::parts::delete_part),
+        )
+        .route(
+            "/api/users",
+            get(handlers::users::list).post(handlers::users::create),
+        )
+        .route(
+            "/api/users/{id}",
+            patch(handlers::users::update).delete(handlers::users::delete_user),
+        )
         .route("/api/agents", get(handlers::agents::list))
-        .route("/api/agents/{stationId}/command", post(handlers::agents::command))
+        .route(
+            "/api/agents/{stationId}/command",
+            post(handlers::agents::command),
+        )
         .route("/api/agent/status", post(handlers::agent_ingest::status))
-        .route("/api/agent/inspections", post(handlers::agent_ingest::inspection))
-        .route("/api/video/stations/{stationId}/viewer-session", post(handlers::video::viewer_session))
-        .route("/api/video/cloudflare/sessions/{sessionId}/tracks/pull", post(handlers::video::pull_track))
-        .route("/api/video/cloudflare/sessions/{sessionId}/renegotiate", put(handlers::video::renegotiate))
+        .route(
+            "/api/agent/inspections",
+            post(handlers::agent_ingest::inspection),
+        )
+        .route(
+            "/api/video/stations/{stationId}/viewer-session",
+            post(handlers::video::viewer_session),
+        )
+        .route(
+            "/api/video/cloudflare/sessions/{sessionId}/tracks/pull",
+            post(handlers::video::pull_track),
+        )
+        .route(
+            "/api/video/cloudflare/sessions/{sessionId}/renegotiate",
+            put(handlers::video::renegotiate),
+        )
         .route("/api/quality-records", get(handlers::quality_records::list))
-        .route("/api/quality-records/{id}/status", patch(handlers::quality_records::update_status))
+        .route(
+            "/api/quality-records/{id}/status",
+            patch(handlers::quality_records::update_status),
+        )
         .with_state(state.clone())
         .layer(CompressionLayer::new().br(true).deflate(true))
-        .layer(TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-            tracing::info_span!(
-                "http_request",
-                method = %request.method(),
-                path = %request.uri().path()
-            )
-        }))
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    path = %request.uri().path()
+                )
+            }),
+        )
         .layer(cors_layer(&config))
         .layer(from_fn_with_state(state, attach_auth))
 }

@@ -85,13 +85,17 @@ pub async fn update(
         .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
 
     if auth_user.id == id && body.role != UserRole::Admin {
-        return Err(AppError::BadRequest("Tidak boleh mencabut role admin dari diri sendiri".into()));
+        return Err(AppError::BadRequest(
+            "Tidak boleh mencabut role admin dari diri sendiri".into(),
+        ));
     }
     if existing.role == UserRole::Admin
         && body.role != UserRole::Admin
         && state.store.count_users_by_role(UserRole::Admin).await? <= 1
     {
-        return Err(AppError::BadRequest("Admin terakhir tidak boleh diubah rolenya".into()));
+        return Err(AppError::BadRequest(
+            "Admin terakhir tidak boleh diubah rolenya".into(),
+        ));
     }
 
     let user = state
@@ -119,15 +123,21 @@ pub async fn delete_user(
 ) -> AppResult<StatusCode> {
     let auth_user = require_role(&current, USER_MANAGER_ROLES)?;
     if auth_user.id == id {
-        return Err(AppError::BadRequest("Tidak boleh menghapus user sendiri".into()));
+        return Err(AppError::BadRequest(
+            "Tidak boleh menghapus user sendiri".into(),
+        ));
     }
     let existing = state
         .store
         .find_user_by_id(&id)
         .await?
         .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
-    if existing.role == UserRole::Admin && state.store.count_users_by_role(UserRole::Admin).await? <= 1 {
-        return Err(AppError::BadRequest("Admin terakhir tidak boleh dihapus".into()));
+    if existing.role == UserRole::Admin
+        && state.store.count_users_by_role(UserRole::Admin).await? <= 1
+    {
+        return Err(AppError::BadRequest(
+            "Admin terakhir tidak boleh dihapus".into(),
+        ));
     }
     let deleted = state.store.delete_user(&id).await?;
     if !deleted {

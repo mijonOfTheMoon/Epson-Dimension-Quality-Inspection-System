@@ -46,44 +46,71 @@ impl IntoResponse for AppError {
         let (status, body) = match self {
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
-                ErrorBody { message: "Unauthorized".into(), issues: None },
+                ErrorBody {
+                    message: "Unauthorized".into(),
+                    issues: None,
+                },
             ),
             AppError::UnauthorizedMessage(message) => (
                 StatusCode::UNAUTHORIZED,
-                ErrorBody { message, issues: None },
+                ErrorBody {
+                    message,
+                    issues: None,
+                },
             ),
             AppError::Forbidden => (
                 StatusCode::FORBIDDEN,
-                ErrorBody { message: "Forbidden".into(), issues: None },
+                ErrorBody {
+                    message: "Forbidden".into(),
+                    issues: None,
+                },
             ),
             AppError::BadRequest(message) => (
                 StatusCode::BAD_REQUEST,
-                ErrorBody { message, issues: None },
+                ErrorBody {
+                    message,
+                    issues: None,
+                },
             ),
             AppError::NotFound(message) => (
                 StatusCode::NOT_FOUND,
-                ErrorBody { message, issues: None },
+                ErrorBody {
+                    message,
+                    issues: None,
+                },
             ),
             AppError::ServiceUnavailable(message) => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                ErrorBody { message, issues: None },
+                ErrorBody {
+                    message,
+                    issues: None,
+                },
             ),
             AppError::InvalidRequest(issues) => (
                 StatusCode::BAD_REQUEST,
-                ErrorBody { message: "Invalid request".into(), issues: Some(issues) },
+                ErrorBody {
+                    message: "Invalid request".into(),
+                    issues: Some(issues),
+                },
             ),
             AppError::CloudflareUpstream { status, message } => {
                 tracing::warn!(status, message = %message, "cloudflare upstream error");
                 (
                     StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-                    ErrorBody { message, issues: None },
+                    ErrorBody {
+                        message,
+                        issues: None,
+                    },
                 )
             }
             AppError::Internal(error) => {
                 tracing::error!(error = %error, "internal server error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorBody { message: "Internal Server Error".into(), issues: None },
+                    ErrorBody {
+                        message: "Internal Server Error".into(),
+                        issues: None,
+                    },
                 )
             }
         };

@@ -25,15 +25,23 @@ pub fn sign(user: &SafeUser, secret: &str, expires_in: &str) -> anyhow::Result<S
         iat: now,
         exp,
     };
-    Ok(encode(&Header::new(Algorithm::HS256), &payload, &EncodingKey::from_secret(secret.as_bytes()))?)
+    Ok(encode(
+        &Header::new(Algorithm::HS256),
+        &payload,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )?)
 }
 
 pub fn verify(token: &str, secret: &str) -> Option<AuthTokenPayload> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
-    decode::<AuthTokenPayload>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation)
-        .ok()
-        .map(|data| data.claims)
+    decode::<AuthTokenPayload>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .ok()
+    .map(|data| data.claims)
 }
 
 fn parse_expires_in(value: &str) -> anyhow::Result<i64> {

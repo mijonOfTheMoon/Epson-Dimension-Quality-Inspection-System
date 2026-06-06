@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { Activity, AlertTriangle, CheckCircle, Clock3, ListChecks, TrendingDown, XCircle, RefreshCw } from 'lucide-svelte';
   import { useDashboardSummary } from '$lib/hooks/useDashboardSummary.svelte';
   import { theme } from '$lib/stores/theme.svelte';

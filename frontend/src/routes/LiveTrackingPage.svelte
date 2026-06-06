@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import {
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
-    RotateCcw, Send, StopCircle, Trash2, Video, XCircle, Zap,
+    RotateCcw, Send, StopCircle, Trash2, Video, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';

@@ -272,7 +272,7 @@ def _measure_dimension(
 def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
 
     ratio = update_dynamic_ratio(frame)
-    
+
     fg_area = int(cv2.countNonZero(mask))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) <= MIN_CONTOUR_AREA:
@@ -280,8 +280,8 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
 
     result_frame = frame.copy()
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
-    
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
     detections: list[ObjectDetection] = []
     active_view = inspection_view if inspection_view in {"top", "side"} else "top"
     active_specs = [spec for spec in part.dimensions if spec.view == active_view]
@@ -300,16 +300,15 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         (circle_x, circle_y), radius_px = cv2.minEnclosingCircle(contour)
 
         (_, _), (rect_w, rect_h), _ = cv2.minAreaRect(contour)
-        short_side_px = max(0.0, min(float(rect_w), float(rect_h)))
         long_side_px = max(0.0, max(float(rect_w), float(rect_h)))
-        
+
         mid_y = y + (h_box // 2)
         precise_x_left = _refine_edge_1d(gray_frame, x, mid_y)
         precise_x_right = _refine_edge_1d(gray_frame, x + w_box, mid_y)
         refined_width_px = precise_x_right - precise_x_left
 
         diameter_mm = round(float(radius_px * 2 * ratio), 3)
-        width_mm = round(refined_width_px * ratio, 3) 
+        width_mm = round(refined_width_px * ratio, 3)
         length_mm = round(long_side_px * ratio, 3)
         hole_mm = _hole_diameter_mm(mask, contour, ratio)
 

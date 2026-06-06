@@ -28,14 +28,6 @@ class BoundedFrameBuffer:
         self._frames: deque[cv2.Mat] = deque(maxlen=self._capacity)
         self._lock = threading.Lock()
 
-    @property
-    def capacity(self) -> int:
-        return self._capacity
-
-    def __len__(self) -> int:
-        with self._lock:
-            return len(self._frames)
-
     def push(self, frame: cv2.Mat) -> None:
         """Append a frame, dropping the oldest one if the buffer is full."""
         with self._lock:

@@ -14,10 +14,19 @@ pub trait DataStore: Send + Sync {
         &self,
         event: StationStatusEvent,
     ) -> anyhow::Result<StationStatusEvent>;
-    async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>>;
-    async fn find_inspection(&self, event_id: &str) -> anyhow::Result<Option<InspectionCreatedEvent>>;
+    async fn list_inspections(
+        &self,
+        query: InspectionQuery,
+    ) -> anyhow::Result<Vec<InspectionCreatedEvent>>;
+    async fn find_inspection(
+        &self,
+        event_id: &str,
+    ) -> anyhow::Result<Option<InspectionCreatedEvent>>;
     async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>>;
-    async fn deactivate_station(&self, station_id: &str) -> anyhow::Result<Option<StationStatusEvent>>;
+    async fn deactivate_station(
+        &self,
+        station_id: &str,
+    ) -> anyhow::Result<Option<StationStatusEvent>>;
     async fn list_parts(&self) -> anyhow::Result<Vec<PartType>>;
     async fn find_part(&self, part_code: &str) -> anyhow::Result<Option<PartType>>;
     async fn create_part(&self, input: PartInput) -> anyhow::Result<PartType>;
@@ -27,7 +36,11 @@ pub trait DataStore: Send + Sync {
     async fn find_user_by_username(&self, username: &str) -> anyhow::Result<Option<User>>;
     async fn find_user_by_id(&self, id: &str) -> anyhow::Result<Option<User>>;
     async fn create_user(&self, input: UserInput) -> anyhow::Result<SafeUser>;
-    async fn update_user(&self, id: &str, input: UserUpdateInput) -> anyhow::Result<Option<SafeUser>>;
+    async fn update_user(
+        &self,
+        id: &str,
+        input: UserUpdateInput,
+    ) -> anyhow::Result<Option<SafeUser>>;
     async fn delete_user(&self, id: &str) -> anyhow::Result<bool>;
     async fn count_users_by_role(&self, role: UserRole) -> anyhow::Result<i64>;
     async fn list_quality_records(&self) -> anyhow::Result<Vec<QualityTrackingRecord>>;

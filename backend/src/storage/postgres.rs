@@ -37,10 +37,12 @@ impl PostgresStore {
         if config.database_ssl {
             options = options.ssl_mode(PgSslMode::Require);
         }
-        let timezone = config
-            .timezone
-            .parse::<Tz>()
-            .with_context(|| format!("APP_TIMEZONE {} is not a valid IANA timezone", config.timezone))?;
+        let timezone = config.timezone.parse::<Tz>().with_context(|| {
+            format!(
+                "APP_TIMEZONE {} is not a valid IANA timezone",
+                config.timezone
+            )
+        })?;
 
         let pool = PgPoolOptions::new()
             .max_connections(config.database_pool_max)
@@ -76,7 +78,11 @@ impl PostgresStore {
         Ok(row.and_then(|value| value.0))
     }
 
-    pub async fn mark_frame_uploaded(&self, event_ids: &[String], key: &str) -> anyhow::Result<u64> {
+    pub async fn mark_frame_uploaded(
+        &self,
+        event_ids: &[String],
+        key: &str,
+    ) -> anyhow::Result<u64> {
         if event_ids.is_empty() {
             return Ok(0);
         }
@@ -122,7 +128,8 @@ impl PostgresStore {
             .await?;
         if part_count.0 == 0 {
             for part in super::seed::PARTS {
-                let dimensions: Vec<DimensionSpec> = part.dimensions.iter().map(DimensionSpec::from).collect();
+                let dimensions: Vec<DimensionSpec> =
+                    part.dimensions.iter().map(DimensionSpec::from).collect();
                 sqlx::query(
                     r#"
                     INSERT INTO parts (id, part_name, part_code, vendor, dimensions)
@@ -197,11 +204,17 @@ impl PostgresStore {
         .bind(event.confidence_score)
         .bind(measurements)
         .bind(detections)
-        .bind(match trigger { InspectionTrigger::Manual => "manual" })
+        .bind(match trigger {
+            InspectionTrigger::Manual => "manual",
+        })
         .execute(&mut **tx)
         .await?;
 
-        let ng_increment = if event.status == InspectionStatus::Ng { 1 } else { 0 };
+        let ng_increment = if event.status == InspectionStatus::Ng {
+            1
+        } else {
+            0
+        };
         let date = self.local_date(timestamp);
         let record_id = format!("QT-{}-{}", date, event.part_code);
         let history = json!([{ "status": "not_requested", "timestamp": event.timestamp, "changedBy": "System" }]);
@@ -219,7 +232,7 @@ impl PostgresStore {
             "#,
         )
         .bind(record_id)
-        .bind(&date)
+        .bind(date)
         .bind(&event.part_code)
         .bind(&event.part_name)
         .bind(event.vendor.as_deref().unwrap_or("-"))
@@ -291,7 +304,9 @@ impl DataStore for PostgresStore {
         }
 
         match &event {
-            IngestEvent::Inspection(inspection) => self.insert_inspection(&mut tx, inspection).await?,
+            IngestEvent::Inspection(inspection) => {
+                self.insert_inspection(&mut tx, inspection).await?
+            }
             IngestEvent::Station(station) => self.upsert_station(&mut tx, station).await?,
         }
 
@@ -307,7 +322,10 @@ impl DataStore for PostgresStore {
         Ok(event)
     }
 
-    async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>> {
+    async fn list_inspections(
+        &self,
+        query: InspectionQuery,
+    ) -> anyhow::Result<Vec<InspectionCreatedEvent>> {
         let limit = resolve_inspection_limit(query.limit);
         let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
@@ -324,7 +342,11 @@ impl DataStore for PostgresStore {
             builder.push(" AND status = ");
             builder.push_bind(status.as_str());
         }
-        if let Some(part_code) = query.part_code.as_deref().filter(|value| !value.trim().is_empty()) {
+        if let Some(part_code) = query
+            .part_code
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
             builder.push(" AND part_code = ");
             builder.push_bind(part_code);
         }
@@ -338,7 +360,10 @@ impl DataStore for PostgresStore {
         rows.into_iter().map(map_inspection).collect()
     }
 
-    async fn find_inspection(&self, event_id: &str) -> anyhow::Result<Option<InspectionCreatedEvent>> {
+    async fn find_inspection(
+        &self,
+        event_id: &str,
+    ) -> anyhow::Result<Option<InspectionCreatedEvent>> {
         let row = sqlx::query_as::<_, InspectionRow>(
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
@@ -370,7 +395,10 @@ impl DataStore for PostgresStore {
         rows.into_iter().map(map_station).collect()
     }
 
-    async fn deactivate_station(&self, station_id: &str) -> anyhow::Result<Option<StationStatusEvent>> {
+    async fn deactivate_station(
+        &self,
+        station_id: &str,
+    ) -> anyhow::Result<Option<StationStatusEvent>> {
         let row = sqlx::query_as::<_, StationRow>(
             r#"
             UPDATE stations
@@ -513,7 +541,11 @@ impl DataStore for PostgresStore {
         map_safe_user(row)
     }
 
-    async fn update_user(&self, id: &str, input: UserUpdateInput) -> anyhow::Result<Option<SafeUser>> {
+    async fn update_user(
+        &self,
+        id: &str,
+        input: UserUpdateInput,
+    ) -> anyhow::Result<Option<SafeUser>> {
         let Some(existing) = self.find_user_by_id(id).await? else {
             return Ok(None);
         };
@@ -671,7 +703,11 @@ impl DataStore for PostgresStore {
             ng_rate: rate(ng, total),
             daily_trend: trend
                 .into_iter()
-                .map(|row| DailyTrendPoint { date: row.date, ok: row.ok, ng: row.ng })
+                .map(|row| DailyTrendPoint {
+                    date: row.date,
+                    ok: row.ok,
+                    ng: row.ng,
+                })
                 .collect(),
             failing_dimensions: failing_dimensions
                 .into_iter()
@@ -1023,8 +1059,14 @@ fn normalize_dimensions_value(value: Value) -> Vec<DimensionSpec> {
                 kind,
                 view,
                 nominal,
-                upper_limit: item.get("upperLimit").and_then(Value::as_f64).unwrap_or(nominal),
-                lower_limit: item.get("lowerLimit").and_then(Value::as_f64).unwrap_or(nominal),
+                upper_limit: item
+                    .get("upperLimit")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(nominal),
+                lower_limit: item
+                    .get("lowerLimit")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(nominal),
                 unit: item
                     .get("unit")
                     .and_then(Value::as_str)

@@ -52,10 +52,18 @@ pub async fn create(
 ) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
     require_role(&current, INSPECTION_ROLES)?;
     validate_inspection(&event)?;
-    let saved = state.ingestion.ingest(IngestEvent::Inspection(event)).await?;
+    let saved = state
+        .ingestion
+        .ingest(IngestEvent::Inspection(Box::new(event)))
+        .await?;
     match saved {
         Some(event) => Ok((StatusCode::CREATED, Json(serde_json::to_value(event)?))),
-        None => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(DuplicatedResponse { duplicated: true })?))),
+        None => Ok((
+            StatusCode::ACCEPTED,
+            Json(serde_json::to_value(DuplicatedResponse {
+                duplicated: true,
+            })?),
+        )),
     }
 }
 
@@ -109,11 +117,7 @@ async fn attach_frame_urls(
             }
         });
 
-    let urls: HashMap<String, String> = join_all(tasks)
-        .await
-        .into_iter()
-        .flatten()
-        .collect();
+    let urls: HashMap<String, String> = join_all(tasks).await.into_iter().flatten().collect();
     for inspection in inspections {
         if let Some(url) = urls.get(&inspection.event_id) {
             inspection.frame_url = Some(url.clone());

@@ -15,7 +15,10 @@ pub fn validate_dimension_spec(value: &DimensionSpec) -> AppResult<()> {
         issues.push(issue("unit", "String must contain at least 1 character(s)"));
     }
     if !(value.lower_limit <= value.nominal && value.nominal <= value.upper_limit) {
-        issues.push(issue("nominal", "nominal harus berada di antara lowerLimit dan upperLimit"));
+        issues.push(issue(
+            "nominal",
+            "nominal harus berada di antara lowerLimit dan upperLimit",
+        ));
     }
     reject_issues(issues)
 }
@@ -23,19 +26,31 @@ pub fn validate_dimension_spec(value: &DimensionSpec) -> AppResult<()> {
 pub fn validate_inspection(event: &InspectionCreatedEvent) -> AppResult<()> {
     let mut issues = Vec::new();
     if event.event_id.trim().is_empty() {
-        issues.push(issue("eventId", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "eventId",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if event.station_id.trim().is_empty() {
-        issues.push(issue("stationId", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "stationId",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if DateTime::parse_from_rfc3339(&event.timestamp).is_err() {
         issues.push(issue("timestamp", "Invalid datetime"));
     }
     if event.part_name.trim().is_empty() {
-        issues.push(issue("partName", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "partName",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if event.part_code.trim().is_empty() {
-        issues.push(issue("partCode", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "partCode",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if !(0.0..=100.0).contains(&event.confidence_score) {
         issues.push(issue("confidenceScore", "Number must be between 0 and 100"));
@@ -52,10 +67,16 @@ pub fn validate_inspection(event: &InspectionCreatedEvent) -> AppResult<()> {
 pub fn validate_station(event: &StationStatusEvent) -> AppResult<()> {
     let mut issues = Vec::new();
     if event.event_id.trim().is_empty() {
-        issues.push(issue("eventId", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "eventId",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if event.station_id.trim().is_empty() {
-        issues.push(issue("stationId", "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            "stationId",
+            "String must contain at least 1 character(s)",
+        ));
     }
     if DateTime::parse_from_rfc3339(&event.timestamp).is_err() {
         issues.push(issue("timestamp", "Invalid datetime"));
@@ -75,28 +96,50 @@ pub fn validate_ingest_event(event: &IngestEvent) -> AppResult<()> {
 
 fn validate_measurement(value: &Measurement, issues: &mut Vec<ValidationIssue>, path: &str) {
     if value.dimension_name.trim().is_empty() {
-        issues.push(issue(&format!("{path}.dimensionName"), "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            &format!("{path}.dimensionName"),
+            "String must contain at least 1 character(s)",
+        ));
     }
     if value.unit.trim().is_empty() {
-        issues.push(issue(&format!("{path}.unit"), "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            &format!("{path}.unit"),
+            "String must contain at least 1 character(s)",
+        ));
     }
 }
 
 fn validate_detection(value: &ObjectDetection, issues: &mut Vec<ValidationIssue>, path: &str) {
     if value.id.trim().is_empty() {
-        issues.push(issue(&format!("{path}.id"), "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            &format!("{path}.id"),
+            "String must contain at least 1 character(s)",
+        ));
     }
     if value.label.trim().is_empty() {
-        issues.push(issue(&format!("{path}.label"), "String must contain at least 1 character(s)"));
+        issues.push(issue(
+            &format!("{path}.label"),
+            "String must contain at least 1 character(s)",
+        ));
     }
-    if value.bbox.x < 0.0 || value.bbox.y < 0.0 || value.bbox.width <= 0.0 || value.bbox.height <= 0.0 {
+    if value.bbox.x < 0.0
+        || value.bbox.y < 0.0
+        || value.bbox.width <= 0.0
+        || value.bbox.height <= 0.0
+    {
         issues.push(issue(&format!("{path}.bbox"), "Invalid bounding box"));
     }
     if value.bbox.width > 100.0 || value.bbox.height > 100.0 {
-        issues.push(issue(&format!("{path}.bbox"), "Bounding box dimensions must be at most 100"));
+        issues.push(issue(
+            &format!("{path}.bbox"),
+            "Bounding box dimensions must be at most 100",
+        ));
     }
     if !(0.0..=100.0).contains(&value.confidence_score) {
-        issues.push(issue(&format!("{path}.confidenceScore"), "Number must be between 0 and 100"));
+        issues.push(issue(
+            &format!("{path}.confidenceScore"),
+            "Number must be between 0 and 100",
+        ));
     }
     for (index, measurement) in value.measurements.iter().enumerate() {
         validate_measurement(measurement, issues, &format!("{path}.measurements.{index}"));

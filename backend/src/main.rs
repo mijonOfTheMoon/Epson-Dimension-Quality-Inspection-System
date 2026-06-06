@@ -18,9 +18,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::Config;
 use crate::http::router::build_router;
-use crate::storage::DataStore;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
+use crate::storage::DataStore;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,7 +35,9 @@ async fn main() -> anyhow::Result<()> {
     let store = PostgresStore::connect(&config).await?;
     store.init().await?;
     let object_store = match &config.object_store {
-        Some(object_store_config) => Some(Arc::new(R2Store::from_config(object_store_config).await?)),
+        Some(object_store_config) => {
+            Some(Arc::new(R2Store::from_config(object_store_config).await?))
+        }
         None => None,
     };
 

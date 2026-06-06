@@ -237,7 +237,7 @@ class InspectionRunner:
         self._last_http_status_at = monotonic()
         self.http.send_status(event)
 
-    def _send_frame(self, frame: cv2.Mat, encode_params: list[int]) -> None:
+    def _send_frame(self, frame: cv2.Mat) -> None:
         self.video.submit_frame(frame)
 
     def _encode_jpeg(self, frame: cv2.Mat, encode_params: list[int]) -> bytes | None:
@@ -258,7 +258,7 @@ class InspectionRunner:
             video_track_name=track_name,
         )
 
-    def _capture_calibration(self, cap: cv2.VideoCapture, encode_params: list[int]) -> list[cv2.Mat]:
+    def _capture_calibration(self, cap: cv2.VideoCapture) -> list[cv2.Mat]:
         frames: list[cv2.Mat] = []
         last_send = 0.0
         while len(frames) < CALIBRATION_FRAMES and not self._stop.is_set() and self._running.is_set():
@@ -270,7 +270,7 @@ class InspectionRunner:
             now = monotonic()
             if now - last_send >= self._frame_interval:
                 annotated = annotate_status(frame, "calibrating", self._part)
-                self._send_frame(annotated, encode_params)
+                self._send_frame(annotated)
                 last_send = now
         return frames
 
@@ -307,7 +307,7 @@ class InspectionRunner:
             while not self._stop.is_set() and self._running.is_set():
                 if phase == "calibrating":
                     self._send_status(phase="calibrating", running=True)
-                    frames = self._capture_calibration(cap, encode_params)
+                    frames = self._capture_calibration(cap)
                     if len(frames) < CALIBRATION_FRAMES // 2:
                         sleep(0.5)
                         continue
@@ -384,7 +384,7 @@ class InspectionRunner:
                         clear_count = 0
 
                 if will_send_frame and display is not None:
-                    self._send_frame(display, encode_params)
+                    self._send_frame(display)
                     last_frame_sent = now
 
                 if now - last_status >= STATUS_INTERVAL:

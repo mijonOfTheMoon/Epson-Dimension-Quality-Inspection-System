@@ -5,7 +5,9 @@ use axum::Json;
 use chrono::{SecondsFormat, Utc};
 use uuid::Uuid;
 
-use crate::domain::{IngestEvent, StationEventType, StationPhase, StationState, StationStatusEvent};
+use crate::domain::{
+    IngestEvent, StationEventType, StationPhase, StationState, StationStatusEvent,
+};
 use crate::error::{AppError, AppResult};
 use crate::http::router::CurrentUser;
 use crate::http::AppState;
@@ -43,7 +45,9 @@ pub async fn list(
                     Some(StationPhase::Idle)
                 };
                 station.active_part_code = if presence.online {
-                    presence.active_part_code.or(station.active_part_code.clone())
+                    presence
+                        .active_part_code
+                        .or(station.active_part_code.clone())
                 } else {
                     None
                 };

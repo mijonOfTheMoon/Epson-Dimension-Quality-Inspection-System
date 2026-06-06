@@ -28,12 +28,48 @@ pub struct SeedDimension {
 }
 
 pub const USERS: &[SeedUser] = &[
-    SeedUser { id: "u-001", username: "admin", password: "admin123", name: "Administrator", role: UserRole::Admin },
-    SeedUser { id: "u-002", username: "supervisor", password: "super123", name: "Budi Santoso", role: UserRole::Supervisor },
-    SeedUser { id: "u-003", username: "qc1", password: "qc123", name: "Sari Dewi", role: UserRole::Qc },
-    SeedUser { id: "u-004", username: "operator1", password: "op123", name: "Andi Pratama", role: UserRole::Operator },
-    SeedUser { id: "u-005", username: "vendor1", password: "ven123", name: "PT. Maju Jaya", role: UserRole::Vendor },
-    SeedUser { id: "u-006", username: "engineer1", password: "eng123", name: "Rina Engineering", role: UserRole::Engineering },
+    SeedUser {
+        id: "u-001",
+        username: "admin",
+        password: "admin123",
+        name: "Administrator",
+        role: UserRole::Admin,
+    },
+    SeedUser {
+        id: "u-002",
+        username: "supervisor",
+        password: "super123",
+        name: "Budi Santoso",
+        role: UserRole::Supervisor,
+    },
+    SeedUser {
+        id: "u-003",
+        username: "qc1",
+        password: "qc123",
+        name: "Sari Dewi",
+        role: UserRole::Qc,
+    },
+    SeedUser {
+        id: "u-004",
+        username: "operator1",
+        password: "op123",
+        name: "Andi Pratama",
+        role: UserRole::Operator,
+    },
+    SeedUser {
+        id: "u-005",
+        username: "vendor1",
+        password: "ven123",
+        name: "PT. Maju Jaya",
+        role: UserRole::Vendor,
+    },
+    SeedUser {
+        id: "u-006",
+        username: "engineer1",
+        password: "eng123",
+        name: "Rina Engineering",
+        role: UserRole::Engineering,
+    },
 ];
 
 const RDB_DIMENSIONS: &[SeedDimension] = &[

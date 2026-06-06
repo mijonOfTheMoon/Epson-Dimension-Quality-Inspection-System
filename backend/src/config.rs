@@ -69,11 +69,18 @@ impl Config {
             "development" => NodeEnv::Development,
             "test" => NodeEnv::Test,
             "production" => NodeEnv::Production,
-            value => return Err(anyhow!("NODE_ENV must be development, test, or production, got {value}")),
+            value => {
+                return Err(anyhow!(
+                    "NODE_ENV must be development, test, or production, got {value}"
+                ))
+            }
         };
 
         let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL is required")?;
-        let jwt_secret = env_or("JWT_SECRET", "change-me-in-production-please-use-long-secret");
+        let jwt_secret = env_or(
+            "JWT_SECRET",
+            "change-me-in-production-please-use-long-secret",
+        );
         if jwt_secret.len() < 16 {
             return Err(anyhow!("JWT_SECRET must contain at least 16 characters"));
         }
@@ -132,7 +139,9 @@ fn mqtt_config(node_env: &NodeEnv) -> anyhow::Result<Option<MqttConfig>> {
         .trim_matches('/')
         .to_string();
     if topic_prefix.is_empty() {
-        return Err(anyhow!("MQTT_TOPIC_PREFIX must not be empty when MQTT_HOST is set"));
+        return Err(anyhow!(
+            "MQTT_TOPIC_PREFIX must not be empty when MQTT_HOST is set"
+        ));
     }
 
     Ok(Some(MqttConfig {
@@ -161,9 +170,12 @@ fn cloudflare_realtime_config() -> anyhow::Result<Option<CloudflareRealtimeConfi
     Ok(Some(CloudflareRealtimeConfig {
         app_id: require_env("CLOUDFLARE_REALTIME_APP_ID")?,
         app_secret: require_env("CLOUDFLARE_REALTIME_APP_SECRET")?,
-        api_base_url: env_or("CLOUDFLARE_REALTIME_API_BASE_URL", "https://rtc.live.cloudflare.com/v1")
-            .trim_end_matches('/')
-            .to_string(),
+        api_base_url: env_or(
+            "CLOUDFLARE_REALTIME_API_BASE_URL",
+            "https://rtc.live.cloudflare.com/v1",
+        )
+        .trim_end_matches('/')
+        .to_string(),
     }))
 }
 
@@ -174,7 +186,9 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
 
     let bucket = env_or("OBJECT_STORE_BUCKET", "diminspect-frames");
     if bucket.trim().is_empty() {
-        return Err(anyhow!("OBJECT_STORE_BUCKET must not be empty when OBJECT_STORE_ENABLED=true"));
+        return Err(anyhow!(
+            "OBJECT_STORE_BUCKET must not be empty when OBJECT_STORE_ENABLED=true"
+        ));
     }
     let account_id = require_env("OBJECT_STORE_ACCOUNT_ID")?;
     let access_key_id = require_env("OBJECT_STORE_ACCESS_KEY_ID")?;
@@ -228,19 +242,18 @@ fn parse_bool_env(key: &str, default: bool) -> anyhow::Result<bool> {
 }
 
 fn validate_timezone(value: String) -> anyhow::Result<String> {
-    let valid = value
-        .chars()
-        .enumerate()
-        .all(|(index, ch)| {
-            if index == 0 {
-                ch.is_ascii_alphabetic()
-            } else {
-                ch.is_ascii_alphanumeric() || matches!(ch, '_' | '+' | '-' | '/')
-            }
-        });
+    let valid = value.chars().enumerate().all(|(index, ch)| {
+        if index == 0 {
+            ch.is_ascii_alphabetic()
+        } else {
+            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '+' | '-' | '/')
+        }
+    });
 
     if value.is_empty() || !valid {
-        return Err(anyhow!("APP_TIMEZONE must match ^[A-Za-z][A-Za-z0-9_+\\-/]*$"));
+        return Err(anyhow!(
+            "APP_TIMEZONE must match ^[A-Za-z][A-Za-z0-9_+\\-/]*$"
+        ));
     }
 
     Ok(value)

@@ -15,10 +15,7 @@ pub struct IngestionService {
 }
 
 impl IngestionService {
-    pub fn new(
-        store: Arc<PostgresStore>,
-        object_store: Option<Arc<R2Store>>,
-    ) -> Self {
+    pub fn new(store: Arc<PostgresStore>, object_store: Option<Arc<R2Store>>) -> Self {
         Self {
             store,
             object_store,
@@ -46,7 +43,7 @@ impl IngestionService {
                     event.station_id.clone(),
                     event.timestamp.clone(),
                 ));
-                (split_inspection_objects(event), upload_context)
+                (split_inspection_objects(*event), upload_context)
             }
         };
 
@@ -65,12 +62,18 @@ impl IngestionService {
         }
 
         if !saved_inspection_ids.is_empty() {
-            if let (Some(jpeg), Some((parent_event_id, station_id, captured_at)), Some(object_store)) =
-                (snapshot, upload_context, self.object_store.clone())
+            if let (
+                Some(jpeg),
+                Some((parent_event_id, station_id, captured_at)),
+                Some(object_store),
+            ) = (snapshot, upload_context, self.object_store.clone())
             {
                 let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
                 upload_with_retry(&object_store, &key, jpeg, 3).await?;
-                let updated = self.store.mark_frame_uploaded(&saved_inspection_ids, &key).await?;
+                let updated = self
+                    .store
+                    .mark_frame_uploaded(&saved_inspection_ids, &key)
+                    .await?;
                 if let Some(IngestEvent::Inspection(inspection)) = &mut first_saved {
                     inspection.frame_object_key = Some(key.clone());
                     inspection.frame_uploaded_at = Some(chrono::Utc::now().to_rfc3339());
@@ -92,10 +95,11 @@ impl IngestionService {
 
 fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
     if event.detections.len() <= 1 {
-        return vec![IngestEvent::Inspection(event)];
+        return vec![IngestEvent::Inspection(Box::new(event))];
     }
 
-    event.detections
+    event
+        .detections
         .iter()
         .map(|detection| {
             let mut item = event.clone();
@@ -104,7 +108,7 @@ fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
             item.confidence_score = detection.confidence_score;
             item.measurements = detection.measurements.clone();
             item.detections = vec![detection.clone()];
-            IngestEvent::Inspection(item)
+            IngestEvent::Inspection(Box::new(item))
         })
         .collect()
 }

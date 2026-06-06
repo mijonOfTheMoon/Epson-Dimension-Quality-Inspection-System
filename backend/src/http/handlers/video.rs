@@ -57,10 +57,9 @@ pub async fn viewer_session(
     Json(body): Json<ViewerSessionBody>,
 ) -> AppResult<Json<ViewerSessionResponse>> {
     require_auth(&current)?;
-    let cloudflare = state
-        .cloudflare_realtime
-        .as_ref()
-        .ok_or_else(|| AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into()))?;
+    let cloudflare = state.cloudflare_realtime.as_ref().ok_or_else(|| {
+        AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into())
+    })?;
     let mqtt = state
         .mqtt
         .as_ref()
@@ -113,10 +112,9 @@ pub async fn pull_track(
     Json(body): Json<PullTrackBody>,
 ) -> AppResult<Json<crate::cloudflare::TracksResponse>> {
     require_auth(&current)?;
-    let cloudflare = state
-        .cloudflare_realtime
-        .as_ref()
-        .ok_or_else(|| AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into()))?;
+    let cloudflare = state.cloudflare_realtime.as_ref().ok_or_else(|| {
+        AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into())
+    })?;
     let response = cloudflare
         .pull_track(&session_id, &body.publisher_session_id, &body.track_name)
         .await?;
@@ -133,10 +131,9 @@ pub async fn renegotiate(
     if !APP_ROLES.contains(&user.role) {
         return Err(AppError::Forbidden);
     }
-    let cloudflare = state
-        .cloudflare_realtime
-        .as_ref()
-        .ok_or_else(|| AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into()))?;
+    let cloudflare = state.cloudflare_realtime.as_ref().ok_or_else(|| {
+        AppError::ServiceUnavailable("Cloudflare Realtime belum dikonfigurasi".into())
+    })?;
     let response = cloudflare
         .renegotiate(&session_id, body.session_description)
         .await?;

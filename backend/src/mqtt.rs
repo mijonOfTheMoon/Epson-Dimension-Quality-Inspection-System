@@ -90,7 +90,9 @@ impl MqttService {
                         .map(|presence| Some(self.apply_presence_freshness(presence)));
                 }
                 Ok(Ok(_)) => {}
-                Ok(Err(error)) => return Err(anyhow!(error).context("failed while reading MQTT presence")),
+                Ok(Err(error)) => {
+                    return Err(anyhow!(error).context("failed while reading MQTT presence"))
+                }
                 Err(_) => break,
             }
         }
@@ -105,11 +107,16 @@ impl MqttService {
             .context("failed to subscribe MQTT presence list")?;
 
         let mut presences = Vec::new();
-        let empty_timeout = self.config.retained_presence_timeout.min(PRESENCE_LIST_EMPTY_TIMEOUT);
+        let empty_timeout = self
+            .config
+            .retained_presence_timeout
+            .min(PRESENCE_LIST_EMPTY_TIMEOUT);
         let mut deadline = Instant::now() + empty_timeout;
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            match tokio::time::timeout(remaining.min(PRESENCE_LIST_POLL_TIMEOUT), eventloop.poll()).await {
+            match tokio::time::timeout(remaining.min(PRESENCE_LIST_POLL_TIMEOUT), eventloop.poll())
+                .await
+            {
                 Ok(Ok(Event::Incoming(Packet::Publish(publish)))) => {
                     if publish.payload.is_empty() {
                         continue;
@@ -119,11 +126,15 @@ impl MqttService {
                             presences.push(self.apply_presence_freshness(presence));
                             deadline = Instant::now() + PRESENCE_LIST_IDLE_TIMEOUT;
                         }
-                        Err(error) => tracing::warn!(topic = %publish.topic, %error, "invalid MQTT presence payload"),
+                        Err(error) => {
+                            tracing::warn!(topic = %publish.topic, %error, "invalid MQTT presence payload")
+                        }
                     }
                 }
                 Ok(Ok(_)) => {}
-                Ok(Err(error)) => return Err(anyhow!(error).context("failed while reading MQTT presence list")),
+                Ok(Err(error)) => {
+                    return Err(anyhow!(error).context("failed while reading MQTT presence list"))
+                }
                 Err(_) => {}
             }
         }
@@ -148,11 +159,15 @@ impl MqttService {
             match tokio::time::timeout(remaining, eventloop.poll()).await {
                 Ok(Ok(Event::Incoming(Packet::PubAck(_)))) => return Ok(()),
                 Ok(Ok(_)) => {}
-                Ok(Err(error)) => return Err(anyhow!(error).context("failed while publishing MQTT command")),
+                Ok(Err(error)) => {
+                    return Err(anyhow!(error).context("failed while publishing MQTT command"))
+                }
                 Err(_) => break,
             }
         }
-        Err(anyhow!("timed out waiting for MQTT command acknowledgement"))
+        Err(anyhow!(
+            "timed out waiting for MQTT command acknowledgement"
+        ))
     }
 
     pub async fn agent_infos(&self) -> anyhow::Result<Vec<AgentInfo>> {
@@ -187,7 +202,10 @@ impl MqttService {
     }
 
     fn apply_presence_freshness(&self, mut presence: StationPresence) -> StationPresence {
-        if is_stale(presence.updated_at.as_deref(), self.config.presence_stale_after) {
+        if is_stale(
+            presence.updated_at.as_deref(),
+            self.config.presence_stale_after,
+        ) {
             presence.online = false;
             presence.running = false;
             presence.phase = Some(StationPhase::Idle);

@@ -87,7 +87,10 @@ pub async fn delete_part(
 }
 
 fn normalize_part_input(body: PartBody) -> AppResult<PartInput> {
-    if body.part_name.trim().is_empty() || body.part_code.trim().is_empty() || body.vendor.trim().is_empty() {
+    if body.part_name.trim().is_empty()
+        || body.part_code.trim().is_empty()
+        || body.vendor.trim().is_empty()
+    {
         return Err(AppError::BadRequest("Invalid request".into()));
     }
     if body.dimensions.is_empty() {

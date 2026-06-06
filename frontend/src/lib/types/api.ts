@@ -173,8 +173,6 @@ export interface InspectionCreatedEvent {
   frameUploadedAt?: string;
 }
 
-export type RealtimeEvent = InspectionCreatedEvent | StationStatusEvent;
-
 export interface DashboardSummary {
   total: number;
   ok: number;

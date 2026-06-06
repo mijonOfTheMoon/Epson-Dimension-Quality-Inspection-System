@@ -235,7 +235,7 @@ impl StationState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum IngestEvent {
-    Inspection(InspectionCreatedEvent),
+    Inspection(Box<InspectionCreatedEvent>),
     Station(StationStatusEvent),
 }
 
@@ -271,7 +271,7 @@ impl IngestEvent {
 
 impl From<InspectionCreatedEvent> for IngestEvent {
     fn from(value: InspectionCreatedEvent) -> Self {
-        Self::Inspection(value)
+        Self::Inspection(Box::new(value))
     }
 }
 

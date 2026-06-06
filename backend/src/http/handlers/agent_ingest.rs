@@ -25,7 +25,12 @@ pub async fn status(
     let saved = state.ingestion.ingest(IngestEvent::Station(event)).await?;
     match saved {
         Some(event) => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(event)?))),
-        None => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(DuplicatedResponse { duplicated: true })?))),
+        None => Ok((
+            StatusCode::ACCEPTED,
+            Json(serde_json::to_value(DuplicatedResponse {
+                duplicated: true,
+            })?),
+        )),
     }
 }
 
@@ -51,18 +56,24 @@ pub async fn inspection(
         }
     }
 
-    let event_json = event_json
-        .ok_or_else(|| AppError::BadRequest("multipart field `inspection` atau `event` wajib diisi".into()))?;
+    let event_json = event_json.ok_or_else(|| {
+        AppError::BadRequest("multipart field `inspection` atau `event` wajib diisi".into())
+    })?;
     let event: InspectionCreatedEvent = serde_json::from_str(&event_json)
         .map_err(|error| AppError::BadRequest(format!("inspection JSON tidak valid: {error}")))?;
 
     let saved = state
         .ingestion
-        .ingest_with_snapshot(IngestEvent::Inspection(event), snapshot)
+        .ingest_with_snapshot(IngestEvent::Inspection(Box::new(event)), snapshot)
         .await?;
     match saved {
         Some(event) => Ok((StatusCode::CREATED, Json(serde_json::to_value(event)?))),
-        None => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(DuplicatedResponse { duplicated: true })?))),
+        None => Ok((
+            StatusCode::ACCEPTED,
+            Json(serde_json::to_value(DuplicatedResponse {
+                duplicated: true,
+            })?),
+        )),
     }
 }
 

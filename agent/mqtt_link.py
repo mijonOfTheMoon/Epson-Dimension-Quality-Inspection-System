@@ -28,7 +28,6 @@ class MqttLink:
     def __init__(self, config: AgentConfig, on_command: CommandHandler) -> None:
         self.config = config
         self.on_command = on_command
-        self._connected = threading.Event()
         self._lock = threading.Lock()
         self._connected_at = _now_iso()
         station_segment = _safe_topic_segment(config.station_id)
@@ -66,9 +65,6 @@ class MqttLink:
         finally:
             self._client.disconnect()
             self._client.loop_stop()
-
-    def is_connected(self) -> bool:
-        return self._connected.is_set()
 
     def publish_presence(
         self,
@@ -137,7 +133,6 @@ class MqttLink:
         if reason_code.is_failure:
             logger.warning("MQTT connect failed: %s", reason_code)
             return
-        self._connected.set()
         client.subscribe(self.commands_topic, qos=1)
         self.publish_presence(online=True, running=False, phase="idle")
 
@@ -149,7 +144,6 @@ class MqttLink:
         reason_code: mqtt.ReasonCode,
         _properties: mqtt.Properties | None,
     ) -> None:
-        self._connected.clear()
         if reason_code.is_failure:
             logger.warning("MQTT disconnected: %s", reason_code)
 
