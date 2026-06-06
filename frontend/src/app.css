@@ -12,13 +12,12 @@
   --background: #f8fafc;
   --foreground: #0f172a;
   
-  /* Slate & Violet Theme */
   --card: #ffffff;
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
   
-  --primary: #4f46e5; /* Indigo */
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
   
   --secondary: #f1f5f9;
@@ -43,24 +42,24 @@
 }
 
 .dark {
-  --background: #090d16; /* Deep futurism space navy */
+  --background: #090d16;
   --foreground: #f8fafc;
   
-  --card: #0f172a; /* Slate 900 */
+  --card: #0f172a;
   --card-foreground: #f8fafc;
   --popover: #0f172a;
   --popover-foreground: #f8fafc;
   
-  --primary: #6366f1; /* Bright indigo */
+  --primary: #6366f1;
   --primary-foreground: #ffffff;
   
-  --secondary: #1e293b; /* Slate 800 */
+  --secondary: #1e293b;
   --secondary-foreground: #f8fafc;
   
   --muted: #1e293b;
   --muted-foreground: #94a3b8;
   
-  --accent: #1e1b4b; /* Indigo deep accent */
+  --accent: #1e1b4b;
   --accent-foreground: #a5b4fc;
   
   --destructive: #f87171;
@@ -84,7 +83,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Beautiful custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -105,7 +103,6 @@ h2 { font-size: 1.375rem; font-weight: 600; line-height: 1.35; tracking: -0.01em
 h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; }
 h4 { font-size: 0.95rem; font-weight: 500; line-height: 1.4; }
 
-/* Custom premium styles */
 .glass-card {
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(16px);
@@ -119,12 +116,10 @@ h4 { font-size: 0.95rem; font-weight: 500; line-height: 1.4; }
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Premium dynamic transitions */
 .transition-premium {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Card hover animation */
 .card-hover-effect {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -138,7 +133,6 @@ h4 { font-size: 0.95rem; font-weight: 500; line-height: 1.4; }
   border-color: rgba(99, 102, 241, 0.3);
 }
 
-/* Bounding box glow */
 .bbox-ok {
   box-shadow: 0 0 12px rgba(74, 222, 128, 0.6);
   transition: all 0.2s ease-in-out;
@@ -165,7 +159,6 @@ h4 { font-size: 0.95rem; font-weight: 500; line-height: 1.4; }
   border-color: var(--primary);
 }
 
-/* Monospace variables and values */
 .font-mono-data {
   font-family: var(--font-mono);
 }

@@ -122,7 +122,6 @@ export async function sendNgSummaryToTelegram(): Promise<boolean> {
       return `• <b>${p.partName}</b> (${p.partCode}) — Vendor: <b>${vendor}</b>\n  Total scan: ${p.total}, NG: <b>${p.ng}</b> (${p.ngRate.toFixed(1)}%)`;
     });
 
-  // --- Section 2: Dimension-level failure detail ---
   const dimLines = dashboard.failingDimensions
     .filter((d) => d.ngCount > 0)
     .sort((a, b) => b.ngCount - a.ngCount)

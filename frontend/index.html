@@ -16,7 +16,7 @@
             ? stored
             : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
           if (mode === 'dark') document.documentElement.classList.add('dark');
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
       })();
     </script>
   </head>

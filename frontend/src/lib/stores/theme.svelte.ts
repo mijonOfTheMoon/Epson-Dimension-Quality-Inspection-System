@@ -16,14 +16,14 @@ class ThemeStore {
       } else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
         this.mode = 'dark';
       }
-    } catch { /* ignore */ }
+    } catch { }
     this.apply();
   }
 
   toggle() {
     this.mode = this.mode === 'dark' ? 'light' : 'dark';
     this.apply();
-    try { localStorage.setItem(STORAGE_KEY, this.mode); } catch { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, this.mode); } catch { }
   }
 
   private apply() {

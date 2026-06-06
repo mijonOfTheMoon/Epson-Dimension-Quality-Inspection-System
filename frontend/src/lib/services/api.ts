@@ -26,10 +26,10 @@ export const tokenStorage = {
     try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
   },
   set(token: string) {
-    try { localStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
+    try { localStorage.setItem(TOKEN_KEY, token); } catch { }
   },
   clear() {
-    try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(TOKEN_KEY); } catch { }
   },
 };
 
@@ -93,7 +93,7 @@ async function request<T>(path: string, init?: RequestInit, options?: RequestOpt
           message = body.message;
           hasJsonBody = true;
         }
-      } catch { /* ignore */ }
+      } catch { }
       throw new ApiRequestError(
         message,
         response.status,

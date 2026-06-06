@@ -167,7 +167,7 @@
 
   const teardownPeer = (peer: RTCPeerConnection | null) => {
     if (peer) {
-      try { peer.close(); } catch { /* already closed */ }
+      try { peer.close(); } catch { }
     }
     if (peer === null || pc === peer) {
       pc = null;

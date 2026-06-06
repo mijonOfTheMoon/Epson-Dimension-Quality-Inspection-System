@@ -46,7 +46,7 @@ class AuthStore {
   }
 
   async logout() {
-    try { await api.logout(); } catch { /* ignore */ }
+    try { await api.logout(); } catch { }
     tokenStorage.clear();
     this.user = null;
     this.status = 'unauthenticated';
