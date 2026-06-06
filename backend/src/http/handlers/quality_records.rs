@@ -36,10 +36,8 @@ pub async fn update_status(
 
     let current_record = state
         .store
-        .list_quality_records()
+        .find_quality_record(&id)
         .await?
-        .into_iter()
-        .find(|record| record.id == id)
         .ok_or_else(|| AppError::NotFound("Record not found".into()))?;
 
     if !can_transition(current_record.request_status, body.status) {

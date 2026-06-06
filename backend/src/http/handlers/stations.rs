@@ -105,7 +105,7 @@ pub async fn delete_station(
         .ingest(IngestEvent::Station(StationStatusEvent {
             event_type: StationEventType::StationStatus,
             event_id: format!("station-deactivated-{}-{}", station_id, Uuid::new_v4()),
-            station_id: station_id.clone(),
+            station_id,
             timestamp: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             state: StationState::Offline,
             fps: None,

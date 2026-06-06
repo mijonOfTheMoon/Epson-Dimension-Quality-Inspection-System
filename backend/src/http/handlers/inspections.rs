@@ -32,15 +32,17 @@ pub async fn get_detail(
     Path(event_id): Path<String>,
 ) -> AppResult<Json<InspectionCreatedEvent>> {
     require_auth(&current)?;
-    let inspection = state
+    let mut inspection = state
         .store
         .find_inspection(&event_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Inspeksi tidak ditemukan".into()))?;
 
-    let mut vec_inspections = vec![inspection];
-    attach_frame_urls(&mut vec_inspections, state.object_store.clone()).await;
-    let inspection = vec_inspections.into_iter().next().unwrap();
+    attach_frame_urls(
+        std::slice::from_mut(&mut inspection),
+        state.object_store.clone(),
+    )
+    .await;
 
     Ok(Json(inspection))
 }

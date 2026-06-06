@@ -56,7 +56,7 @@ impl IngestionService {
                     saved_inspection_ids.push(inspection.event_id.clone());
                 }
                 if first_saved.is_none() {
-                    first_saved = Some(saved.clone());
+                    first_saved = Some(saved);
                 }
             }
         }

@@ -50,7 +50,7 @@ impl R2Store {
                 .bucket(&self.bucket)
                 .key(key)
                 .content_type("image/jpeg")
-                .body(ByteStream::from(bytes.to_vec()))
+                .body(ByteStream::from(bytes))
                 .send(),
         )
         .await

@@ -78,6 +78,19 @@ impl PostgresStore {
         Ok(row.and_then(|value| value.0))
     }
 
+    pub async fn find_quality_record(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Option<QualityTrackingRecord>> {
+        let row = sqlx::query_as::<_, QualityRecordRow>(
+            "SELECT * FROM quality_records WHERE id = $1 LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(map_quality_record).transpose()
+    }
+
     pub async fn mark_frame_uploaded(
         &self,
         event_ids: &[String],
@@ -673,8 +686,6 @@ impl DataStore for PostgresStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let part_risk: Vec<&PartAggRow> = part_agg.iter().take(8).collect();
-
         let recent_inspections = sqlx::query_as::<_, RecentInspectionRow>(
             r#"
             SELECT event_id,
@@ -721,11 +732,12 @@ impl DataStore for PostgresStore {
                     unit: row.unit,
                 })
                 .collect(),
-            part_risk: part_risk
+            part_risk: part_agg
                 .into_iter()
+                .take(8)
                 .map(|row| PartRiskPoint {
-                    part_code: row.part_code.clone(),
-                    part_name: row.part_name.clone(),
+                    part_code: row.part_code,
+                    part_name: row.part_name,
                     total: row.total,
                     ng: row.ng,
                     ng_rate: rate(row.ng, row.total),

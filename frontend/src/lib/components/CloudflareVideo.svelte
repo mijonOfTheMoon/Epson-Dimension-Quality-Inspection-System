@@ -31,11 +31,15 @@
   const sleep = (ms: number, signal: AbortSignal) =>
     new Promise<void>((resolve) => {
       if (signal.aborted) { resolve(); return; }
-      const timeout = window.setTimeout(resolve, ms);
-      signal.addEventListener('abort', () => {
+      const onAbort = () => {
         window.clearTimeout(timeout);
         resolve();
-      }, { once: true });
+      };
+      const timeout = window.setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      signal.addEventListener('abort', onAbort, { once: true });
     });
 
   const isVideoPendingError = (error: unknown) => {
@@ -161,16 +165,26 @@
     });
   };
 
-  const closePeer = () => {
-    if (pc) {
-      try { pc.close(); } catch { /* already closed */ }
-      pc = null;
+  const teardownPeer = (peer: RTCPeerConnection | null) => {
+    if (peer) {
+      try { peer.close(); } catch { /* already closed */ }
     }
-    pendingStream = null;
-    if (videoEl) videoEl.srcObject = null;
+    if (peer === null || pc === peer) {
+      pc = null;
+      pendingStream = null;
+      if (videoEl) videoEl.srcObject = null;
+    }
   };
 
-  const connectOnce = async (targetStationId: string, signal: AbortSignal) => {
+  const closePeer = () => {
+    teardownPeer(pc);
+  };
+
+  const connectOnce = async (
+    targetStationId: string,
+    signal: AbortSignal,
+    register: (peer: RTCPeerConnection) => void,
+  ) => {
     closePeer();
 
     const peer = new RTCPeerConnection({
@@ -179,6 +193,7 @@
     });
 
     peer.ontrack = (event) => {
+      if (pc !== peer) return;
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       pendingStream = stream;
       if (videoEl) videoEl.srcObject = stream;
@@ -186,34 +201,35 @@
 
     peer.addTransceiver('video', { direction: 'recvonly' });
     pc = peer;
+    register(peer);
 
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
 
     const initialOffer = await peer.createOffer();
     await peer.setLocalDescription(initialOffer);
     await waitForIceGathering(peer, signal);
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
     if (!peer.localDescription) throw new Error('Gagal membuat offer WebRTC');
 
     const session = await api.createVideoViewerSession(targetStationId, {
       sdp: peer.localDescription.sdp,
       type: peer.localDescription.type,
     });
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
     if (!session.sessionDescription) {
       throw new Error('Cloudflare belum mengirim jawaban session video');
     }
     await peer.setRemoteDescription(
       new RTCSessionDescription(session.sessionDescription),
     );
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
 
     const pull = await api.pullVideoTrack(
       session.viewerSessionId,
       session.publisherSessionId,
       session.trackName,
     );
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
     if (pull.requiresImmediateRenegotiation && !pull.sessionDescription) {
       throw new Error('Cloudflare meminta renegosiasi tanpa offer video');
     }
@@ -224,14 +240,14 @@
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       await waitForIceGathering(peer, signal);
-      if (signal.aborted) { closePeer(); return; }
+      if (signal.aborted) { teardownPeer(peer); return; }
       if (!peer.localDescription) throw new Error('Gagal membuat jawaban WebRTC');
       await api.renegotiateVideoSession(session.renegotiatePath, {
         sdp: peer.localDescription.sdp,
         type: peer.localDescription.type,
       });
     }
-    if (signal.aborted) { closePeer(); return; }
+    if (signal.aborted) { teardownPeer(peer); return; }
     await waitForPeerConnection(peer, signal);
   };
 
@@ -255,6 +271,7 @@
     connecting = true;
     message = 'Menghubungkan Cloudflare Realtime...';
     let backgroundRetryDelay = backgroundRetryBaseMs;
+    let sessionPeer: RTCPeerConnection | null = null;
 
     try {
       while (!signal.aborted) {
@@ -264,7 +281,7 @@
 
         while (!signal.aborted) {
           try {
-            await connectOnce(targetStationId, signal);
+            await connectOnce(targetStationId, signal, (peer) => { sessionPeer = peer; });
             if (!signal.aborted) {
               message = '';
               backgroundRetryDelay = backgroundRetryBaseMs;
@@ -272,7 +289,8 @@
             }
             break;
           } catch (err) {
-            closePeer();
+            teardownPeer(sessionPeer);
+            sessionPeer = null;
             if (signal.aborted) return;
             if (isPeerClosedError(err)) return;
 
@@ -305,12 +323,13 @@
 
         if (signal.aborted) return;
 
-        if (connected && pc) {
+        if (connected && sessionPeer) {
           connecting = false;
-          await waitForPeerDisconnect(pc, signal);
+          await waitForPeerDisconnect(sessionPeer, signal);
           if (signal.aborted) return;
 
-          closePeer();
+          teardownPeer(sessionPeer);
+          sessionPeer = null;
           message = 'Koneksi terputus, menghubungkan ulang...';
           connecting = true;
           await sleep(1000, signal);
