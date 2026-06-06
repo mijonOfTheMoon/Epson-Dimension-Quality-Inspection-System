@@ -226,7 +226,6 @@
 </script>
 
 <div class="space-y-8 select-none">
-  <!-- Header Title -->
   <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Dashboard</h1>
@@ -249,7 +248,6 @@
     </div>
   {/if}
 
-  <!-- KPI Metric Grid -->
   <div class="grid grid-cols-2 xl:grid-cols-4 gap-4.5">
     {#each cards as card (card.label)}
       {@const Icon = card.icon}
@@ -276,9 +274,7 @@
     {/each}
   </div>
 
-  <!-- Charts Block -->
   <div class="grid xl:grid-cols-[1.8fr_1fr] gap-6">
-    <!-- Area Chart (Tren Harian) -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
       <div class="flex items-center justify-between mb-5">
         <h3 class="text-base font-bold text-slate-900 dark:text-white">Tren Kualitas Harian</h3>
@@ -293,7 +289,6 @@
       {/if}
     </div>
 
-    <!-- Donut Chart (Komposisi) -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm flex flex-col justify-between">
       <div class="flex items-center justify-between mb-5">
         <h3 class="text-base font-bold text-slate-900 dark:text-white">Komposisi OK vs NG</h3>
@@ -306,9 +301,7 @@
     </div>
   </div>
 
-  <!-- Industrial Tables & Statistics -->
   <div class="grid xl:grid-cols-2 gap-6">
-    <!-- Failing Dimensions -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
       <div class="flex items-center gap-2.5 mb-5 border-b border-[var(--border)] pb-3">
         <div class="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-500 flex items-center justify-center"><AlertTriangle class="w-4 h-4" /></div>
@@ -340,7 +333,6 @@
       {/if}
     </div>
 
-    <!-- Risky Parts -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
       <div class="flex items-center gap-2.5 mb-5 border-b border-[var(--border)] pb-3">
         <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center"><ListChecks class="w-4 h-4" /></div>
@@ -375,7 +367,6 @@
       {/if}
     </div>
 
-    <!-- Recent Inspections (Full Width) -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm xl:col-span-2">
       <div class="flex items-center gap-2.5 mb-5 border-b border-[var(--border)] pb-3">
         <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center"><Clock3 class="w-4 h-4" /></div>

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ArrowLeft, Plus, Save, Trash2, X } from 'lucide-svelte';
+  import { ArrowLeft, Plus, RotateCcw, Save, Trash2 } from 'lucide-svelte';
   import { navigate } from 'svelte-routing';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { clearDraft, loadDraft, saveDraft } from '$lib/services/draft';
   import type { DimensionKind, DimensionSpec, DimensionView, PartType } from '$lib/types/api';
   import Notice from '$lib/components/Notice.svelte';
 
@@ -45,6 +46,7 @@
 
   const parts = useParts();
   const isEdit = $derived(Boolean(id));
+  const draftKey = $derived(`part-editor:${id ?? 'new'}`);
 
   let form = $state<PartDraft>(emptyForm());
   let saving = $state(false);
@@ -101,6 +103,15 @@
     if (initializedFor === key) return;
     error = null;
     notFound = false;
+
+    // Resume a previously saved draft if the user left mid-edit.
+    const draft = loadDraft<PartDraft>(`part-editor:${key}`);
+    if (draft) {
+      form = draft;
+      initializedFor = key;
+      return;
+    }
+
     if (!id) {
       form = emptyForm();
       initializedFor = key;
@@ -116,6 +127,22 @@
     form = formFromPart(part);
     initializedFor = key;
   });
+
+  // Persist the working draft so it survives navigating away and back.
+  $effect(() => {
+    if (initializedFor !== (id ?? 'new')) return;
+    saveDraft(draftKey, $state.snapshot(form));
+  });
+
+  const resetForm = () => {
+    error = null;
+    if (id) {
+      const part = parts.data.find((item) => item.id === id);
+      form = part ? formFromPart(part) : emptyForm();
+    } else {
+      form = emptyForm();
+    }
+  };
 
   const updateDimension = (index: number, patch: Partial<DimensionDraft>) => {
     form = {
@@ -190,6 +217,7 @@
     try {
       if (id) await api.updatePart(id, result.payload);
       else await api.createPart(result.payload);
+      clearDraft(draftKey);
       navigate('/part-configuration');
     } catch (err) {
       error = getErrorMessage(err);
@@ -200,7 +228,6 @@
 </script>
 
 <div class="space-y-6 select-none font-sans">
-  <!-- Top Navigation Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <button onclick={() => navigate('/part-configuration')} class="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2.5 transition-colors group">
@@ -208,10 +235,9 @@
       </button>
       <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Spesifikasi Part' : 'Tambah Part Baru'}</h1>
     </div>
-    <!-- Top Bar Form Actions -->
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
-      <button onclick={() => navigate('/part-configuration')} class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm">
-        <X class="w-4 h-4" /> Batal
+      <button onclick={resetForm} class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm">
+        <RotateCcw class="w-4 h-4" /> Reset
       </button>
       <button disabled={saving || notFound} onclick={save} class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none">
         {#if saving}
@@ -238,7 +264,6 @@
       Data master part tidak terdaftar di sistem.
     </div>
   {:else}
-    <!-- Part Identity Form Section -->
     <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
       <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Identitas Produk</h3>
       <div class="grid md:grid-cols-3 gap-4">
@@ -257,7 +282,6 @@
       </div>
     </section>
 
-    <!-- Dimension Specifications Grid Section -->
     <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl overflow-hidden shadow-sm">
       <div class="p-4.5 border-b border-[var(--border)] flex items-center justify-between gap-3 bg-slate-50/30 dark:bg-slate-900/10">
         <h3 class="text-base font-bold text-slate-900 dark:text-white">Batas Ukur &amp; Spesifikasi Dimensi</h3>

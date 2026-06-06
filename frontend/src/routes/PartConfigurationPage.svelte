@@ -62,10 +62,10 @@
 </script>
 
 <div class="space-y-6 select-none font-sans">
-  <!-- Page Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Konfigurasi Part</h1>
+    </div>
     <button
       onclick={() => navigate('/part-configuration/new')}
       class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium self-start sm:self-auto shrink-0"
@@ -84,7 +84,6 @@
     </div>
   {/if}
 
-  <!-- Filters Search Panel -->
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="relative flex-1 min-w-[240px]">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -102,12 +101,10 @@
     </select>
   </div>
 
-  <!-- Found Counts Info -->
   <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
     Ditemukan: <span class="text-indigo-500 font-mono-data">{filtered.length}</span> item part
   </div>
 
-  <!-- Master Part Table List -->
   <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">

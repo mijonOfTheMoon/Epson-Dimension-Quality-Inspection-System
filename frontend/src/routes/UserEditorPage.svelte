@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ArrowLeft, Save, X } from 'lucide-svelte';
+  import { ArrowLeft, RotateCcw, Save } from 'lucide-svelte';
   import { navigate } from 'svelte-routing';
   import { useUsers } from '$lib/hooks/useUsers.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { clearDraft, loadDraft, saveDraft } from '$lib/services/draft';
   import type { User, UserRole } from '$lib/types/api';
   import Notice from '$lib/components/Notice.svelte';
 
@@ -27,6 +28,7 @@
 
   const users = useUsers();
   const isEdit = $derived(Boolean(id));
+  const draftKey = $derived(`user-editor:${id ?? 'new'}`);
 
   let form = $state<UserDraft>(emptyForm());
   let saving = $state(false);
@@ -59,6 +61,15 @@
     if (initializedFor === key) return;
     error = null;
     notFound = false;
+
+    // Resume a previously saved draft if the user left mid-edit.
+    const draft = loadDraft<UserDraft>(`user-editor:${key}`);
+    if (draft) {
+      form = draft;
+      initializedFor = key;
+      return;
+    }
+
     if (!id) {
       form = emptyForm();
       initializedFor = key;
@@ -74,6 +85,22 @@
     form = formFromUser(user);
     initializedFor = key;
   });
+
+  // Persist the working draft so it survives navigating away and back.
+  $effect(() => {
+    if (initializedFor !== (id ?? 'new')) return;
+    saveDraft(draftKey, $state.snapshot(form));
+  });
+
+  const resetForm = () => {
+    error = null;
+    if (id) {
+      const user = users.data.find((item) => item.id === id);
+      form = user ? formFromUser(user) : emptyForm();
+    } else {
+      form = emptyForm();
+    }
+  };
 
   const validate = () => {
     if (!form.name.trim()) return 'Nama wajib diisi.';
@@ -120,7 +147,6 @@
 </script>
 
 <div class="space-y-6 select-none font-sans">
-  <!-- Top Navigation Bar -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <button onclick={() => navigate('/user-management')} class="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2.5 transition-colors group">
@@ -128,10 +154,10 @@
       </button>
       <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Akun Pengguna' : 'Tambah User Baru'}</h1>
     </div>
-    <!-- Actions Buttons -->
+
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
-      <button onclick={() => navigate('/user-management')} class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm">
-        <X class="w-4 h-4" /> Batal
+      <button onclick={resetForm} class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm">
+        <RotateCcw class="w-4 h-4" /> Reset
       </button>
       <button disabled={saving || notFound} onclick={save} class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none">
         {#if saving}
@@ -158,7 +184,6 @@
       Akun pengguna tidak ditemukan di database.
     </div>
   {:else}
-    <!-- Form Segment: Profile -->
     <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
       <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Informasi Profil Personil</h3>
       <div class="grid md:grid-cols-2 gap-4">
@@ -177,7 +202,6 @@
       </div>
     </section>
 
-    <!-- Form Segment: Access Control -->
     <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
       <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Akses &amp; Tingkat Keamanan</h3>
       <div class="grid md:grid-cols-2 gap-4">

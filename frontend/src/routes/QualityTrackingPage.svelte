@@ -110,7 +110,6 @@
     <div class="fixed top-6 right-6 z-50 bg-emerald-600/95 border border-emerald-500/30 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-300">{toast}</div>
   {/if}
 
-  <!-- Page Title Header -->
   <div>
     <h1 class="text-slate-900 dark:text-white tracking-tight">Quality Tracking</h1>
   </div>
@@ -129,7 +128,6 @@
     </div>
   {/if}
 
-  <!-- Quality Performance KPIs -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4.5">
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
       <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Total Scan Hari Ini</div>
@@ -149,7 +147,6 @@
     </div>
   </div>
 
-  <!-- Filters and Search Panel -->
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="relative flex-1 min-w-[240px]">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -174,7 +171,6 @@
     </select>
   </div>
 
-  <!-- Quality Main Table -->
   <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -239,7 +235,6 @@
               <tr>
                 <td colspan="8" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
                   <div class="flex flex-col lg:flex-row gap-8">
-                    <!-- Progress Timeline Stepper -->
                     <div class="flex-1">
                       <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase mb-4 pl-1">
                         Riwayat Perubahan Status Permintaan
@@ -250,15 +245,12 @@
                           {@const HIcon = hCfg.icon}
                           {@const isCurrent = idx === record.statusHistory.length - 1}
                           <div class="flex flex-row sm:flex-col items-center relative flex-1 min-w-[140px] sm:min-w-0">
-                            <!-- Connecting horizontal timeline bar for non-first items on large screens -->
                             {#if idx > 0}
                               <div class="hidden sm:block absolute top-[13px] right-[50%] h-[2px] bg-slate-200 dark:bg-slate-800 w-full -z-0"></div>
                             {/if}
-                            <!-- timeline circle bubble -->
                             <div class="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 z-10 {isCurrent ? hCfg.bg : 'bg-slate-100 dark:bg-slate-800/80'} border border-transparent {isCurrent ? 'border-current ' + hCfg.color : ''} shadow-md shadow-slate-200/5 hover:scale-105 transition-transform duration-200">
                               <HIcon class="w-4 h-4 {isCurrent ? hCfg.color : 'text-slate-400 dark:text-slate-500'}" />
                             </div>
-                            <!-- step label metadata -->
                             <div class="ml-3 sm:ml-0 mt-0 sm:mt-3 text-left sm:text-center">
                               <div class="text-[11px] font-bold {isCurrent ? hCfg.color : 'text-slate-500 dark:text-slate-400'}">
                                 {hCfg.label}
@@ -273,7 +265,6 @@
                       </div>
                     </div>
 
-                    <!-- Interactive Vendor Status Actions Button -->
                     {#if actions.length > 0}
                       <div class="lg:border-l lg:border-[var(--border)] lg:pl-8 flex flex-col gap-2.5 items-center justify-center shrink-0 w-full lg:w-fit">
                         {#each actions as action (action.status)}

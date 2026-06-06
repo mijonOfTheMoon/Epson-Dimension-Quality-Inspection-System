@@ -144,7 +144,6 @@
       {toast.text}
     </div>
   {/if}
-  <!-- Title Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Riwayat Inspeksi</h1>
@@ -186,7 +185,6 @@
     </div>
   {/if}
 
-  <!-- Search & Filter Controls -->
   <div class="flex flex-wrap items-center gap-3">
     <div class="relative flex-1 min-w-[240px]">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -210,12 +208,10 @@
     </select>
   </div>
 
-  <!-- Count Stats -->
   <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
     Ditemukan: <span class="text-indigo-500 font-mono-data">{filtered.length}</span> baris data
   </div>
 
-  <!-- Master Data Table -->
   <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -276,12 +272,10 @@
                   {:else if details[row.id]}
                     {@const detail = details[row.id]}
                     <div class="space-y-4">
-                      <!-- Operator Metadata -->
                       <div class="text-xs text-slate-700 dark:text-slate-300 font-bold border-l-2 border-indigo-500 pl-2">
                         Hasil Analisis Dimensi &bull; Operator: <span class="text-slate-950 dark:text-white">{detail.operatorName}</span>
                       </div>
 
-                      <!-- Measurement Cards Grid -->
                       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                         {#each detail.measurements as measurement (measurement.dimensionName)}
                           {@const mOK = measurement.status === 'OK'}
@@ -308,7 +302,6 @@
                         {/each}
                       </div>
 
-                      <!-- Camera Frame and Detections Overlay -->
                       {#if detail.frameUrl}
                         <div class="mt-4 max-w-xl relative rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
                           <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
@@ -342,7 +335,6 @@
     </div>
   </div>
 
-  <!-- Pagination Controls -->
   {#if totalPages > 1}
     <div class="flex items-center justify-center gap-3.5 pt-4">
       <button 

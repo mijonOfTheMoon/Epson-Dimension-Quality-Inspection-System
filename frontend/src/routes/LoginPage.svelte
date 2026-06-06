@@ -33,14 +33,11 @@
 </script>
 
 <div class="min-h-screen flex items-center justify-center bg-[#070b14] relative overflow-hidden p-4 font-sans select-none">
-  <!-- Glowing Background Orbs -->
   <div class="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-indigo-500/10 blur-[150px] pointer-events-none animate-pulse duration-5000"></div>
   <div class="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-violet-500/10 blur-[150px] pointer-events-none animate-pulse duration-7000"></div>
   <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[300px] rounded-full bg-blue-500/5 blur-[200px] pointer-events-none"></div>
 
-  <!-- Content Container -->
   <div class="w-full max-w-[440px] relative z-10 animate-in fade-in zoom-in-95 duration-500">
-    <!-- Brand / Title -->
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 p-0.5 shadow-xl shadow-indigo-500/10 mb-4 animate-bounce-slow">
         <div class="w-full h-full rounded-2xl bg-[#090d16] flex items-center justify-center">
@@ -51,7 +48,6 @@
       <p class="text-slate-400 text-xs font-medium mt-2 tracking-wide uppercase">Inspection Dimension Monitoring System</p>
     </div>
 
-    <!-- Login Card -->
     <form onsubmit={handleSubmit} class="bg-[#0f172a]/55 border border-slate-800/80 backdrop-blur-2xl rounded-3xl p-8 shadow-2xl relative">
       <div class="absolute -top-[1px] left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent"></div>
       
@@ -65,7 +61,6 @@
       {/if}
 
       <div class="space-y-4">
-        <!-- Username Input -->
         <div>
           <label class="text-[11px] font-semibold text-slate-400 mb-1.5 block tracking-wider uppercase" for="login-username">Username</label>
           <div class="relative">
@@ -83,7 +78,6 @@
           </div>
         </div>
 
-        <!-- Password Input -->
         <div>
           <label class="text-[11px] font-semibold text-slate-400 mb-1.5 block tracking-wider uppercase" for="login-password">Password</label>
           <div class="relative">
@@ -110,7 +104,6 @@
         </div>
       </div>
 
-      <!-- Submit Button -->
       <button 
         disabled={loading} 
         type="submit" 
@@ -127,7 +120,6 @@
       </button>
     </form>
     
-    <!-- Footer Credits -->
     <div class="text-center mt-8 text-slate-500 text-xs">
       &copy; {new Date().getFullYear()} DimInspect. All rights reserved.
     </div>

@@ -47,7 +47,10 @@
   for (const item of navItems) {
     linkPropsMap[item.to] = ({ isCurrent, location }) => {
       const isDashboardRoot = item.to === '/dashboard' && location.pathname === '/';
-      const active = isCurrent || isDashboardRoot;
+      // Keep the parent menu highlighted while on its nested editor routes
+      // (e.g. /part-configuration/new or /user-management/:id/edit).
+      const isNestedRoute = location.pathname.startsWith(`${item.to}/`);
+      const active = isCurrent || isDashboardRoot || isNestedRoute;
       return {
         class: `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-premium font-medium group ${
           active 
@@ -60,10 +63,8 @@
 </script>
 
 <div class="flex h-screen bg-[var(--background)] overflow-hidden font-sans">
-  <!-- Sidebar -->
   <aside class="fixed inset-y-0 left-0 z-40 w-64 bg-[#0a0f1d] border-r border-slate-800/40 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static {sidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col justify-between shrink-0">
     <div class="flex flex-col flex-1 min-h-0">
-      <!-- Sidebar Header / Logo -->
       <div class="flex items-center gap-3 px-6 py-5 border-b border-slate-800/40">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 p-0.5 flex items-center justify-center overflow-hidden shadow-lg shadow-indigo-500/20">
           <img src={Logo} alt="Logo" class="w-full h-full object-cover rounded-lg bg-white" />
@@ -74,7 +75,6 @@
         </div>
       </div>
 
-      <!-- Navigation Links -->
       <nav class="flex-1 overflow-y-auto mt-6 px-4 space-y-1.5 scrollbar-thin">
         {#each visibleItems as item (item.to)}
           {@const Icon = item.icon}
@@ -86,7 +86,6 @@
       </nav>
     </div>
 
-    <!-- Sidebar Footer / Profile -->
     <div class="p-4 border-t border-slate-800/40 bg-[#070b14]/60 relative">
       {#if userMenuOpen}
         <div class="absolute bottom-[80px] left-4 right-4 rounded-2xl bg-[#0f172a]/95 border border-slate-800/60 p-1.5 shadow-2xl backdrop-blur-md z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -109,20 +108,16 @@
     </div>
   </aside>
 
-  <!-- Mobile Overlay -->
   {#if sidebarOpen}
     <button class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden" onclick={() => sidebarOpen = false} aria-label="Tutup sidebar"></button>
   {/if}
 
-  <!-- Main Content Wrapper -->
   <div class="flex-1 flex flex-col min-w-0">
-    <!-- Top Header -->
     <header class="h-16 border-b border-[var(--border)] flex items-center justify-between px-6 bg-[var(--card)] shadow-sm shadow-slate-100/5 z-20 shrink-0">
       <div class="flex items-center gap-3">
         <button class="lg:hidden p-2 text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] rounded-xl transition-colors duration-200" onclick={() => sidebarOpen = true} aria-label="Buka sidebar">
           <Menu class="w-5 h-5" />
         </button>
-        <!-- System Status Bar -->
         <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
           <span class="relative flex h-2 w-2">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -132,9 +127,7 @@
         </div>
       </div>
 
-      <!-- Header Action Items -->
       <div class="flex items-center gap-2">
-        <!-- Theme Toggle Button -->
         <button 
           onclick={() => theme.toggle()} 
           class="p-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] rounded-xl transition-all duration-200"
@@ -149,7 +142,6 @@
       </div>
     </header>
 
-    <!-- Page Content Container -->
     <main class="flex-1 overflow-y-auto p-5 lg:p-8 scrollbar-thin bg-slate-50/50 dark:bg-slate-950/40">
       <div class="max-w-[1600px] mx-auto animate-in fade-in duration-300">
         {@render children()}

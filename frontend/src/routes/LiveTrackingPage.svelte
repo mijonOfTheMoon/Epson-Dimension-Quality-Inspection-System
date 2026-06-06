@@ -310,7 +310,6 @@
     </div>
   {/if}
 
-  <!-- Page Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Live Tracking</h1>
@@ -349,9 +348,7 @@
     </div>
   {/if}
 
-  <!-- Main Tracking Workspace -->
   <div class="grid lg:grid-cols-[1fr_360px] gap-6">
-    <!-- Camera Streams Grid -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm flex flex-col">
       <div class="flex items-center justify-between mb-4 border-b border-[var(--border)] pb-3">
         <h3 class="text-base font-bold text-slate-900 dark:text-white">Feed Kamera Aktif</h3>
@@ -392,11 +389,9 @@
             {@const detections = boxesDisabled ? [] : (latestGroup?.detections ?? [])}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
-              <!-- Video Frame Container -->
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
                 <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} />
 
-                <!-- Glowing Bounding Boxes (Object Detections) -->
                 {#each detections as detection (detection.id)}
                   {@const selected = selectedDetectionKey?.stationId === station.stationId && selectedDetectionKey.detectionId === detection.id}
                   {@const isOK = detection.status === 'OK'}
@@ -412,7 +407,6 @@
                   ></button>
                 {/each}
 
-                <!-- Status Badges Overlay -->
                 <div class="absolute top-3.5 left-3.5 flex flex-col gap-1.5 z-20">
                   <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-md {
                     station.online 
@@ -429,7 +423,6 @@
                   {/if}
                 </div>
 
-                <!-- Action Controls Overlay -->
                 <div class="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-30">
                   {#if station.fps && optimisticRunning}
                     <span class="text-[10px] font-mono bg-slate-900/80 backdrop-blur-md text-slate-200 border border-slate-700/30 px-2.5 py-1 rounded-full shadow-md font-bold">{station.fps.toFixed(1)} FPS</span>
@@ -471,7 +464,6 @@
                 </div>
               </div>
 
-              <!-- Stream Info & Controls Panel -->
               <div class="p-4 space-y-4 bg-[var(--card)] flex-1 flex flex-col justify-between">
                 <div>
                   <div class="text-sm font-bold text-slate-800 dark:text-slate-100">{station.stationId}</div>
@@ -480,7 +472,6 @@
                   </div>
                 </div>
 
-                <!-- Operator / Admin Control Buttons -->
                 {#if canControl}
                   {#if !optimisticRunning}
                     <div class={isFocused ? 'grid md:grid-cols-[minmax(0,1fr)_150px_140px] gap-2.5' : 'grid grid-cols-1 sm:grid-cols-2 gap-2.5'}>
@@ -583,9 +574,7 @@
       {/if}
     </div>
 
-    <!-- Stats & Analytics Sidebar Panel -->
     <div class="space-y-6">
-      <!-- Dimensions Stats Panel -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden flex flex-col">
         <div class="p-4 border-b border-[var(--border)] flex items-center justify-between gap-3 bg-slate-50/30 dark:bg-slate-900/10">
           <div>
@@ -626,7 +615,6 @@
         </div>
 
         <div class="p-4 space-y-4">
-          <!-- Main Stats Grid -->
           <div class="grid grid-cols-3 gap-2.5 text-center">
             <div class="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--border)] p-2.5 shadow-sm">
               <div class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Status</div>
@@ -654,7 +642,6 @@
             </div>
           </div>
 
-          <!-- Dimension Measurement Details -->
           {#if measurements.length === 0}
             <div class="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-xs text-[var(--muted-foreground)] font-medium">
               Silakan klik salah satu kotak *bounding box* pada feed kamera untuk memuat perincian dimensi.
@@ -681,7 +668,6 @@
                       {statusLabel}
                     </span>
                   </div>
-                  <!-- Raw values metrics -->
                   <div class="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 font-mono-data">
                     <div>
                       <div class="text-[9px] text-[var(--muted-foreground)] tracking-wider uppercase font-sans mb-0.5">Measured</div>
@@ -705,7 +691,6 @@
         </div>
       </div>
 
-      <!-- Current Session Summary -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden flex flex-col">
         <div class="p-4 border-b border-[var(--border)] flex items-center justify-between bg-slate-50/30 dark:bg-slate-900/10">
           <h3 class="text-sm font-bold text-slate-800 dark:text-white">Sesi Saat Ini</h3>
@@ -727,7 +712,6 @@
           </div>
         </div>
 
-        <!-- Session Inspections List -->
         <div class="p-4 space-y-3 max-h-[300px] overflow-y-auto scrollbar-thin">
           {#if latestInspections.length === 0}
             <div class="text-center py-12 text-xs text-[var(--muted-foreground)] font-medium border border-dashed border-[var(--border)] rounded-xl">Belum ada aktivitas scan terdeteksi pada sesi ini.</div>
