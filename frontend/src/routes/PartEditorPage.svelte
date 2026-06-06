@@ -207,7 +207,6 @@
         <ArrowLeft class="w-3.5 h-3.5 transition-transform group-hover:-translate-x-[2px]" /> Kembali
       </button>
       <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Spesifikasi Part' : 'Tambah Part Baru'}</h1>
-      <p class="text-sm text-[var(--muted-foreground)] mt-1.5 font-medium">Atur data master identitas produk beserta batas-batas toleransi ukur dimensi inspeksi.</p>
     </div>
     <!-- Top Bar Form Actions -->
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">

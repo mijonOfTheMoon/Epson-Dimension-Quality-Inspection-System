@@ -127,7 +127,6 @@
         <ArrowLeft class="w-3.5 h-3.5 transition-transform group-hover:-translate-x-[2px]" /> Kembali
       </button>
       <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Akun Pengguna' : 'Tambah User Baru'}</h1>
-      <p class="text-sm text-[var(--muted-foreground)] mt-1.5 font-medium">Atur profil, avatar, dan otorisasi keamanan personil sistem.</p>
     </div>
     <!-- Actions Buttons -->
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
