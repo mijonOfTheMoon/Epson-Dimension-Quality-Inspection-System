@@ -5,7 +5,7 @@
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
 
-  const inspections = useInspections(1000);
+  const inspections = useInspections(200);
   const parts = useParts();
 
   let search = $state('');

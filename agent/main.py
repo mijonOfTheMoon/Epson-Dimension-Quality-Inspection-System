@@ -29,8 +29,11 @@ CALIBRATION_FRAMES = 30
 FOREGROUND_AREA_THRESHOLD = 4000
 STABILITY_FRAMES = 5
 CLEAR_FRAMES = 10
+RESOURCE_RELEASE_TIMEOUT_SECONDS = 5.0
 
-Phase = str  # 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked'
+logger = logging.getLogger(__name__)
+
+Phase = str
 
 
 def configure_logging(level_name: str) -> None:
@@ -335,9 +338,18 @@ class InspectionRunner:
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
 
                 manual_capture = self._drain_command("capture")
-                display = result.frame if result.inspection is not None else annotate_status(frame, phase, self._part)
+                is_capture_event = manual_capture and result.inspection is not None
+                will_send_frame = now - last_frame_sent >= self._frame_interval
 
-                if manual_capture and result.inspection is not None:
+                display = None
+                if is_capture_event or will_send_frame:
+                    display = (
+                        result.frame
+                        if result.inspection is not None
+                        else annotate_status(frame, phase, self._part)
+                    )
+
+                if is_capture_event:
                     event = build_inspection_event(self.config, result.inspection, "manual")
                     event["operatorId"] = self._operator_id
                     event["operatorName"] = self._operator_name
@@ -371,7 +383,7 @@ class InspectionRunner:
                     else:
                         clear_count = 0
 
-                if now - last_frame_sent >= self._frame_interval:
+                if will_send_frame and display is not None:
                     self._send_frame(display, encode_params)
                     last_frame_sent = now
 
@@ -385,14 +397,35 @@ class InspectionRunner:
                     last_status = now
 
         finally:
-            self.video.stop()
+            camera_reserve = min(1.0, RESOURCE_RELEASE_TIMEOUT_SECONDS)
+            video_timeout = max(0.0, RESOURCE_RELEASE_TIMEOUT_SECONDS - camera_reserve)
+            release_deadline = monotonic() + RESOURCE_RELEASE_TIMEOUT_SECONDS
+            self._release_with_timeout("video pipeline", self.video.stop, video_timeout)
             self._video_session_id = None
             self._video_track_name = None
-            cap.release()
+            camera_timeout = max(camera_reserve, release_deadline - monotonic())
+            self._release_with_timeout("camera", cap.release, camera_timeout)
             if self._stop.is_set():
                 self._send_offline_status()
             else:
                 self._send_status(phase="idle", running=False)
+
+    def _release_with_timeout(self, name: str, release: Any, timeout: float) -> None:
+        error: list[BaseException] = []
+
+        def _run() -> None:
+            try:
+                release()
+            except BaseException as exc:
+                error.append(exc)
+
+        worker = threading.Thread(target=_run, name=f"release-{name}", daemon=True)
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            logger.error("Releasing %s exceeded %.1fs timeout; continuing shutdown", name, timeout)
+        elif error:
+            logger.error("Releasing %s failed: %s", name, error[0])
 
     def close(self) -> None:
         self.shutdown()
@@ -400,8 +433,6 @@ class InspectionRunner:
         self._send_offline_status()
         self.mqtt.stop()
         self.http.close()
-
-
 def main() -> None:
     config = load_config()
     configure_logging(config.agent_log_level)

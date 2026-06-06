@@ -2,7 +2,7 @@ import { onMount } from 'svelte';
 import type { AgentInfo } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
-import { startVisibilityPolling } from '$lib/services/polling';
+import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
 export function useAgents() {
   let data = $state<AgentInfo[]>([]);
@@ -23,7 +23,7 @@ export function useAgents() {
     try {
       const next = await api.getAgents();
       if (mounted && current === requestId) {
-        data = next;
+        if (!deepEqual(data, next)) data = next;
         error = null;
         backoff.reset();
       }

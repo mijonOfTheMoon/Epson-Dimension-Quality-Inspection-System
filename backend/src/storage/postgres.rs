@@ -17,6 +17,13 @@ use crate::domain::*;
 
 use super::{DataStore, PartInput, UserInput, UserUpdateInput};
 
+const DEFAULT_LIMIT: i64 = 50;
+const MAX_LIMIT: i64 = 200;
+
+fn resolve_inspection_limit(limit: Option<i64>) -> i64 {
+    limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
+}
+
 #[derive(Clone)]
 pub struct PostgresStore {
     pool: PgPool,
@@ -37,6 +44,7 @@ impl PostgresStore {
 
         let pool = PgPoolOptions::new()
             .max_connections(config.database_pool_max)
+            .acquire_timeout(config.database_pool_acquire_timeout)
             .connect_with(options)
             .await
             .context("failed to connect to PostgreSQL")?;
@@ -300,7 +308,7 @@ impl DataStore for PostgresStore {
     }
 
     async fn list_inspections(&self, query: InspectionQuery) -> anyhow::Result<Vec<InspectionCreatedEvent>> {
-        let limit = query.limit.unwrap_or(100).clamp(1, 1000);
+        let limit = resolve_inspection_limit(query.limit);
         let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
@@ -582,14 +590,22 @@ impl DataStore for PostgresStore {
     }
 
     async fn get_dashboard_summary(&self) -> anyhow::Result<DashboardSummary> {
-        let counts: DashboardCountsRow = sqlx::query_as(
+        let part_agg = sqlx::query_as::<_, PartAggRow>(
             r#"
-            SELECT COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok,
-                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
+            SELECT part_code,
+                   part_name,
+                   COUNT(*)::bigint AS total,
+                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
+                   COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok
             FROM inspections
+            GROUP BY part_code, part_name
+            ORDER BY (COUNT(*) FILTER (WHERE status = 'NG')::numeric / NULLIF(COUNT(*), 0)) DESC,
+                     COUNT(*) FILTER (WHERE status = 'NG') DESC,
+                     COUNT(*) DESC,
+                     part_code ASC
             "#,
         )
-        .fetch_one(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
         let trend = sqlx::query_as::<_, DailyTrendRow>(
@@ -625,23 +641,7 @@ impl DataStore for PostgresStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let part_risk = sqlx::query_as::<_, PartRiskRow>(
-            r#"
-            SELECT part_code,
-                   part_name,
-                   COUNT(*)::bigint AS total,
-                   COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng
-            FROM inspections
-            GROUP BY part_code, part_name
-            ORDER BY (COUNT(*) FILTER (WHERE status = 'NG')::numeric / NULLIF(COUNT(*), 0)) DESC,
-                     COUNT(*) FILTER (WHERE status = 'NG') DESC,
-                     COUNT(*) DESC,
-                     part_code ASC
-            LIMIT 8
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let part_risk: Vec<&PartAggRow> = part_agg.iter().take(8).collect();
 
         let recent_inspections = sqlx::query_as::<_, RecentInspectionRow>(
             r#"
@@ -660,8 +660,8 @@ impl DataStore for PostgresStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let ok = counts.ok;
-        let ng = counts.ng;
+        let ok: i64 = part_agg.iter().map(|row| row.ok).sum();
+        let ng: i64 = part_agg.iter().map(|row| row.ng).sum();
         let total = ok + ng;
 
         Ok(DashboardSummary {
@@ -688,8 +688,8 @@ impl DataStore for PostgresStore {
             part_risk: part_risk
                 .into_iter()
                 .map(|row| PartRiskPoint {
-                    part_code: row.part_code,
-                    part_name: row.part_name,
+                    part_code: row.part_code.clone(),
+                    part_name: row.part_name.clone(),
                     total: row.total,
                     ng: row.ng,
                     ng_rate: rate(row.ng, row.total),
@@ -789,12 +789,6 @@ struct QualityRecordRow {
 }
 
 #[derive(Debug, FromRow)]
-struct DashboardCountsRow {
-    ok: i64,
-    ng: i64,
-}
-
-#[derive(Debug, FromRow)]
 struct DailyTrendRow {
     date: String,
     ok: i64,
@@ -812,11 +806,12 @@ struct FailingDimensionRow {
 }
 
 #[derive(Debug, FromRow)]
-struct PartRiskRow {
+struct PartAggRow {
     part_code: String,
     part_name: String,
     total: i64,
     ng: i64,
+    ok: i64,
 }
 
 #[derive(Debug, FromRow)]

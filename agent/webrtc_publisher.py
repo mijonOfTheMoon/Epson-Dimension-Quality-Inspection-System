@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections import deque
 from fractions import Fraction
 from typing import Any, Callable
 
@@ -15,36 +16,76 @@ from config import AgentConfig
 VideoReadyHandler = Callable[[str, str], None]
 logger = logging.getLogger(__name__)
 
+PUBLICATION_DISCONNECTED_ERROR = "webrtc_connection_lost"
+DEFAULT_FRAME_QUEUE = 1
+MAX_FRAME_QUEUE = 5
+
+
+class BoundedFrameBuffer:
+
+    def __init__(self, capacity: int = DEFAULT_FRAME_QUEUE) -> None:
+        self._capacity = max(1, min(int(capacity), MAX_FRAME_QUEUE))
+        self._frames: deque[cv2.Mat] = deque(maxlen=self._capacity)
+        self._lock = threading.Lock()
+
+    @property
+    def capacity(self) -> int:
+        return self._capacity
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._frames)
+
+    def push(self, frame: cv2.Mat) -> None:
+        """Append a frame, dropping the oldest one if the buffer is full."""
+        with self._lock:
+            self._frames.append(frame)
+
+    def pop(self) -> cv2.Mat | None:
+        """Return the most recently pushed frame, or ``None`` if empty."""
+        with self._lock:
+            if not self._frames:
+                return None
+            return self._frames[-1]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._frames.clear()
+
 try:
     from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
     from av import VideoFrame
-except ImportError:  # The agent can still run without video until dependencies are installed.
-    RTCPeerConnection = None  # type: ignore[assignment]
-    RTCSessionDescription = None  # type: ignore[assignment]
-    VideoStreamTrack = object  # type: ignore[assignment,misc]
-    VideoFrame = None  # type: ignore[assignment]
+except ImportError:
+    RTCPeerConnection = None
+    RTCSessionDescription = None
+    VideoStreamTrack = object
+    VideoFrame = None
 
 
-class LatestFrameTrack(VideoStreamTrack):  # type: ignore[misc]
-    def __init__(self, fps: int) -> None:
+class LatestFrameTrack(VideoStreamTrack):
+    def __init__(self, fps: int, capacity: int = DEFAULT_FRAME_QUEUE) -> None:
         super().__init__()
         self._interval = 1.0 / max(fps, 1)
-        self._lock = threading.Lock()
-        self._latest: cv2.Mat | None = None
+        self._buffer = BoundedFrameBuffer(capacity)
         self._pts = 0
+        self._closed = False
 
     def update(self, frame: cv2.Mat) -> None:
-        with self._lock:
-            self._latest = frame.copy()
+        if self._closed:
+            return
+        self._buffer.push(frame.copy())
+
+    def stop_buffering(self) -> None:
+        self._closed = True
+        self._buffer.clear()
 
     async def recv(self) -> Any:
         await asyncio.sleep(self._interval)
-        with self._lock:
-            frame = None if self._latest is None else self._latest.copy()
+        frame = self._buffer.pop()
         if frame is None:
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        video_frame = VideoFrame.from_ndarray(rgb, format="rgb24")  # type: ignore[union-attr]
+        video_frame = VideoFrame.from_ndarray(rgb, format="rgb24")
         self._pts += 3000
         video_frame.pts = self._pts
         video_frame.time_base = Fraction(1, 90000)
@@ -60,6 +101,7 @@ class WebRTCPublisher:
         self._pc: Any = None
         self._track: LatestFrameTrack | None = None
         self._lock = threading.Lock()
+        self._publication_error: str | None = None
 
     def start(self, track_name: str | None, on_ready: VideoReadyHandler) -> None:
         if not track_name or not self.config.cloudflare_realtime_enabled:
@@ -98,9 +140,21 @@ class WebRTCPublisher:
 
     async def _start_async(self, track_name: str, on_ready: VideoReadyHandler) -> None:
         await self._stop_async()
-        pc = RTCPeerConnection()  # type: ignore[operator]
+        pc = RTCPeerConnection()
         track = LatestFrameTrack(self.fps)
         sender = pc.addTrack(track)
+
+        @pc.on("connectionstatechange")
+        def on_connection_state_change_teardown() -> None:
+            if pc.connectionState in ("failed", "disconnected", "closed"):
+                if pc.connectionState != "closed":
+                    logger.warning(
+                        "Cloudflare Realtime connection %s for track %s; tearing down",
+                        pc.connectionState,
+                        track_name,
+                    )
+                asyncio.ensure_future(self._handle_disconnect(pc))
+
         offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
         await self._wait_for_ice(pc)
@@ -113,7 +167,7 @@ class WebRTCPublisher:
         }
         session_id, session_answer = await asyncio.to_thread(self._create_session, local_description)
         await pc.setRemoteDescription(
-            RTCSessionDescription(sdp=session_answer["sdp"], type=session_answer["type"])  # type: ignore[operator]
+            RTCSessionDescription(sdp=session_answer["sdp"], type=session_answer["type"])
         )
         await asyncio.to_thread(
             self._publish_track,
@@ -125,6 +179,7 @@ class WebRTCPublisher:
         with self._lock:
             self._pc = pc
             self._track = track
+            self._publication_error = None
         on_ready(session_id, track_name)
         logger.info("Cloudflare Realtime track published for %s", track_name)
         if await self._wait_for_connection(pc):
@@ -140,10 +195,62 @@ class WebRTCPublisher:
     async def _stop_async(self) -> None:
         with self._lock:
             pc = self._pc
+            track = self._track
             self._pc = None
             self._track = None
+        if track is not None:
+            track.stop_buffering()
+            track.stop()
         if pc is not None:
+            await self._release_senders(pc)
             await pc.close()
+
+    async def _handle_disconnect(self, pc: Any) -> None:
+        """Tear down a publication that lost its WebRTC connection (Req 9.7)."""
+        with self._lock:
+            if self._pc is not pc:
+                return
+            track = self._track
+            self._pc = None
+            self._track = None
+            self._publication_error = PUBLICATION_DISCONNECTED_ERROR
+        if track is not None:
+            track.stop_buffering()
+            track.stop()
+        await self._release_senders(pc)
+        try:
+            await pc.close()
+        except Exception as exc:
+            logger.error("Error closing WebRTC connection after disconnect: %s", exc)
+
+    @staticmethod
+    async def _release_senders(pc: Any) -> None:
+        """Explicitly stop and detach every local track on the connection."""
+        try:
+            senders = pc.getSenders()
+        except Exception:
+            return
+        for sender in senders:
+            sender_track = getattr(sender, "track", None)
+            if sender_track is not None:
+                stop = getattr(sender_track, "stop", None)
+                if callable(stop):
+                    try:
+                        stop()
+                    except Exception:
+                        pass
+            replace = getattr(sender, "replaceTrack", None)
+            if callable(replace):
+                try:
+                    await replace(None)
+                except Exception:
+                    pass
+
+    @property
+    def publication_error(self) -> str | None:
+        """Return the defined error indication if publishing was interrupted."""
+        with self._lock:
+            return self._publication_error
 
     async def _wait_for_ice(self, pc: Any) -> None:
         if pc.iceGatheringState == "complete":

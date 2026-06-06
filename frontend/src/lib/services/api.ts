@@ -37,12 +37,14 @@ export const tokenStorage = {
 export class ApiRequestError extends Error {
   status?: number;
   retryAfterMs?: number;
+  hasJsonBody: boolean;
 
-  constructor(message: string, status?: number, retryAfterMs?: number) {
+  constructor(message: string, status?: number, retryAfterMs?: number, hasJsonBody = false) {
     super(message);
     this.name = 'ApiRequestError';
     this.status = status;
     this.retryAfterMs = retryAfterMs;
+    this.hasJsonBody = hasJsonBody;
   }
 }
 
@@ -52,7 +54,13 @@ export function getErrorMessage(error: unknown) {
   return 'Backend tidak tersedia';
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export const POLLING_TIMEOUT_MS = 30000;
+
+export interface RequestOptions {
+  timeoutMs?: number;
+}
+
+async function request<T>(path: string, init?: RequestInit, options?: RequestOptions): Promise<T> {
   const token = tokenStorage.get();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -60,24 +68,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
-
-  if (response.status === 401) {
-    tokenStorage.clear();
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+  const timeoutMs = options?.timeoutMs;
+  let signal = init?.signal ?? undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  if (timeoutMs !== undefined && timeoutMs > 0) {
+    const controller = new AbortController();
+    signal = controller.signal;
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   }
 
-  if (!response.ok) {
-    let message = `Request gagal (${response.status})`;
-    try {
-      const body = await response.json() as { message?: string };
-      if (body.message) message = body.message;
-    } catch { /* ignore */ }
-    throw new ApiRequestError(message, response.status, parseRetryAfter(response.headers.get('Retry-After')));
-  }
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, signal });
 
-  if (response.status === 204) return undefined as T;
-  return await response.json() as T;
+    if (response.status === 401) {
+      tokenStorage.clear();
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+    }
+
+    if (!response.ok) {
+      let message = `Request gagal (${response.status})`;
+      let hasJsonBody = false;
+      try {
+        const body = await response.json() as { message?: string };
+        if (body.message) {
+          message = body.message;
+          hasJsonBody = true;
+        }
+      } catch { /* ignore */ }
+      throw new ApiRequestError(
+        message,
+        response.status,
+        parseRetryAfter(response.headers.get('Retry-After')),
+        hasJsonBody,
+      );
+    }
+
+    if (response.status === 204) return undefined as T;
+    return await response.json() as T;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
 
 function parseRetryAfter(value: string | null) {
@@ -146,7 +176,7 @@ export const api = {
     if (params.status) query.set('status', params.status);
     if (params.partCode) query.set('partCode', params.partCode);
     const suffix = query.size ? `?${query.toString()}` : '';
-    const data = await request<InspectionCreatedEvent[]>(`/api/inspections${suffix}`);
+    const data = await request<InspectionCreatedEvent[]>(`/api/inspections${suffix}`, undefined, { timeoutMs: POLLING_TIMEOUT_MS });
     return data.map(normalizeInspectionEvent);
   },
   async getInspectionDetail(eventId: string) {
@@ -162,7 +192,7 @@ export const api = {
     );
   },
   getStations() {
-    return request<StationStatusEvent[]>('/api/stations');
+    return request<StationStatusEvent[]>('/api/stations', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
   },
   getQualityRecords() {
     return request<QualityTrackingRecord[]>('/api/quality-records');
@@ -174,10 +204,10 @@ export const api = {
     });
   },
   getDashboardSummary() {
-    return request<DashboardSummary>('/api/dashboard/summary');
+    return request<DashboardSummary>('/api/dashboard/summary', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
   },
   getAgents() {
-    return request<AgentInfo[]>('/api/agents');
+    return request<AgentInfo[]>('/api/agents', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
   },
   deleteStation(stationId: string) {
     return request<void>(`/api/stations/${encodeURIComponent(stationId)}`, { method: 'DELETE' });

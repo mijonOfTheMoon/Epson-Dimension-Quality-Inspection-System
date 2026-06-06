@@ -22,6 +22,8 @@
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
   const videoReadyRetryMs = 500;
   const videoReadyTimeoutMs = 20000;
+  const videoUnavailableText = 'Stream video agent belum tersedia';
+  const videoEndpointUnreachableText = 'Endpoint video tidak ditemukan — periksa koneksi/server';
   const maxSessionRetries = 3;
   const backgroundRetryBaseMs = 5000;
   const backgroundRetryMaxMs = 30000;
@@ -53,6 +55,13 @@
     if (msg.includes('cloudflare') && (msg.includes('gagal') || msg.includes('failed'))) return true;
     if (error.status === 500) return true;
     return false;
+  };
+
+  const isRoutingError = (error: unknown) => {
+    if (!(error instanceof ApiRequestError)) return false;
+    if (error.status !== 404) return false;
+    if (isVideoPendingError(error)) return false;
+    return error.hasJsonBody === false;
   };
 
   const isPeerClosedError = (error: unknown) => {
@@ -280,7 +289,16 @@
               continue;
             }
 
-            if (!signal.aborted) message = getErrorMessage(err);
+            if (!signal.aborted) {
+              if (isRoutingError(err)) {
+                message = videoEndpointUnreachableText;
+              } else if (isVideoPendingError(err) && Date.now() >= deadline) {
+                message = videoUnavailableText;
+              } else {
+                message = getErrorMessage(err);
+              }
+              connecting = false;
+            }
             break;
           }
         }

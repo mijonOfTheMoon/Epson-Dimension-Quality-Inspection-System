@@ -2,7 +2,7 @@ import { onMount } from 'svelte';
 import type { StationStatusEvent } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
-import { startVisibilityPolling } from '$lib/services/polling';
+import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
 export function useStations() {
   let data = $state<StationStatusEvent[]>([]);
@@ -23,7 +23,7 @@ export function useStations() {
     try {
       const next = await api.getStations();
       if (mounted && current === requestId) {
-        data = next;
+        if (!deepEqual(data, next)) data = next;
         error = null;
         backoff.reset();
       }

@@ -2,9 +2,9 @@ import { onMount } from 'svelte';
 import type { InspectionResult } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
-import { startVisibilityPolling } from '$lib/services/polling';
+import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
-export function useInspections(limit = 1000, visibleMs = 3000, hiddenMs = 15000) {
+export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000) {
   let data = $state<InspectionResult[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -23,7 +23,7 @@ export function useInspections(limit = 1000, visibleMs = 3000, hiddenMs = 15000)
     try {
       const next = await api.getInspections({ limit });
       if (!mounted || current !== requestId) return;
-      data = next;
+      if (!deepEqual(data, next)) data = next;
       error = null;
       backoff.reset();
     } catch (err) {

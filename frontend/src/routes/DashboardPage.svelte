@@ -52,7 +52,6 @@
     minute: '2-digit',
   });
 
-  // ApexCharts bindings
   let dailyTrendChartEl = $state<HTMLDivElement | null>(null);
   let ratioChartEl = $state<HTMLDivElement | null>(null);
   let dailyTrendChartInstance: ApexCharts | null = null;
@@ -67,13 +66,12 @@
 
     if (isLoading) return;
 
-    // Render Daily Trend Chart
     if (dailyTrendChartEl) {
       if (dailyTrendChartInstance) {
         dailyTrendChartInstance.destroy();
       }
 
-      const categories = trendData.map((d) => d.date.slice(5)); // Extract MM-DD
+      const categories = trendData.map((d) => d.date.slice(5));
       const okSeries = trendData.map((d) => d.ok);
       const ngSeries = trendData.map((d) => d.ng);
 
@@ -139,7 +137,6 @@
       void dailyTrendChartInstance.render();
     }
 
-    // Render Ratio Donut Chart
     if (ratioChartEl) {
       if (ratioChartInstance) {
         ratioChartInstance.destroy();

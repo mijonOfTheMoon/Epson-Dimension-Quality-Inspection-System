@@ -4,15 +4,17 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { theme } from '$lib/stores/theme.svelte';
   import ProtectedPage from '$lib/components/ProtectedPage.svelte';
-  import LoginPage from './routes/LoginPage.svelte';
-  import DashboardPage from './routes/DashboardPage.svelte';
-  import LiveTrackingPage from './routes/LiveTrackingPage.svelte';
-  import HistoryPage from './routes/HistoryPage.svelte';
-  import QualityTrackingPage from './routes/QualityTrackingPage.svelte';
-  import PartConfigurationPage from './routes/PartConfigurationPage.svelte';
-  import PartEditorPage from './routes/PartEditorPage.svelte';
-  import UserManagementPage from './routes/UserManagementPage.svelte';
-  import UserEditorPage from './routes/UserEditorPage.svelte';
+  import LazyRoute from '$lib/components/LazyRoute.svelte';
+
+  const loadLoginPage = () => import('./routes/LoginPage.svelte');
+  const loadDashboardPage = () => import('./routes/DashboardPage.svelte');
+  const loadLiveTrackingPage = () => import('./routes/LiveTrackingPage.svelte');
+  const loadHistoryPage = () => import('./routes/HistoryPage.svelte');
+  const loadQualityTrackingPage = () => import('./routes/QualityTrackingPage.svelte');
+  const loadPartConfigurationPage = () => import('./routes/PartConfigurationPage.svelte');
+  const loadPartEditorPage = () => import('./routes/PartEditorPage.svelte');
+  const loadUserManagementPage = () => import('./routes/UserManagementPage.svelte');
+  const loadUserEditorPage = () => import('./routes/UserEditorPage.svelte');
 
   let { url = '' }: { url?: string } = $props();
 
@@ -23,16 +25,16 @@
 </script>
 
 <Router {url}>
-  <Route path="/login"><LoginPage /></Route>
-  <Route path="/"><ProtectedPage><DashboardPage /></ProtectedPage></Route>
-  <Route path="/dashboard"><ProtectedPage><DashboardPage /></ProtectedPage></Route>
-  <Route path="/live-tracking"><ProtectedPage><LiveTrackingPage /></ProtectedPage></Route>
-  <Route path="/history"><ProtectedPage><HistoryPage /></ProtectedPage></Route>
-  <Route path="/quality-tracking"><ProtectedPage><QualityTrackingPage /></ProtectedPage></Route>
-  <Route path="/part-configuration/new"><ProtectedPage><PartEditorPage /></ProtectedPage></Route>
-  <Route path="/part-configuration/:id/edit" let:params><ProtectedPage><PartEditorPage id={params.id} /></ProtectedPage></Route>
-  <Route path="/part-configuration"><ProtectedPage><PartConfigurationPage /></ProtectedPage></Route>
-  <Route path="/user-management/new"><ProtectedPage><UserEditorPage /></ProtectedPage></Route>
-  <Route path="/user-management/:id/edit" let:params><ProtectedPage><UserEditorPage id={params.id} /></ProtectedPage></Route>
-  <Route path="/user-management"><ProtectedPage><UserManagementPage /></ProtectedPage></Route>
+  <Route path="/login"><LazyRoute loader={loadLoginPage} /></Route>
+  <Route path="/"><ProtectedPage><LazyRoute loader={loadDashboardPage} /></ProtectedPage></Route>
+  <Route path="/dashboard"><ProtectedPage><LazyRoute loader={loadDashboardPage} /></ProtectedPage></Route>
+  <Route path="/live-tracking"><ProtectedPage><LazyRoute loader={loadLiveTrackingPage} /></ProtectedPage></Route>
+  <Route path="/history"><ProtectedPage><LazyRoute loader={loadHistoryPage} /></ProtectedPage></Route>
+  <Route path="/quality-tracking"><ProtectedPage><LazyRoute loader={loadQualityTrackingPage} /></ProtectedPage></Route>
+  <Route path="/part-configuration/new"><ProtectedPage><LazyRoute loader={loadPartEditorPage} /></ProtectedPage></Route>
+  <Route path="/part-configuration/:id/edit" let:params><ProtectedPage><LazyRoute loader={loadPartEditorPage} id={params.id} /></ProtectedPage></Route>
+  <Route path="/part-configuration"><ProtectedPage><LazyRoute loader={loadPartConfigurationPage} /></ProtectedPage></Route>
+  <Route path="/user-management/new"><ProtectedPage><LazyRoute loader={loadUserEditorPage} /></ProtectedPage></Route>
+  <Route path="/user-management/:id/edit" let:params><ProtectedPage><LazyRoute loader={loadUserEditorPage} id={params.id} /></ProtectedPage></Route>
+  <Route path="/user-management"><ProtectedPage><LazyRoute loader={loadUserManagementPage} /></ProtectedPage></Route>
 </Router>

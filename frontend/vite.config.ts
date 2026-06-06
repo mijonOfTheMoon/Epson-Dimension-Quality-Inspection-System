@@ -14,5 +14,13 @@ export default defineConfig({
     target: 'es2022',
     cssCodeSplit: true,
     minify: 'esbuild',
+    manifest: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('apexcharts')) return 'charts';
+        },
+      },
+    },
   },
 });

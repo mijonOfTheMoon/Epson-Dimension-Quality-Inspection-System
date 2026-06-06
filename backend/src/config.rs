@@ -23,6 +23,7 @@ pub struct Config {
     pub database_url: String,
     pub database_ssl: bool,
     pub database_pool_max: u32,
+    pub database_pool_acquire_timeout: Duration,
     pub timezone: String,
     pub jwt_secret: String,
     pub jwt_expires_in: String,
@@ -94,6 +95,10 @@ impl Config {
             database_url,
             database_ssl: parse_bool_env("DATABASE_SSL", false)?,
             database_pool_max: parse_env("DATABASE_POOL_MAX", 10)?,
+            database_pool_acquire_timeout: Duration::from_secs(parse_env(
+                "DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS",
+                30_u64,
+            )?),
             timezone,
             jwt_secret,
             jwt_expires_in: env_or("JWT_EXPIRES_IN", "7d"),

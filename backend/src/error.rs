@@ -94,7 +94,12 @@ impl IntoResponse for AppError {
 
 impl From<sqlx::Error> for AppError {
     fn from(value: sqlx::Error) -> Self {
-        AppError::Internal(value.into())
+        match value {
+            sqlx::Error::PoolTimedOut => {
+                AppError::ServiceUnavailable("Service temporarily unavailable".into())
+            }
+            other => AppError::Internal(other.into()),
+        }
     }
 }
 

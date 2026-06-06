@@ -2,7 +2,7 @@ import { onMount } from 'svelte';
 import type { DashboardSummary } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
-import { startVisibilityPolling } from '$lib/services/polling';
+import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
 const EMPTY: DashboardSummary = {
   total: 0,
@@ -34,7 +34,7 @@ export function useDashboardSummary() {
     try {
       const next = await api.getDashboardSummary();
       if (mounted && current === requestId) {
-        data = next;
+        if (!deepEqual(data, next)) data = next;
         backoff.reset();
         if (showLoading) error = null;
       }

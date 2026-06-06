@@ -67,7 +67,6 @@
     try {
       localStorage.setItem(BOXES_DISABLED_KEY, value ? 'true' : 'false');
     } catch {
-      // Ignore storage failures
     }
   };
 
