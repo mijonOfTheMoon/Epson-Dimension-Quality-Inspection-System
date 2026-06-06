@@ -254,8 +254,6 @@
   const measurements = $derived(selectedDetection?.measurements ?? []);
   const okCount = $derived(measurements.filter((item) => item.status === 'OK').length);
   const ngCount = $derived(measurements.filter((item) => item.status !== 'OK').length);
-
-  // Derive the full inspection object for the selected detection (needed for Telegram)
   const selectedInspection = $derived.by(() => {
     const key = selectedDetectionKey;
     if (!key) return null;
@@ -269,7 +267,6 @@
     if (!selectedInspection || !selectedDetection || sendingTelegramLive) return;
     sendingTelegramLive = true;
     try {
-      // Build a pseudo-inspection object combining the inspection context with the selected detection's measurements
       const payload = {
         id: selectedInspection.id,
         partName: selectedInspection.partName,

@@ -5,10 +5,6 @@ const TELEGRAM_BOT_TOKEN =
 const TELEGRAM_CHAT_ID =
   import.meta.env.VITE_TELEGRAM_CHAT_ID || '-5201350124';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 interface MeasurementLike {
   dimensionName: string;
   measured: number;
@@ -31,10 +27,6 @@ interface InspectionLike {
   measurements: MeasurementLike[];
   frameUrl?: string | null;
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 async function telegramSendMessage(text: string): Promise<boolean> {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -73,10 +65,6 @@ async function fetchFrameBlob(detail: InspectionLike): Promise<Blob | null> {
   }
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// 1. Send individual inspection report (used on LiveTrackingPage)
-// ---------------------------------------------------------------------------
 
 function buildInspectionCaption(detail: InspectionLike): string {
   const statusEmoji = detail.status === 'OK' ? '✅' : '🚨';
@@ -118,22 +106,14 @@ export async function sendInspectionToTelegram(detail: InspectionLike): Promise<
   return telegramSendMessage(caption);
 }
 
-// ---------------------------------------------------------------------------
-// 2. Send NG summary report (used on HistoryPage)
-//    Fetches dashboard + parts data, aggregates, and sends ONE message.
-// ---------------------------------------------------------------------------
-
 export async function sendNgSummaryToTelegram(): Promise<boolean> {
-  // Fetch dashboard summary + parts data in parallel
   const [dashboard, parts] = await Promise.all([
     api.getDashboardSummary(),
     api.getParts(),
   ]);
 
-  // Build vendor lookup from parts data
   const vendorByPartCode = new Map(parts.map((p) => [p.partCode, p.vendor]));
 
-  // --- Section 1: Part-level risk summary ---
   const partLines = dashboard.partRisk
     .filter((p) => p.ng > 0)
     .sort((a, b) => b.ngRate - a.ngRate)
