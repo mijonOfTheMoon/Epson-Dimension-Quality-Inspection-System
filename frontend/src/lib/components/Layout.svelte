@@ -47,8 +47,6 @@
   for (const item of navItems) {
     linkPropsMap[item.to] = ({ isCurrent, location }) => {
       const isDashboardRoot = item.to === '/dashboard' && location.pathname === '/';
-      // Keep the parent menu highlighted while on its nested editor routes
-      // (e.g. /part-configuration/new or /user-management/:id/edit).
       const isNestedRoute = location.pathname.startsWith(`${item.to}/`);
       const active = isCurrent || isDashboardRoot || isNestedRoute;
       return {
@@ -96,9 +94,13 @@
       {/if}
       
       <button onclick={() => userMenuOpen = !userMenuOpen} class="flex w-full items-center gap-3 rounded-2xl p-2.5 hover:bg-slate-800/40 text-left transition-colors duration-200 group border border-transparent hover:border-slate-800/20">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-semibold text-indigo-300 group-hover:scale-105 transition-transform">
-          {auth.user?.name?.charAt(0).toUpperCase() ?? ''}
-        </div>
+        {#if auth.user?.avatar}
+          <img src={auth.user.avatar} alt={auth.user?.name ?? ''} class="w-9 h-9 rounded-xl object-cover border border-indigo-500/30 group-hover:scale-105 transition-transform" />
+        {:else}
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-semibold text-indigo-300 group-hover:scale-105 transition-transform">
+            {auth.user?.name?.charAt(0).toUpperCase() ?? ''}
+          </div>
+        {/if}
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold text-slate-200 truncate leading-none">{auth.user?.name ?? ''}</div>
           <div class="text-[11px] text-slate-400 font-medium mt-1 truncate">{roleLabels[auth.user?.role ?? ''] ?? ''}</div>

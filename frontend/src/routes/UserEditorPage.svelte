@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { ArrowLeft, RotateCcw, Save } from 'lucide-svelte';
+  import { ArrowLeft, RotateCcw, Save, Trash2, Upload } from 'lucide-svelte';
   import { navigate } from 'svelte-routing';
   import { useUsers } from '$lib/hooks/useUsers.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { auth } from '$lib/stores/auth.svelte';
   import { clearDraft, loadDraft, saveDraft } from '$lib/services/draft';
+  import { fileToAvatarDataUrl } from '$lib/services/image';
   import type { User, UserRole } from '$lib/types/api';
   import Notice from '$lib/components/Notice.svelte';
 
@@ -62,7 +64,6 @@
     error = null;
     notFound = false;
 
-    // Resume a previously saved draft if the user left mid-edit.
     const draft = loadDraft<UserDraft>(`user-editor:${key}`);
     if (draft) {
       form = draft;
@@ -86,7 +87,6 @@
     initializedFor = key;
   });
 
-  // Persist the working draft so it survives navigating away and back.
   $effect(() => {
     if (initializedFor !== (id ?? 'new')) return;
     saveDraft(draftKey, $state.snapshot(form));
@@ -100,6 +100,29 @@
     } else {
       form = emptyForm();
     }
+  };
+
+  let avatarBusy = $state(false);
+
+  const onAvatarChange = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    avatarBusy = true;
+    error = null;
+    try {
+      form.avatar = await fileToAvatarDataUrl(file);
+    } catch (err) {
+      error = getErrorMessage(err);
+    } finally {
+      avatarBusy = false;
+    }
+  };
+
+  const removeAvatar = () => {
+    form.avatar = '';
   };
 
   const validate = () => {
@@ -127,16 +150,18 @@
         avatar: form.avatar.trim() || undefined,
       };
       if (id) {
-        await api.updateUser(id, {
+        const updated = await api.updateUser(id, {
           ...base,
           password: form.password || undefined,
         });
+        if (auth.user?.id === updated.id) auth.user = updated;
       } else {
         await api.createUser({
           ...base,
           password: form.password,
         });
       }
+      clearDraft(draftKey);
       navigate('/user-management');
     } catch (err) {
       error = getErrorMessage(err);
@@ -195,10 +220,36 @@
           <span class="tracking-wide text-[10px] uppercase">Username Kredensial</span>
           <input bind:value={form.username} class="input font-mono-data text-indigo-600 dark:text-indigo-400 font-bold" placeholder="username_qc" required />
         </label>
-        <label class="space-y-1.5 text-xs font-bold text-slate-500 md:col-span-2">
-          <span class="tracking-wide text-[10px] uppercase">Tautan Gambar Avatar (Opsional)</span>
-          <input bind:value={form.avatar} class="input text-slate-900 dark:text-white font-semibold" placeholder="https://example.com/avatar.png" />
-        </label>
+        <div class="space-y-1.5 text-xs font-bold text-slate-500 md:col-span-2">
+          <span class="tracking-wide text-[10px] uppercase">Foto Avatar (Opsional)</span>
+          <div class="flex items-center gap-4">
+            {#if form.avatar}
+              <img src={form.avatar} alt="Pratinjau avatar" class="w-16 h-16 rounded-2xl object-cover border border-[var(--border)] shadow-sm" />
+            {:else}
+              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg font-bold shadow-sm">
+                {form.name.trim().charAt(0).toUpperCase() || '?'}
+              </div>
+            {/if}
+            <div class="flex items-center gap-2">
+              <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm cursor-pointer {avatarBusy ? 'opacity-60 pointer-events-none' : ''}">
+                {#if avatarBusy}
+                  <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-400/40 border-t-slate-500 animate-spin"></span>
+                  <span>Memproses...</span>
+                {:else}
+                  <Upload class="w-4 h-4" />
+                  <span>{form.avatar ? 'Ganti Gambar' : 'Unggah Gambar'}</span>
+                {/if}
+                <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
+              </label>
+              {#if form.avatar}
+                <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
+                  <Trash2 class="w-4 h-4" /> Hapus
+                </button>
+              {/if}
+            </div>
+          </div>
+          <p class="text-[10px] font-medium text-[var(--muted-foreground)] normal-case tracking-normal pt-0.5">Format gambar, maks. 5 MB. Otomatis dipotong jadi persegi.</p>
+        </div>
       </div>
     </section>
 
