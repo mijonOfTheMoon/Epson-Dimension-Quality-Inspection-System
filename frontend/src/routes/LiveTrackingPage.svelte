@@ -314,9 +314,6 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Live Tracking</h1>
-      <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">
-        Aliran video inspeksi aktif. Data terukur direkam secara instan saat tombol Capture ditekan.
-      </p>
     </div>
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
       <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold shadow-sm">

@@ -58,7 +58,6 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Manajemen User</h1>
-      <p class="text-sm text-[var(--muted-foreground)] mt-1.5 font-medium">Pengaturan akun kredensial, tingkat otorisasi, dan hak akses personel.</p>
     </div>
     <button
       onclick={() => navigate('/user-management/new')}

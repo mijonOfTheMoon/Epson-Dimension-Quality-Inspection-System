@@ -148,7 +148,6 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Riwayat Inspeksi</h1>
-      <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">Traceability data dan hasil ukur historis untuk analisis kualitas berlanjut.</p>
     </div>
     <div class="flex items-center gap-2.5 self-start sm:self-auto">
       <button

@@ -230,7 +230,6 @@
   <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Dashboard</h1>
-      <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">Ringkasan kualitas dan analitik inspeksi dimensi hari ini.</p>
     </div>
     <button 
       onclick={summary.reload} 

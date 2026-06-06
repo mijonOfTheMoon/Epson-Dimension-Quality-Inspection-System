@@ -113,9 +113,6 @@
   <!-- Page Title Header -->
   <div>
     <h1 class="text-slate-900 dark:text-white tracking-tight">Quality Tracking</h1>
-    <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">
-      Monitoring rasio kegagalan (NG) harian per jenis part &amp; kontrol alur permintaan ke vendor.
-    </p>
   </div>
 
   {#if quality.error}

@@ -66,8 +66,6 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Konfigurasi Part</h1>
-      <p class="text-sm text-[var(--muted-foreground)] mt-1.5 font-medium">Pengelolaan master data spesifikasi toleransi dimensi produk untuk standardisasi QC.</p>
-    </div>
     <button
       onclick={() => navigate('/part-configuration/new')}
       class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium self-start sm:self-auto shrink-0"
