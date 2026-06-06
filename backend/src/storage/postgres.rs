@@ -327,6 +327,28 @@ impl DataStore for PostgresStore {
         Ok(Some(event))
     }
 
+    async fn ingest_inspections_atomic(
+        &self,
+        events: &[InspectionCreatedEvent],
+    ) -> anyhow::Result<Vec<String>> {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut tx = self.pool.begin().await?;
+        let mut saved_ids = Vec::new();
+        for event in events {
+            let wrapped = IngestEvent::Inspection(Box::new(event.clone()));
+            if !Self::insert_event_log(&mut tx, &wrapped).await? {
+                continue;
+            }
+            self.insert_inspection(&mut tx, event).await?;
+            saved_ids.push(event.event_id.clone());
+        }
+        tx.commit().await?;
+        Ok(saved_ids)
+    }
+
     async fn upsert_station_status(
         &self,
         event: StationStatusEvent,

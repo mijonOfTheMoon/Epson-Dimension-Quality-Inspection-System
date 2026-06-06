@@ -356,7 +356,10 @@ class InspectionRunner:
                     event["shift"] = self._shift
                     if self._batch_no:
                         event["batchNo"] = self._batch_no
-                    self.http.send_inspection(event, self._encode_jpeg(display, encode_params))
+                    snapshot = self._encode_jpeg(frame, encode_params)
+                    if snapshot is None:
+                        logger.error("Clean_Frame unavailable for capture; sending inspection without snapshot")
+                    self.http.send_inspection(event, snapshot)
                     phase = "locked"
                     clear_count = 0
                     stable_count = 0

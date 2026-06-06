@@ -10,6 +10,10 @@ use crate::domain::*;
 pub trait DataStore: Send + Sync {
     async fn init(&self) -> anyhow::Result<()>;
     async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>>;
+    async fn ingest_inspections_atomic(
+        &self,
+        events: &[InspectionCreatedEvent],
+    ) -> anyhow::Result<Vec<String>>;
     async fn upsert_station_status(
         &self,
         event: StationStatusEvent,

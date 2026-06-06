@@ -5,6 +5,13 @@
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
   import { sendNgSummaryToTelegram } from '$lib/services/telegram';
+  import {
+    detailLoadReducer,
+    DETAIL_TIMEOUT_MS,
+    type DetailLoadState,
+    type DetailLoadEvent,
+  } from '$lib/utils/detailLoadState';
+  import { resolveEntryOverlay } from '$lib/utils/historyOverlay';
 
   const inspections = useInspections(200);
   const parts = useParts();
@@ -14,8 +21,7 @@
   let partFilter = $state('all');
   let expandedId = $state<string | null>(null);
 
-  let detailLoading = $state<Record<string, boolean>>({});
-  let detailErrors = $state<Record<string, string>>({});
+  let detailState = $state<Record<string, DetailLoadState>>({});
   let details = $state<Record<string, any>>({});
   let sendingSummary = $state(false);
   let toast = $state<{ text: string; tone: 'success' | 'error' } | null>(null);
@@ -42,24 +48,48 @@
     }
   };
 
+  const dispatchDetail = (id: string, event: DetailLoadEvent) => {
+    detailState[id] = detailLoadReducer(detailState[id] ?? { phase: 'idle' }, event);
+  };
+
+  const TIMED_OUT = Symbol('detail-timeout');
+
+  const withDetailTimeout = <T,>(promise: Promise<T>): Promise<T | typeof TIMED_OUT> =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(TIMED_OUT), DETAIL_TIMEOUT_MS);
+      promise.then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        (err) => { clearTimeout(timer); reject(err); },
+      );
+    });
+
   const toggleExpand = async (id: string) => {
     if (expandedId === id) {
       expandedId = null;
+      dispatchDetail(id, { type: 'collapse' });
       return;
     }
 
     expandedId = id;
-    if (!details[id] && !detailLoading[id]) {
-      detailLoading[id] = true;
-      detailErrors[id] = '';
-      try {
-        const data = await api.getInspectionDetail(id);
-        details[id] = data;
-      } catch (err) {
-        detailErrors[id] = getErrorMessage(err);
-      } finally {
-        detailLoading[id] = false;
+
+    if (details[id]) {
+      dispatchDetail(id, { type: 'resolve' });
+      return;
+    }
+
+    dispatchDetail(id, { type: 'expand' });
+    try {
+      const result = await withDetailTimeout(api.getInspectionDetail(id));
+      if (detailState[id]?.phase !== 'loading') return;
+      if (result === TIMED_OUT) {
+        dispatchDetail(id, { type: 'timeout' });
+        return;
       }
+      details[id] = result;
+      dispatchDetail(id, { type: 'resolve' });
+    } catch (err) {
+      if (detailState[id]?.phase !== 'loading') return;
+      dispatchDetail(id, { type: 'reject', error: getErrorMessage(err) });
     }
   };
   let page = $state(1);
@@ -258,65 +288,88 @@
               </td>
             </tr>
             {#if expandedId === row.id}
+              {@const rowState = detailState[row.id] ?? { phase: 'idle' }}
               <tr>
                 <td colspan="5" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
-                  {#if detailLoading[row.id]}
-                    <div class="text-xs text-[var(--muted-foreground)] font-bold py-6 text-center animate-pulse flex items-center justify-center gap-2">
-                      <span class="w-3.5 h-3.5 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-                      <span>Menganalisis dan memuat rincian pengukuran...</span>
+                  {#if rowState.phase === 'loading'}
+                    <div class="w-full space-y-4 animate-pulse" aria-hidden="true">
+                      <div class="h-4 w-72 max-w-full rounded bg-slate-200 dark:bg-slate-700/60"></div>
+                      <div class="flex flex-col lg:flex-row gap-4 items-start">
+                        <div class="w-full lg:w-1/2 lg:shrink-0 h-64 rounded-2xl bg-slate-200 dark:bg-slate-700/60"></div>
+                        <div class="w-full lg:flex-1">
+                          <div class="grid sm:grid-cols-2 gap-3.5">
+                            {#each Array(4) as _placeholder, i (i)}
+                              <div class="p-3.5 rounded-xl border border-[var(--border)] bg-slate-100 dark:bg-slate-800/40">
+                                <div class="h-2.5 w-20 rounded bg-slate-200 dark:bg-slate-700/60"></div>
+                                <div class="h-5 w-28 rounded bg-slate-200 dark:bg-slate-700/60 mt-3"></div>
+                                <div class="h-2.5 w-32 rounded bg-slate-200 dark:bg-slate-700/60 mt-3"></div>
+                              </div>
+                            {/each}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  {:else if detailErrors[row.id]}
+                  {:else if rowState.phase === 'error'}
                     <div class="text-xs text-rose-500 font-bold py-6 text-center border border-rose-500/10 rounded-xl bg-rose-500/5">
-                      Gagal memperoleh data: {detailErrors[row.id]}
+                      {rowState.error ?? 'Gagal memuat detail inspeksi.'}
                     </div>
-                  {:else if details[row.id]}
+                  {:else if rowState.phase === 'loaded' && details[row.id]}
                     {@const detail = details[row.id]}
-                    <div class="space-y-4">
+                    <div class="w-full space-y-4">
                       <div class="text-xs text-slate-700 dark:text-slate-300 font-bold border-l-2 border-indigo-500 pl-2">
                         Hasil Analisis Dimensi &bull; Operator: <span class="text-slate-950 dark:text-white">{detail.operatorName}</span>
                       </div>
 
-                      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                        {#each detail.measurements as measurement (measurement.dimensionName)}
-                          {@const mOK = measurement.status === 'OK'}
-                          <div class="p-3.5 rounded-xl border shadow-inner transition-premium hover:-translate-y-[1px] {
-                            mOK 
-                              ? 'bg-emerald-500/5 border-emerald-500/10 dark:border-emerald-500/5' 
-                              : 'bg-rose-500/5 border-rose-500/10 dark:border-rose-500/5'
-                          }">
-                            <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wide">{measurement.dimensionName}</div>
-                            <div class="text-base font-extrabold mt-2 flex items-baseline gap-1.5 font-mono-data">
-                              <span class={mOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                {measurement.measured} {measurement.unit}
-                              </span>
-                              <span class="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded uppercase {
-                                mOK ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
-                              }">
-                                {measurement.status}
-                              </span>
-                            </div>
-                            <div class="text-[10px] text-[var(--muted-foreground)] font-medium mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/40">
-                              Nominal: <span class="text-slate-700 dark:text-slate-300">{measurement.nominal}</span> &bull; Range: <span class="text-slate-700 dark:text-slate-300">{measurement.lowerLimit} ~ {measurement.upperLimit} {measurement.unit}</span>
-                            </div>
+                      <div class="flex flex-col lg:flex-row gap-4 items-start">
+                        {#if detail.frameUrl}
+                          {@const overlay = resolveEntryOverlay(detail.detections[0])}
+                          <div class="w-full lg:w-1/2 lg:shrink-0 relative rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
+                            <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
+                            {#if overlay.positioned}
+                              <div
+                                class="absolute pointer-events-none border-2 {overlay.box.status === 'OK' ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
+                                style="left: {overlay.box.bbox.x}%; top: {overlay.box.bbox.y}%; width: {overlay.box.bbox.width}%; height: {overlay.box.bbox.height}%;"
+                              >
+                                <span class="absolute -top-6 left-0 px-2 py-0.5 bg-slate-900/90 text-white text-[9px] font-bold rounded-lg border border-slate-700/20 whitespace-nowrap shadow-md">
+                                  {overlay.box.scanId}
+                                </span>
+                              </div>
+                            {:else}
+                              <div class="absolute bottom-0 inset-x-0 px-3 py-2 bg-slate-900/80 text-amber-300 text-[10px] font-bold tracking-wide text-center backdrop-blur-sm">
+                                Bounding box tidak dapat diposisikan
+                              </div>
+                            {/if}
                           </div>
-                        {/each}
-                      </div>
+                        {/if}
 
-                      {#if detail.frameUrl}
-                        <div class="mt-4 max-w-xl relative rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
-                          <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
-                          {#each detail.detections as detection (detection.id)}
-                            <div
-                              class="absolute pointer-events-none border-2 {detection.status === 'OK' ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
-                              style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
-                            >
-                              <span class="absolute -top-6 left-0 px-2 py-0.5 bg-slate-900/90 text-white text-[9px] font-bold rounded-lg border border-slate-700/20 whitespace-nowrap shadow-md">
-                                {detection.label}
-                              </span>
-                            </div>
-                          {/each}
+                        <div class="w-full {detail.frameUrl ? 'lg:flex-1' : ''}">
+                          <div class="grid sm:grid-cols-2 gap-3.5">
+                            {#each detail.measurements as measurement (measurement.dimensionName)}
+                              {@const mOK = measurement.status === 'OK'}
+                              <div class="p-3.5 rounded-xl border shadow-inner transition-premium hover:-translate-y-[1px] {
+                                mOK 
+                                  ? 'bg-emerald-500/5 border-emerald-500/10 dark:border-emerald-500/5' 
+                                  : 'bg-rose-500/5 border-rose-500/10 dark:border-rose-500/5'
+                              }">
+                                <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wide">{measurement.dimensionName}</div>
+                                <div class="text-base font-extrabold mt-2 flex items-baseline gap-1.5 font-mono-data">
+                                  <span class={mOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                    {measurement.measured} {measurement.unit}
+                                  </span>
+                                  <span class="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded uppercase {
+                                    mOK ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                                  }">
+                                    {measurement.status}
+                                  </span>
+                                </div>
+                                <div class="text-[10px] text-[var(--muted-foreground)] font-medium mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/40">
+                                  Nominal: <span class="text-slate-700 dark:text-slate-300">{measurement.nominal}</span> &bull; Range: <span class="text-slate-700 dark:text-slate-300">{measurement.lowerLimit} ~ {measurement.upperLimit} {measurement.unit}</span>
+                                </div>
+                              </div>
+                            {/each}
+                          </div>
                         </div>
-                      {/if}
+                      </div>
                     </div>
                   {/if}
                 </td>

@@ -32,72 +32,104 @@ impl IngestionService {
         snapshot: Option<Bytes>,
     ) -> anyhow::Result<Option<IngestEvent>> {
         validate_ingest_event(&event).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        let (events, upload_context) = match event {
+        let event = match event {
             IngestEvent::Station(event) => {
                 let saved = self.store.upsert_station_status(event).await?;
                 return Ok(Some(IngestEvent::Station(saved)));
             }
-            IngestEvent::Inspection(event) => {
-                let upload_context = Some((
-                    event.event_id.clone(),
-                    event.station_id.clone(),
-                    event.timestamp.clone(),
-                ));
-                (split_inspection_objects(*event), upload_context)
-            }
+            IngestEvent::Inspection(event) => *event,
         };
 
-        let mut first_saved = None;
-        let mut saved_inspection_ids = Vec::new();
-        for item in events {
-            let saved = self.store.ingest(item).await?;
-            if let Some(saved) = saved {
-                if let IngestEvent::Inspection(inspection) = &saved {
-                    saved_inspection_ids.push(inspection.event_id.clone());
-                }
-                if first_saved.is_none() {
-                    first_saved = Some(saved);
-                }
-            }
+        let parent_event_id = event.event_id.clone();
+        let station_id = event.station_id.clone();
+        let captured_at = event.timestamp.clone();
+        let source_detections = event.detections.clone();
+        let entries: Vec<InspectionCreatedEvent> = split_inspection_objects(event)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                IngestEvent::Inspection(inspection) => Some(*inspection),
+                IngestEvent::Station(_) => None,
+            })
+            .collect();
+        verify_entries_consistent(&entries, &source_detections)?;
+
+        if entries.is_empty() {
+            return Ok(None);
         }
 
-        if !saved_inspection_ids.is_empty() {
-            if let (
-                Some(jpeg),
-                Some((parent_event_id, station_id, captured_at)),
-                Some(object_store),
-            ) = (snapshot, upload_context, self.object_store.clone())
-            {
-                let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
-                upload_with_retry(&object_store, &key, jpeg, 3).await?;
-                let updated = self
-                    .store
-                    .mark_frame_uploaded(&saved_inspection_ids, &key)
-                    .await?;
-                if let Some(IngestEvent::Inspection(inspection)) = &mut first_saved {
-                    inspection.frame_object_key = Some(key.clone());
-                    inspection.frame_uploaded_at = Some(chrono::Utc::now().to_rfc3339());
-                }
-                tracing::info!(
-                    %parent_event_id,
-                    %station_id,
-                    %key,
-                    updated,
-                    expected = saved_inspection_ids.len(),
-                    "frame uploaded from agent HTTP ingest"
-                );
+        let saved_ids = self.store.ingest_inspections_atomic(&entries).await?;
+        if saved_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let mut first_saved = entries
+            .iter()
+            .find(|entry| saved_ids.contains(&entry.event_id))
+            .cloned()
+            .map(|entry| IngestEvent::Inspection(Box::new(entry)));
+
+        if let (Some(jpeg), Some(object_store)) = (snapshot, self.object_store.clone()) {
+            let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
+            upload_with_retry(&object_store, &key, jpeg, 3).await?;
+            let updated = self.store.mark_frame_uploaded(&saved_ids, &key).await?;
+            if let Some(IngestEvent::Inspection(inspection)) = &mut first_saved {
+                inspection.frame_object_key = Some(key.clone());
+                inspection.frame_uploaded_at = Some(chrono::Utc::now().to_rfc3339());
             }
+            tracing::info!(
+                %parent_event_id,
+                %station_id,
+                %key,
+                updated,
+                expected = saved_ids.len(),
+                "frame uploaded from agent HTTP ingest"
+            );
         }
 
         Ok(first_saved)
     }
 }
 
-fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
-    if event.detections.len() <= 1 {
-        return vec![IngestEvent::Inspection(Box::new(event))];
+fn verify_entries_consistent(
+    entries: &[InspectionCreatedEvent],
+    detections: &[ObjectDetection],
+) -> anyhow::Result<()> {
+    if entries.len() != detections.len() {
+        return Err(anyhow::anyhow!(
+            "history entry count did not match the number of detected objects"
+        ));
     }
 
+    for (entry, detection) in entries.iter().zip(detections.iter()) {
+        let carried = entry.detections.first();
+        let consistent = entry.detections.len() == 1
+            && entry.status == detection.status
+            && entry.confidence_score == detection.confidence_score
+            && measurements_equal(&entry.measurements, &detection.measurements)
+            && carried
+                .map(|carried| bbox_equal(&carried.bbox, &detection.bbox) && carried.id == detection.id)
+                .unwrap_or(false)
+            && entry.event_id.ends_with(&detection.id);
+        if !consistent {
+            return Err(anyhow::anyhow!(
+                "history entry {} data was inconsistent with its detected object",
+                entry.event_id
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn measurements_equal(left: &[Measurement], right: &[Measurement]) -> bool {
+    serde_json::to_value(left).ok() == serde_json::to_value(right).ok()
+}
+
+fn bbox_equal(left: &BoundingBox, right: &BoundingBox) -> bool {
+    left.x == right.x && left.y == right.y && left.width == right.width && left.height == right.height
+}
+
+fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
     event
         .detections
         .iter()

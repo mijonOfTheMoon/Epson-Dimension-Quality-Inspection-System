@@ -11,6 +11,8 @@
   import { api, getErrorMessage } from '$lib/services/api';
   import { sendInspectionToTelegram } from '$lib/services/telegram';
   import { auth } from '$lib/stores/auth.svelte';
+  import { isSelected, measurementStatusLabel, nextSelection, resolveSelection, selectionPresent } from '$lib/utils/selection';
+  import type { StationDetectionGroup } from '$lib/utils/selection';
   import type {
     DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
   } from '$lib/types/api';
@@ -30,7 +32,6 @@
   }
 
   type IconComponent = typeof StopCircle;
-  const BOXES_DISABLED_KEY = 'diminspect_live_tracking_boxes_disabled';
   const PHASE_LABELS: Record<StationPhase, { text: string; tone: string; icon: IconComponent }> = {
     idle: { text: 'Idle', tone: 'bg-slate-500/10 border border-slate-500/20 text-slate-500', icon: StopCircle },
     calibrating: { text: 'Kalibrasi', tone: 'bg-amber-500/10 border border-amber-500/20 text-amber-500', icon: RefreshCcw },
@@ -54,23 +55,6 @@
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
   }
 
-  const readBoxesDisabled = () => {
-    if (typeof localStorage === 'undefined') return false;
-    try {
-      return localStorage.getItem(BOXES_DISABLED_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  };
-
-  const persistBoxesDisabled = (value: boolean) => {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(BOXES_DISABLED_KEY, value ? 'true' : 'false');
-    } catch {
-    }
-  };
-
   const inspections = useInspections(40, 10000, 30000);
   const stations = useStations();
   const parts = useParts();
@@ -83,7 +67,6 @@
   let focusedStationId = $state<string | null>(null);
   let menuStationId = $state<string | null>(null);
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
-  let boxesDisabled = $state(readBoxesDisabled());
   const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
   const stationRefreshBurstMs = [250, 750, 1500, 3000];
   const stationRefreshTimers: number[] = [];
@@ -109,12 +92,15 @@
     return map;
   });
 
-  const selectedDetection = $derived.by(() => {
-    const key = selectedDetectionKey;
-    if (!key) return null;
-    const group = latestGroupsByStation.get(key.stationId);
-    return group?.detections.find((item) => item.id === key.detectionId) ?? null;
+  const selectionGroups = $derived.by(() => {
+    const map = new Map<string, StationDetectionGroup>();
+    for (const [stationId, group] of latestGroupsByStation) {
+      map.set(stationId, { stationId, detections: group.detections });
+    }
+    return map;
   });
+
+  const selectedDetection = $derived(resolveSelection(selectedDetectionKey, selectionGroups));
 
   const partByCode = $derived.by(() => new Map(parts.data.map((part) => [part.partCode, part])));
   const defaultPartCode = $derived(parts.data[0]?.partCode ?? '');
@@ -160,19 +146,8 @@
     if (changed) pendingStart = next;
   });
 
-  let latestHandledInspectionId: string | null = null;
   $effect(() => {
-    const latest = inspections.data[0];
-    if (!latest) return;
-    if (latest.id === latestHandledInspectionId) return;
-    latestHandledInspectionId = latest.id;
-    if (boxesDisabled) {
-      selectedDetectionKey = null;
-      return;
-    }
-    if (latest.detections[0]) {
-      selectedDetectionKey = { stationId: latest.stationId, detectionId: latest.detections[0].id };
-    } else {
+    if (selectedDetectionKey && !selectionPresent(selectedDetectionKey, selectionGroups)) {
       selectedDetectionKey = null;
     }
   });
@@ -252,8 +227,6 @@
   });
 
   const measurements = $derived(selectedDetection?.measurements ?? []);
-  const okCount = $derived(measurements.filter((item) => item.status === 'OK').length);
-  const ngCount = $derived(measurements.filter((item) => item.status !== 'OK').length);
   const selectedInspection = $derived.by(() => {
     const key = selectedDetectionKey;
     if (!key) return null;
@@ -386,19 +359,19 @@
             {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
             {@const latestGroup = latestGroupsByStation.get(station.stationId)}
-            {@const detections = boxesDisabled ? [] : (latestGroup?.detections ?? [])}
+            {@const detections = latestGroup?.detections ?? []}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
                 <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} />
 
                 {#each detections as detection (detection.id)}
-                  {@const selected = selectedDetectionKey?.stationId === station.stationId && selectedDetectionKey.detectionId === detection.id}
+                  {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
                   {@const isOK = detection.status === 'OK'}
                   <button
                     onclick={(event) => {
                       event.stopPropagation();
-                      selectedDetectionKey = { stationId: station.stationId, detectionId: detection.id };
+                      selectedDetectionKey = nextSelection({ stationId: station.stationId, detectionId: detection.id });
                     }}
                     class="absolute bg-transparent transition-all border-2 {selected ? 'ring-2 ring-white scale-[1.02] z-30' : 'z-20'} {isOK ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
                     style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
@@ -600,22 +573,22 @@
                 Telegram
               </button>
             {/if}
-            <button
-              type="button"
-              onclick={() => {
-                selectedDetectionKey = null;
-                boxesDisabled = true;
-                persistBoxesDisabled(true);
-              }}
-              class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-premium"
-            >
-              <RotateCcw class="w-3 h-3" /> Reset Box
-            </button>
+            {#if selectedDetection}
+              <button
+                type="button"
+                onclick={() => {
+                  selectedDetectionKey = null;
+                }}
+                class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-premium"
+              >
+                <RotateCcw class="w-3 h-3" /> Reset Box
+              </button>
+            {/if}
           </div>
         </div>
 
         <div class="p-4 space-y-4">
-          <div class="grid grid-cols-3 gap-2.5 text-center">
+          <div class="grid grid-cols-2 gap-2.5 text-center">
             <div class="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--border)] p-2.5 shadow-sm">
               <div class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Status</div>
               <div class="text-sm font-extrabold mt-1.5 {
@@ -634,12 +607,6 @@
                 {selectedDetection ? `${selectedDetection.confidenceScore}%` : '-'}
               </div>
             </div>
-            <div class="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--border)] p-2.5 shadow-sm">
-              <div class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">OK / NG</div>
-              <div class="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-1.5 font-mono-data">
-                <span class="text-emerald-500">{okCount}</span>/<span class="text-rose-500">{ngCount}</span>
-              </div>
-            </div>
           </div>
 
           {#if measurements.length === 0}
@@ -650,7 +617,7 @@
             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
               {#each measurements as measurement (measurement.dimensionName)}
                 {@const delta = measurement.measured - measurement.nominal}
-                {@const statusLabel = measurement.status === 'UNREADABLE' ? 'Tidak terbaca' : measurement.status}
+                {@const statusLabel = measurementStatusLabel(measurement.status)}
                 {@const isOK = measurement.status === 'OK'}
                 <div class="rounded-xl border border-[var(--border)] p-3 bg-slate-50/20 dark:bg-slate-900/10 space-y-2.5">
                   <div class="flex items-start justify-between gap-3">
