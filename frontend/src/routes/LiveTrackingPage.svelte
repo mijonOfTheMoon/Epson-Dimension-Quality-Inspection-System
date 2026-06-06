@@ -2,13 +2,14 @@
   import { onDestroy } from 'svelte';
   import {
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
-    RotateCcw, StopCircle, Trash2, Video, XCircle, Zap,
+    RotateCcw, Send, StopCircle, Trash2, Video, XCircle, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { sendInspectionToTelegram } from '$lib/services/telegram';
   import { auth } from '$lib/stores/auth.svelte';
   import type {
     DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
@@ -253,6 +254,46 @@
   const measurements = $derived(selectedDetection?.measurements ?? []);
   const okCount = $derived(measurements.filter((item) => item.status === 'OK').length);
   const ngCount = $derived(measurements.filter((item) => item.status !== 'OK').length);
+
+  // Derive the full inspection object for the selected detection (needed for Telegram)
+  const selectedInspection = $derived.by(() => {
+    const key = selectedDetectionKey;
+    if (!key) return null;
+    const group = latestGroupsByStation.get(key.stationId);
+    return group?.latest ?? null;
+  });
+
+  let sendingTelegramLive = $state(false);
+
+  const handleSendTelegramLive = async () => {
+    if (!selectedInspection || !selectedDetection || sendingTelegramLive) return;
+    sendingTelegramLive = true;
+    try {
+      // Build a pseudo-inspection object combining the inspection context with the selected detection's measurements
+      const payload = {
+        id: selectedInspection.id,
+        partName: selectedInspection.partName,
+        partCode: selectedInspection.partCode,
+        status: selectedDetection.status,
+        stationId: selectedInspection.stationId,
+        operatorName: selectedInspection.operatorName,
+        timestamp: selectedInspection.timestamp,
+        confidenceScore: selectedDetection.confidenceScore,
+        measurements: selectedDetection.measurements,
+        frameUrl: selectedInspection.frameUrl,
+      };
+      const ok = await sendInspectionToTelegram(payload);
+      if (ok) {
+        showToast('Berhasil mengirim laporan ke Telegram');
+      } else {
+        showToast('Gagal mengirim ke Telegram', 'error');
+      }
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      sendingTelegramLive = false;
+    }
+  };
 
   onDestroy(() => {
     for (const timer of stationRefreshTimers) {
@@ -559,17 +600,35 @@
               {selectedDetection ? `Objek: ${selectedDetection.label}` : 'Pilih bounding box di kiri'}
             </p>
           </div>
-          <button
-            type="button"
-            onclick={() => {
-              selectedDetectionKey = null;
-              boxesDisabled = true;
-              persistBoxesDisabled(true);
-            }}
-            class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-premium"
-          >
-            <RotateCcw class="w-3 h-3" /> Reset Box
-          </button>
+          <div class="flex items-center gap-1.5">
+            {#if selectedDetection}
+              <button
+                type="button"
+                disabled={sendingTelegramLive}
+                onclick={() => { void handleSendTelegramLive(); }}
+                class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-bold shadow-sm active:scale-[0.97] transition-premium disabled:opacity-50 disabled:pointer-events-none"
+                title="Kirim laporan ke Telegram"
+              >
+                {#if sendingTelegramLive}
+                  <span class="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+                {:else}
+                  <Send class="w-3 h-3" />
+                {/if}
+                Telegram
+              </button>
+            {/if}
+            <button
+              type="button"
+              onclick={() => {
+                selectedDetectionKey = null;
+                boxesDisabled = true;
+                persistBoxesDisabled(true);
+              }}
+              class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-premium"
+            >
+              <RotateCcw class="w-3 h-3" /> Reset Box
+            </button>
+          </div>
         </div>
 
         <div class="p-4 space-y-4">

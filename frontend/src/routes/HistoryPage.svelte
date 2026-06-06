@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Search, Download, ChevronDown, ChevronUp } from 'lucide-svelte';
+  import { Search, Download, ChevronDown, ChevronUp, Send } from 'lucide-svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
+  import { sendNgSummaryToTelegram } from '$lib/services/telegram';
 
   const inspections = useInspections(200);
   const parts = useParts();
@@ -16,6 +17,30 @@
   let detailLoading = $state<Record<string, boolean>>({});
   let detailErrors = $state<Record<string, string>>({});
   let details = $state<Record<string, any>>({});
+  let sendingSummary = $state(false);
+  let toast = $state<{ text: string; tone: 'success' | 'error' } | null>(null);
+
+  const showToast = (text: string, tone: 'success' | 'error' = 'success') => {
+    toast = { text, tone };
+    setTimeout(() => { toast = null; }, 3500);
+  };
+
+  const handleSendNgSummary = async () => {
+    if (sendingSummary) return;
+    sendingSummary = true;
+    try {
+      const ok = await sendNgSummaryToTelegram();
+      if (ok) {
+        showToast('Rekap kecacatan berhasil dikirim ke Telegram');
+      } else {
+        showToast('Gagal mengirim rekap ke Telegram', 'error');
+      }
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      sendingSummary = false;
+    }
+  };
 
   const toggleExpand = async (id: string) => {
     if (expandedId === id) {
@@ -110,18 +135,42 @@
 </script>
 
 <div class="space-y-6 select-none font-sans">
+  {#if toast}
+    <div class="fixed top-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-bold text-white border animate-in fade-in slide-in-from-top-4 duration-300 {
+      toast.tone === 'error'
+        ? 'bg-rose-600/95 border-rose-500/30 backdrop-blur-md shadow-rose-600/25'
+        : 'bg-emerald-600/95 border-emerald-500/30 backdrop-blur-md shadow-emerald-600/25'
+    }">
+      {toast.text}
+    </div>
+  {/if}
   <!-- Title Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Riwayat Inspeksi</h1>
       <p class="text-[var(--muted-foreground)] text-sm mt-1.5 font-medium">Traceability data dan hasil ukur historis untuk analisis kualitas berlanjut.</p>
     </div>
-    <button 
-      onclick={exportCSV} 
-      class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium self-start sm:self-auto"
-    >
-      <Download class="w-4 h-4" /> Export CSV
-    </button>
+    <div class="flex items-center gap-2.5 self-start sm:self-auto">
+      <button
+        disabled={sendingSummary}
+        onclick={handleSendNgSummary}
+        class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
+      >
+        {#if sendingSummary}
+          <span class="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+          Mengirim...
+        {:else}
+          <Send class="w-4 h-4" />
+          Kirim Rekap NG ke Telegram
+        {/if}
+      </button>
+      <button 
+        onclick={exportCSV} 
+        class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium"
+      >
+        <Download class="w-4 h-4" /> Export CSV
+      </button>
+    </div>
   </div>
 
   {#if error}
