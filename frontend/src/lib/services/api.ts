@@ -263,7 +263,7 @@ export const api = {
       body: JSON.stringify(input),
     });
   },
-  updateUser(id: string, input: { username: string; password?: string; name: string; role: UserRole; avatar?: string }) {
+  updateUser(id: string, input: { username: string; password?: string; name: string; role: UserRole; avatar?: string; removeAvatar?: boolean }) {
     return request<User>(`/api/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),

@@ -18,6 +18,7 @@
     password: string;
     role: UserRole;
     avatarKey: string | null;
+    removeAvatar: boolean;
   }
 
   const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
@@ -48,6 +49,7 @@
       password: '',
       role: 'operator',
       avatarKey: null,
+      removeAvatar: false,
     };
   }
 
@@ -58,6 +60,7 @@
       password: '',
       role: user.role,
       avatarKey: null,
+      removeAvatar: false,
     };
   }
 
@@ -79,7 +82,7 @@
       if (id && users.loading) return;
       form = draft;
       clearLocalPreview();
-      if (id && !draft.avatarKey) {
+      if (id && !draft.avatarKey && !draft.removeAvatar) {
         avatarPreviewUrl = users.data.find((item) => item.id === id)?.avatar ?? null;
       } else {
         avatarPreviewUrl = null;
@@ -145,6 +148,7 @@
       const blob = await fileToAvatarBlob(file);
       const { objectKey } = await api.uploadAvatar(blob);
       form.avatarKey = objectKey;
+      form.removeAvatar = false;
       clearLocalPreview();
       localPreviewUrl = URL.createObjectURL(blob);
       avatarPreviewUrl = localPreviewUrl;
@@ -157,6 +161,7 @@
 
   const removeAvatar = () => {
     form.avatarKey = null;
+    form.removeAvatar = true;
     clearLocalPreview();
     avatarPreviewUrl = null;
   };
@@ -189,6 +194,7 @@
         const updated = await api.updateUser(id, {
           ...base,
           password: form.password || undefined,
+          removeAvatar: form.removeAvatar,
         });
         if (auth.user?.id === updated.id) auth.user = updated;
       } else {

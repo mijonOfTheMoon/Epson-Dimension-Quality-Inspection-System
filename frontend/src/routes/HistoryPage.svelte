@@ -233,7 +233,7 @@
   </div>
 
   <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
-    Ditemukan: <span class="text-indigo-500 font-mono-data">{filtered.length}</span> baris data
+    Ditemukan <span class="text-indigo-500 font-mono-data">{filtered.length}</span> Riwayat
   </div>
 
   <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden">

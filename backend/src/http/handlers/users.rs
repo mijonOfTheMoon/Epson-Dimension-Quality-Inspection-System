@@ -84,6 +84,7 @@ pub struct UserUpdateBody {
     name: String,
     role: UserRole,
     avatar: Option<String>,
+    remove_avatar: Option<bool>,
 }
 
 pub async fn upload_avatar(
@@ -165,14 +166,21 @@ pub async fn update(
         return Err(AppError::Forbidden);
     }
 
-    let avatar = normalize_avatar(body.avatar)?;
-    let new_key = avatar.clone();
+    let new_avatar = normalize_avatar(body.avatar)?;
 
     let existing = state
         .store
         .find_user_by_id(&id)
         .await?
         .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+
+    let final_avatar = if new_avatar.is_some() {
+        new_avatar
+    } else if body.remove_avatar.unwrap_or(false) {
+        None
+    } else {
+        existing.avatar.clone()
+    };
 
     let update_input = if is_manager {
         if body.username.trim().is_empty() || body.name.trim().is_empty() {
@@ -201,7 +209,7 @@ pub async fn update(
             password: body.password.filter(|password| !password.is_empty()),
             name: body.name,
             role: body.role,
-            avatar,
+            avatar: final_avatar.clone(),
         }
     } else {
         UserUpdateInput {
@@ -209,7 +217,7 @@ pub async fn update(
             password: None,
             name: existing.name.clone(),
             role: existing.role,
-            avatar,
+            avatar: final_avatar.clone(),
         }
     };
 
@@ -222,7 +230,9 @@ pub async fn update(
         .map_err(bad_request)?
         .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
 
-    if let Some(previous) = previous_avatar_to_delete(previous_key.as_deref(), new_key.as_deref()) {
+    if let Some(previous) =
+        previous_avatar_to_delete(previous_key.as_deref(), final_avatar.as_deref())
+    {
         if let Some(store) = state.object_store.as_ref() {
             avatar::delete_avatar(store.as_ref(), previous).await;
         }
