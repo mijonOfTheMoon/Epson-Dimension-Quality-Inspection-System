@@ -249,22 +249,26 @@
             {avatarPlaceholder(form.name)}
           </div>
         {/if}
-        <div class="flex items-center gap-2">
-          <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm cursor-pointer {avatarBusy ? 'opacity-60 pointer-events-none' : ''}">
-            {#if avatarBusy}
-              <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-400/40 border-t-slate-500 animate-spin"></span>
-              <span>Memproses...</span>
-            {:else}
-              <Upload class="w-4 h-4" />
-              <span>{avatarPreviewUrl ? 'Ganti Foto' : 'Unggah Foto'}</span>
+        <div class="space-y-2">
+          <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Foto Profil</p>
+          <div class="flex items-center gap-2">
+            <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm cursor-pointer {avatarBusy ? 'opacity-60 pointer-events-none' : ''}">
+              {#if avatarBusy}
+                <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-400/40 border-t-slate-500 animate-spin"></span>
+                <span>Memproses...</span>
+              {:else}
+                <Upload class="w-4 h-4" />
+                <span>{avatarPreviewUrl ? 'Ganti Foto' : 'Unggah Foto'}</span>
+              {/if}
+              <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
+            </label>
+            {#if avatarPreviewUrl}
+              <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
+                <Trash2 class="w-4 h-4" /> Hapus
+              </button>
             {/if}
-            <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
-          </label>
-          {#if avatarPreviewUrl}
-            <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
-              <Trash2 class="w-4 h-4" /> Hapus
-            </button>
-          {/if}
+          </div>
+          <p class="text-[10px] font-medium text-[var(--muted-foreground)]">JPG/PNG, maks. 5 MB.</p>
         </div>
       </div>
 
