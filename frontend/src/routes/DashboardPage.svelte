@@ -484,7 +484,7 @@
       {:else}
         <div class="divide-y divide-[var(--border)] overflow-hidden">
           {#each summary.data.recentInspections as inspection (inspection.id)}
-            <div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0 px-2 rounded-xl hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-premium">
+            <div class="flex items-center gap-3 py-4 first:pt-0 last:pb-0 px-2 rounded-xl hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-premium">
               <span class="inline-flex items-center justify-center w-11 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
                 inspection.status === 'OK' 
                   ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
