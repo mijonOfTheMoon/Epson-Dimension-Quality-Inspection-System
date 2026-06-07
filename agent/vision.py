@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 
 import cv2
 import numpy as np
 
 ARUCO_SIZE_MM = 20.00
 PIXEL_TO_MM_RATIO = 0.05
-GUARDBAND_PERCENT = 0.2
 MIN_CONTOUR_AREA = 1000
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -219,9 +219,21 @@ def _refine_edge_1d(image_gray: np.ndarray, rough_x: int, rough_y: int) -> float
 
 
 def _status_for(value: float, spec: DimensionSpec) -> str:
-    span = spec.upper_limit - spec.lower_limit
-    guard = span * GUARDBAND_PERCENT * 0.5
-    return "OK" if (spec.lower_limit + guard) <= value <= (spec.upper_limit - guard) else "NG"
+    return "OK" if spec.lower_limit <= value <= spec.upper_limit else "NG"
+
+
+def _confidence_for_measurements(measurements: list["Measurement"]) -> float:
+    if not measurements:
+        return 0.0
+    scores: list[float] = []
+    for measurement in measurements:
+        if measurement.status == "UNREADABLE":
+            scores.append(0.0)
+            continue
+        half_span = max((measurement.upperLimit - measurement.lowerLimit) / 2.0, 1e-6)
+        deviation = abs(measurement.measured - measurement.nominal) / half_span
+        scores.append(max(0.0, 1.0 - deviation))
+    return round((sum(scores) / len(scores)) * 100.0, 2)
 
 
 def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray, ratio: float) -> float | None:
@@ -375,7 +387,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         status = "OK" if detection_ok else "NG"
         color = (0, 255, 0) if status == "OK" else (0, 0, 255)
         detection = ObjectDetection(
-            id=f"obj-{index}",
+            id=f"obj-{index}-{uuid4().hex[:12]}",
             label=f"{part.part_code} #{index}",
             bbox=BoundingBox(
                 x=round((x / frame.shape[1]) * 100, 2),
@@ -384,7 +396,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
                 height=round((h_box / frame.shape[0]) * 100, 2),
             ),
             status=status,
-            confidenceScore=95.0 if status == "OK" else 88.0,
+            confidenceScore=_confidence_for_measurements(measurements),
             measurements=measurements,
         )
         detections.append(detection)
