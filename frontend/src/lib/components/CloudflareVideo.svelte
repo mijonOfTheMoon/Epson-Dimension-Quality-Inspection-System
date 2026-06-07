@@ -7,17 +7,25 @@
     stationId: string;
     online: boolean;
     running: boolean;
+    onPlayingChange?: (playing: boolean) => void;
   }
 
-  let { stationId, online, running }: Props = $props();
+  let { stationId, online, running, onPlayingChange }: Props = $props();
   let videoEl = $state<HTMLVideoElement | null>(null);
   let pc: RTCPeerConnection | null = null;
   let message = $state('Kamera Siap - Konfigurasi lalu klik Mulai');
   let connecting = $state(false);
   let pendingStream = $state<MediaStream | null>(null);
+  let playing = $state(false);
   let prevStationId = '';
   let prevOnline = false;
   let prevRunning = false;
+
+  const setPlaying = (value: boolean) => {
+    if (playing === value) return;
+    playing = value;
+    onPlayingChange?.(value);
+  };
 
   const defaultIceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
   const videoReadyRetryMs = 500;
@@ -356,6 +364,12 @@
     }
   });
 
+  $effect(() => {
+    if (!running || !online || message) {
+      setPlaying(false);
+    }
+  });
+
   let activeController: AbortController | null = null;
 
   const startConnection = (sid: string, on: boolean, run: boolean) => {
@@ -400,6 +414,9 @@
     autoplay
     playsinline
     muted
+    onplaying={() => setPlaying(true)}
+    onloadeddata={() => setPlaying(true)}
+    onemptied={() => setPlaying(false)}
     class="w-full h-full object-contain"
   ></video>
 {:else}

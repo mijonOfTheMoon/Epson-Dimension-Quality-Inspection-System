@@ -68,7 +68,6 @@ pub fn build_router(
             "/api/inspections/{event_id}/frame/refresh-url",
             post(handlers::inspections::refresh_frame_url),
         )
-        .route("/api/stations", get(handlers::stations::list))
         .route(
             "/api/stations/{stationId}",
             delete(handlers::stations::delete_station),
@@ -90,7 +89,6 @@ pub fn build_router(
             "/api/users/{id}",
             patch(handlers::users::update).delete(handlers::users::delete_user),
         )
-        .route("/api/agents", get(handlers::agents::list))
         .route(
             "/api/agents/{stationId}/command",
             post(handlers::agents::command),
@@ -113,6 +111,7 @@ pub fn build_router(
             put(handlers::video::renegotiate),
         )
         .route("/api/quality-records", get(handlers::quality_records::list))
+        .route("/api/realtime/mqtt", get(handlers::realtime::mqtt_config))
         .route(
             "/api/quality-records/{id}/status",
             patch(handlers::quality_records::update_status),

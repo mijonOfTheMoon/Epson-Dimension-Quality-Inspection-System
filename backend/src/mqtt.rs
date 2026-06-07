@@ -10,11 +10,6 @@ use uuid::Uuid;
 use crate::config::MqttConfig;
 use crate::domain::ObjectDetection;
 use crate::domain::StationPhase;
-use crate::realtime::agent_registry::AgentInfo;
-
-const PRESENCE_LIST_EMPTY_TIMEOUT: Duration = Duration::from_millis(500);
-const PRESENCE_LIST_IDLE_TIMEOUT: Duration = Duration::from_millis(150);
-const PRESENCE_LIST_POLL_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,10 +61,6 @@ impl MqttService {
         )
     }
 
-    pub fn wildcard_presence_topic(&self) -> String {
-        format!("{}/stations/+/presence", self.config.topic_prefix)
-    }
-
     pub async fn retained_presence(
         &self,
         station_id: &str,
@@ -102,48 +93,6 @@ impl MqttService {
         Ok(None)
     }
 
-    pub async fn list_presence(&self) -> anyhow::Result<Vec<StationPresence>> {
-        let (client, mut eventloop) = self.client("presence-list");
-        client
-            .subscribe(self.wildcard_presence_topic(), QoS::AtLeastOnce)
-            .await
-            .context("failed to subscribe MQTT presence list")?;
-
-        let mut presences = Vec::new();
-        let empty_timeout = self
-            .config
-            .retained_presence_timeout
-            .min(PRESENCE_LIST_EMPTY_TIMEOUT);
-        let mut deadline = Instant::now() + empty_timeout;
-        while Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            match tokio::time::timeout(remaining.min(PRESENCE_LIST_POLL_TIMEOUT), eventloop.poll())
-                .await
-            {
-                Ok(Ok(Event::Incoming(Packet::Publish(publish)))) => {
-                    if publish.payload.is_empty() {
-                        continue;
-                    }
-                    match parse_presence(&publish.payload) {
-                        Ok(presence) => {
-                            presences.push(self.apply_presence_freshness(presence));
-                            deadline = Instant::now() + PRESENCE_LIST_IDLE_TIMEOUT;
-                        }
-                        Err(error) => {
-                            tracing::warn!(topic = %publish.topic, %error, "invalid MQTT presence payload")
-                        }
-                    }
-                }
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => {
-                    return Err(anyhow!(error).context("failed while reading MQTT presence list"))
-                }
-                Err(_) => {}
-            }
-        }
-        Ok(presences)
-    }
-
     pub async fn publish_command<T>(&self, station_id: &str, payload: &T) -> anyhow::Result<()>
     where
         T: Serialize + ?Sized,
@@ -171,23 +120,6 @@ impl MqttService {
         Err(anyhow!(
             "timed out waiting for MQTT command acknowledgement"
         ))
-    }
-
-    pub async fn agent_infos(&self) -> anyhow::Result<Vec<AgentInfo>> {
-        let mut agents = self
-            .list_presence()
-            .await?
-            .into_iter()
-            .filter(|presence| presence.online)
-            .map(|presence| AgentInfo {
-                station_id: presence.station_id,
-                online: presence.online,
-                running: presence.running,
-                connected_at: presence.connected_at,
-            })
-            .collect::<Vec<_>>();
-        agents.sort_by(|a, b| a.station_id.cmp(&b.station_id));
-        Ok(agents)
     }
 
     fn client(&self, purpose: &str) -> (AsyncClient, rumqttc::EventLoop) {

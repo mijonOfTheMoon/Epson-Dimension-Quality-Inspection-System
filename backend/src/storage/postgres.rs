@@ -421,20 +421,6 @@ impl DataStore for PostgresStore {
         row.map(map_inspection).transpose()
     }
 
-    async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>> {
-        let rows = sqlx::query_as::<_, StationRow>(
-            r#"
-            SELECT event_id, station_id, timestamp, state, fps, running, phase, active_part_code, is_active
-            FROM stations
-            WHERE is_active = true
-            ORDER BY timestamp DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        rows.into_iter().map(map_station).collect()
-    }
-
     async fn deactivate_station(
         &self,
         station_id: &str,

@@ -10,12 +10,12 @@ use crate::http::response::CommandDeliveredResponse;
 use crate::http::router::CurrentUser;
 use crate::http::AppState;
 use crate::realtime::agent_registry::{
-    AgentCommand, AgentCommandType, AgentInfo, AgentOperatorPayload, AgentPartPayload,
+    AgentCommand, AgentCommandType, AgentOperatorPayload, AgentPartPayload,
     AgentVideoPayload,
 };
 use crate::storage::DataStore;
 
-use super::{require_auth, require_role, INSPECTION_ROLES};
+use super::{require_role, INSPECTION_ROLES};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,18 +43,6 @@ impl AgentCommandBodyType {
             Self::Recalibrate => "recalibrate",
         }
     }
-}
-
-pub async fn list(
-    State(state): State<AppState>,
-    Extension(current): Extension<CurrentUser>,
-) -> AppResult<Json<Vec<AgentInfo>>> {
-    require_auth(&current)?;
-    let Some(mqtt) = &state.mqtt else {
-        return Ok(Json(Vec::new()));
-    };
-    let agents = mqtt.agent_infos().await?;
-    Ok(Json(agents))
 }
 
 pub async fn command(

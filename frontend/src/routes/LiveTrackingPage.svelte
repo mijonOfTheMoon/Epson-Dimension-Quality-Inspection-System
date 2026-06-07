@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import {
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
     RotateCcw, StopCircle, Trash2, Video, Zap,
@@ -63,9 +62,8 @@
   let focusedStationId = $state<string | null>(null);
   let menuStationId = $state<string | null>(null);
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
+  let videoPlaying = $state<Record<string, boolean>>({});
   const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
-  const stationRefreshBurstMs = [250, 750, 1500, 3000];
-  const stationRefreshTimers: number[] = [];
 
   const merged = $derived(mergeStations(stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
@@ -85,7 +83,7 @@
   const selectionGroups = $derived.by(() => {
     const map = new Map<string, StationDetectionGroup>();
     for (const station of merged) {
-      if (station.online && station.running && station.detections.length > 0) {
+      if (station.online && station.running && videoPlaying[station.stationId] && station.detections.length > 0) {
         map.set(station.stationId, { stationId: station.stationId, detections: station.detections });
       }
     }
@@ -113,15 +111,6 @@
     const next = { ...pendingStart };
     delete next[stationId];
     pendingStart = next;
-  };
-
-  const scheduleStationRefreshBurst = () => {
-    for (const delay of stationRefreshBurstMs) {
-      const timer = window.setTimeout(() => {
-        void stations.refresh();
-      }, delay);
-      stationRefreshTimers.push(timer);
-    }
   };
 
   $effect(() => {
@@ -173,7 +162,6 @@
       await fn();
       showToast(`${label}: ${stationId}`);
       onSuccess?.();
-      await stations.refresh();
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally {
@@ -188,7 +176,6 @@
       if (focusedStationId === stationId) focusedStationId = null;
       if (selectedDetectionKey?.stationId === stationId) selectedDetectionKey = null;
       menuStationId = null;
-      stations.reload();
       showToast(`Kamera dihapus dari tampilan: ${stationId}`);
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
@@ -199,7 +186,6 @@
 
   const retry = () => {
     inspections.reload();
-    stations.reload();
     parts.reload();
   };
 
@@ -219,12 +205,6 @@
   });
 
   const measurements = $derived(selectedDetection?.measurements ?? []);
-
-  onDestroy(() => {
-    for (const timer of stationRefreshTimers) {
-      window.clearTimeout(timer);
-    }
-  });
 </script>
 
 <div class="space-y-6 select-none font-sans">
@@ -313,11 +293,11 @@
             {@const activePart = partForCode(station.activePartCode ?? '') ?? selectedPartType}
             {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
-            {@const detections = liveStationIds.has(station.stationId) ? station.detections : []}
+            {@const detections = liveStationIds.has(station.stationId) && videoPlaying[station.stationId] ? station.detections : []}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
-                <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} />
+                <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
 
                 {#each detections as detection (detection.id)}
                   {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
@@ -430,7 +410,6 @@
                           () => api.startAgent(station.stationId, partCode, view),
                           () => {
                             setPendingStart(station.stationId, true);
-                            scheduleStationRefreshBurst();
                           },
                         )}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
@@ -457,7 +436,6 @@
                           () => api.captureNow(station.stationId, view),
                           () => {
                             refreshInspectionsSoon();
-                            scheduleStationRefreshBurst();
                           },
                         )}
                         title="Simpan data inspeksi"
@@ -480,7 +458,6 @@
                           () => api.stopAgent(station.stationId),
                           () => {
                             setPendingStart(station.stationId, false);
-                            scheduleStationRefreshBurst();
                           },
                         )}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"

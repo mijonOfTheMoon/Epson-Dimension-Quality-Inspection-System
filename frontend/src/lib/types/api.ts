@@ -109,11 +109,11 @@ export interface StationStatusEvent {
   detections?: ObjectDetection[];
 }
 
-export interface AgentInfo {
-  stationId: string;
-  online: boolean;
-  running: boolean;
-  connectedAt: string | null;
+export interface MqttWsInfo {
+  url: string;
+  username?: string;
+  password?: string;
+  presenceTopic: string;
 }
 
 export interface AgentCommandResponse {

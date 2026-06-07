@@ -268,6 +268,7 @@ class InspectionRunner:
             if not ret:
                 sleep(self._frame_interval)
                 continue
+            frame = cv2.flip(frame, 1)
             frames.append(frame)
             now = monotonic()
             if now - last_send >= self._frame_interval:
@@ -326,6 +327,7 @@ class InspectionRunner:
                 ret, frame = cap.read()
                 if not ret:
                     break
+                frame = cv2.flip(frame, 1)
 
                 now = monotonic()
                 elapsed = now - last_frame_ts

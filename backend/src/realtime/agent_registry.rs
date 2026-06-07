@@ -4,15 +4,6 @@ use crate::domain::{DimensionSpec, DimensionView};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentInfo {
-    pub station_id: String,
-    pub online: bool,
-    pub running: bool,
-    pub connected_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AgentPartPayload {
     pub part_id: String,
     pub part_code: String,

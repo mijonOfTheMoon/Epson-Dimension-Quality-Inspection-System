@@ -1,16 +1,15 @@
 import type {
   AgentCommandResponse,
-  AgentInfo,
   AuthLoginResponse,
   CloudflareSessionDescription,
   DashboardSummary,
   DimensionView,
   InspectionCreatedEvent,
   InspectionResult,
+  MqttWsInfo,
   PartType,
   QualityTrackingRecord,
   RequestStatus,
-  StationStatusEvent,
   User,
   UserRole,
   VideoTrackPullResponse,
@@ -194,8 +193,12 @@ export const api = {
       { method: 'POST' },
     );
   },
-  getStations() {
-    return request<StationStatusEvent[]>('/api/stations', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
+  async getRealtimeMqtt(): Promise<MqttWsInfo | null> {
+    try {
+      return await request<MqttWsInfo>('/api/realtime/mqtt');
+    } catch {
+      return null;
+    }
   },
   getQualityRecords() {
     return request<QualityTrackingRecord[]>('/api/quality-records');
@@ -208,9 +211,6 @@ export const api = {
   },
   getDashboardSummary() {
     return request<DashboardSummary>('/api/dashboard/summary', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
-  },
-  getAgents() {
-    return request<AgentInfo[]>('/api/agents', undefined, { timeoutMs: POLLING_TIMEOUT_MS });
   },
   deleteStation(stationId: string) {
     return request<void>(`/api/stations/${encodeURIComponent(stationId)}`, { method: 'DELETE' });

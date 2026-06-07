@@ -26,7 +26,6 @@ pub trait DataStore: Send + Sync {
         &self,
         event_id: &str,
     ) -> anyhow::Result<Option<InspectionCreatedEvent>>;
-    async fn list_stations(&self) -> anyhow::Result<Vec<StationStatusEvent>>;
     async fn deactivate_station(
         &self,
         station_id: &str,

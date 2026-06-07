@@ -303,6 +303,8 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         reverse=True,
     )[:12]
 
+    used_ids: set[str] = set()
+
     for index, contour in enumerate(ordered_contours, start=1):
         x, y, w_box, h_box = cv2.boundingRect(contour)
         moments = cv2.moments(contour)
@@ -385,8 +387,16 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
 
         status = "OK" if detection_ok else "NG"
         color = (0, 255, 0) if status == "OK" else (0, 0, 255)
+        cell_x = max(0, min(9, int((cx / max(frame.shape[1], 1)) * 10)))
+        cell_y = max(0, min(9, int((cy / max(frame.shape[0], 1)) * 10)))
+        detection_id = f"obj-{cell_x}-{cell_y}"
+        dedupe = 1
+        while detection_id in used_ids:
+            dedupe += 1
+            detection_id = f"obj-{cell_x}-{cell_y}-{dedupe}"
+        used_ids.add(detection_id)
         detection = ObjectDetection(
-            id=f"obj-{index}",
+            id=detection_id,
             label=f"{part.part_code} #{index}",
             bbox=BoundingBox(
                 x=round((x / frame.shape[1]) * 100, 2),

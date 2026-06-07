@@ -12,6 +12,7 @@
   "dependencies": {
     "apexcharts": "^5.13.0",
     "lucide-svelte": "^0.470.0",
+    "mqtt": "^5.15.1",
     "svelte": "^5.20.0",
     "svelte-routing": "^2.13.0"
   },
