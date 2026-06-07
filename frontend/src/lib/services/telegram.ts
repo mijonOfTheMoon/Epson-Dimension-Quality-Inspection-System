@@ -67,7 +67,6 @@ async function fetchFrameBlob(detail: InspectionLike): Promise<Blob | null> {
 }
 
 function buildInspectionCaption(detail: InspectionLike): string {
-  const statusEmoji = detail.status === 'OK' ? '✅' : '🚨';
   const formattedDate = new Date(detail.timestamp).toLocaleString('id-ID');
 
   const measurementsText = detail.measurements
@@ -78,7 +77,7 @@ function buildInspectionCaption(detail: InspectionLike): string {
     .join('\n');
 
   return (
-    `${statusEmoji} <b>LAPORAN INSPEKSI ${detail.status}</b> ${statusEmoji}\n\n` +
+    `<b>LAPORAN INSPEKSI ${detail.status}</b>\n\n` +
     `<b>Detail Part:</b>\n` +
     `• <b>Nama Part:</b> ${detail.partName}\n` +
     `• <b>Kode Part:</b> ${detail.partCode}\n` +
@@ -114,37 +113,47 @@ export async function sendNgSummaryToTelegram(): Promise<boolean> {
 
   const vendorByPartCode = new Map(parts.map((p) => [p.partCode, p.vendor]));
 
-  const partLines = dashboard.partRisk
-    .filter((p) => p.ng > 0)
-    .sort((a, b) => b.ngRate - a.ngRate)
-    .map((p) => {
-      const vendor = vendorByPartCode.get(p.partCode) ?? '-';
-      return `• <b>${p.partName}</b> (${p.partCode}) — Vendor: <b>${vendor}</b>\n  Total scan: ${p.total}, NG: <b>${p.ng}</b> (${p.ngRate.toFixed(1)}%)`;
-    });
+  const problemParts = dashboard.problemParts.filter((p) => p.ng > 0);
 
-  const dimLines = dashboard.failingDimensions
-    .filter((d) => d.ngCount > 0)
-    .sort((a, b) => b.ngCount - a.ngCount)
-    .map((d) => {
-      const vendor = vendorByPartCode.get(d.partCode) ?? '-';
-      return `• <b>${d.partName}</b> (Vendor: ${vendor})\n  Dimensi: <b>${d.dimensionName}</b> — NG: <b>${d.ngCount}</b> dari ${d.totalCount} scan (${d.ngRate.toFixed(1)}%)`;
-    });
+  const fmtNum = (v: number) => String(Math.round(v * 1000) / 1000);
+
+  const partBlocks = problemParts.map((p) => {
+    const vendor = p.vendor ?? vendorByPartCode.get(p.partCode) ?? '-';
+
+    const dimLines = p.dimensions
+      .filter((d) => d.ngCount > 0)
+      .sort((a, b) => b.ngCount - a.ngCount)
+      .map((d) => {
+        let dev = '';
+        if (d.avgMeasured > d.upperLimit) {
+          dev = ` · oversize +${fmtNum(d.avgMeasured - d.upperLimit)}${d.unit}`;
+        } else if (d.avgMeasured < d.lowerLimit) {
+          dev = ` · undersize -${fmtNum(d.lowerLimit - d.avgMeasured)}${d.unit}`;
+        }
+        return `   └ ${d.dimensionName}: ${d.ngCount}× NG · rata-rata ${fmtNum(d.avgMeasured)}${d.unit}${dev}`;
+      });
+
+    return (
+      `<b>${p.partName}</b> · ${p.partCode}\n` +
+      `   Vendor ${vendor} · NG ${p.ng}/${p.total} (${p.ngRate.toFixed(1)}%)` +
+      (dimLines.length > 0 ? `\n${dimLines.join('\n')}` : '')
+    );
+  });
 
   const now = new Date().toLocaleString('id-ID');
 
+  const body =
+    problemParts.length > 0
+      ? partBlocks.join('\n\n')
+      : '✅ Tidak ada part NG pada periode ini.';
+
   const text =
-    `🚨 <b>REKAP KECACATAN INSPEKSI</b> 🚨\n` +
-    `📅 ${now}\n\n` +
-    `<b>Ringkasan:</b>\n` +
-    `• Total Inspeksi: <b>${dashboard.total}</b>\n` +
-    `• OK: <b>${dashboard.ok}</b>\n` +
-    `• NG: <b>${dashboard.ng}</b>\n` +
-    `• NG Rate: <b>${dashboard.ngRate.toFixed(1)}%</b>\n\n` +
-    `━━━━━━━━━━━━━━━━━━━\n` +
-    `<b>Part Berisiko Tinggi:</b>\n${partLines.length > 0 ? partLines.join('\n\n') : 'Tidak ada data.'}\n\n` +
-    `━━━━━━━━━━━━━━━━━━━\n` +
-    `<b>Detail Kecacatan per Dimensi:</b>\n${dimLines.length > 0 ? dimLines.join('\n\n') : 'Tidak ada data.'}\n\n` +
-    `<i>— Dikirim otomatis oleh Sistem Inspeksi Dimensi Epson</i>`;
+    `<b>Rekap Kecacatan Inspeksi</b>\n` +
+    `${now}\n\n` +
+    `${dashboard.total} scan · ${dashboard.ok} OK · <b>${dashboard.ng} NG</b> (${dashboard.ngRate.toFixed(1)}%)\n\n` +
+    `━━━━━━━━━━━━━━━\n` +
+    `<b>Part Bermasalah</b>\n${body}\n\n` +
+    `<i>Otomatis dari Sistem Inspeksi Dimensi Epson</i>`;
 
   return telegramSendMessage(text);
 }

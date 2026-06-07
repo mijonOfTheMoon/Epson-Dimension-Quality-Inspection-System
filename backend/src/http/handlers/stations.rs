@@ -51,6 +51,11 @@ pub async fn list(
                 } else {
                     None
                 };
+                station.detections = if presence.online && presence.running {
+                    presence.detections
+                } else {
+                    None
+                };
                 station.timestamp = presence.updated_at.unwrap_or_else(iso_now);
             } else if presence.online {
                 index.insert(presence.station_id.clone(), stations.len());
@@ -65,6 +70,11 @@ pub async fn list(
                     phase: presence.phase.or(Some(StationPhase::Idle)),
                     active_part_code: presence.active_part_code,
                     is_active: Some(true),
+                    detections: if presence.running {
+                        presence.detections
+                    } else {
+                        None
+                    },
                 });
             }
         }
@@ -113,6 +123,7 @@ pub async fn delete_station(
             phase: Some(StationPhase::Idle),
             active_part_code: None,
             is_active: Some(false),
+            detections: None,
         }))
         .await?;
     match deactivated {

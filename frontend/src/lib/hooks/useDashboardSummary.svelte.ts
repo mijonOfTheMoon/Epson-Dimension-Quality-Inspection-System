@@ -10,14 +10,15 @@ const EMPTY: DashboardSummary = {
   ng: 0,
   ngRate: 0,
   dailyTrend: [],
-  failingDimensions: [],
-  partRisk: [],
+  problemParts: [],
   recentInspections: [],
 };
 
+let summaryCache: DashboardSummary | null = null;
+
 export function useDashboardSummary() {
-  let data = $state<DashboardSummary>(EMPTY);
-  let loading = $state(true);
+  let data = $state<DashboardSummary>(summaryCache ?? EMPTY);
+  let loading = $state(summaryCache === null);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -30,11 +31,12 @@ export function useDashboardSummary() {
     if (!showLoading && !backoff.canRequest()) return;
     inFlight = true;
     const current = ++requestId;
-    if (showLoading) loading = true;
+    if (showLoading && summaryCache === null) loading = true;
     try {
       const next = await api.getDashboardSummary();
       if (mounted && current === requestId) {
         if (!deepEqual(data, next)) data = next;
+        summaryCache = next;
         backoff.reset();
         if (showLoading) error = null;
       }

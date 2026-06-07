@@ -2,9 +2,11 @@ import { onMount } from 'svelte';
 import type { PartType } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 
+let partsCache: PartType[] | null = null;
+
 export function useParts() {
-  let data = $state<PartType[]>([]);
-  let loading = $state(true);
+  let data = $state<PartType[]>(partsCache ?? []);
+  let loading = $state(partsCache === null);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -12,11 +14,12 @@ export function useParts() {
   const load = async () => {
     if (!mounted) return;
     const current = ++requestId;
-    loading = true;
+    if (partsCache === null) loading = true;
     try {
       const next = await api.getParts();
       if (mounted && current === requestId) {
         data = next;
+        partsCache = next;
         error = null;
       }
     } catch (err) {

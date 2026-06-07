@@ -76,6 +76,7 @@ class MqttLink:
         active_part_code: str | None = None,
         video_session_id: str | None = None,
         video_track_name: str | None = None,
+        detections: list[dict[str, Any]] | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "stationId": self.config.station_id,
@@ -94,6 +95,8 @@ class MqttLink:
             payload["videoSessionId"] = video_session_id
         if video_track_name:
             payload["videoTrackName"] = video_track_name
+        if detections is not None:
+            payload["detections"] = detections
         with self._lock:
             self._client.publish(
                 self.presence_topic,

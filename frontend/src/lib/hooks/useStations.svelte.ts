@@ -4,9 +4,11 @@ import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
 import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
+let stationsCache: StationStatusEvent[] | null = null;
+
 export function useStations() {
-  let data = $state<StationStatusEvent[]>([]);
-  let loading = $state(true);
+  let data = $state<StationStatusEvent[]>(stationsCache ?? []);
+  let loading = $state(stationsCache === null);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -19,11 +21,12 @@ export function useStations() {
     if (!showLoading && !backoff.canRequest()) return;
     inFlight = true;
     const current = ++requestId;
-    if (showLoading) loading = true;
+    if (showLoading && stationsCache === null) loading = true;
     try {
       const next = await api.getStations();
       if (mounted && current === requestId) {
         if (!deepEqual(data, next)) data = next;
+        stationsCache = next;
         error = null;
         backoff.reset();
       }
@@ -41,7 +44,7 @@ export function useStations() {
   onMount(() => {
     mounted = true;
     void load();
-    const stopPolling = startVisibilityPolling(refresh, 3000, 15000);
+    const stopPolling = startVisibilityPolling(refresh, 1000, 10000);
 
     return () => {
       mounted = false;

@@ -666,6 +666,7 @@ impl DataStore for PostgresStore {
             r#"
             SELECT part_code,
                    part_name,
+                   MAX(vendor) AS vendor,
                    COUNT(*)::bigint AS total,
                    COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng,
                    COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok
@@ -694,20 +695,28 @@ impl DataStore for PostgresStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let failing_dimensions = sqlx::query_as::<_, FailingDimensionRow>(
+        let dimension_rows = sqlx::query_as::<_, DimensionDeviationRow>(
             r#"
             SELECT i.part_code,
-                   i.part_name,
                    COALESCE(item->>'dimensionName', 'Dimensi') AS dimension_name,
-                   COUNT(*) FILTER (WHERE item->>'status' <> 'OK')::bigint AS ng_count,
+                   COALESCE(MAX(item->>'unit'), '') AS unit,
+                   COUNT(*) FILTER (WHERE item->>'status' = 'NG')::bigint AS ng_count,
+                   COUNT(*) FILTER (WHERE item->>'status' = 'UNREADABLE')::bigint AS unreadable_count,
                    COUNT(*)::bigint AS total_count,
-                   COALESCE(MAX(item->>'unit'), '') AS unit
+                   COALESCE(AVG((item->>'nominal')::double precision), 0) AS nominal,
+                   COALESCE(AVG((item->>'upperLimit')::double precision), 0) AS upper_limit,
+                   COALESCE(AVG((item->>'lowerLimit')::double precision), 0) AS lower_limit,
+                   COALESCE(
+                       AVG((item->>'measured')::double precision)
+                           FILTER (WHERE item->>'status' <> 'UNREADABLE'),
+                       0
+                   ) AS avg_measured
             FROM inspections i
             CROSS JOIN LATERAL jsonb_array_elements(i.measurements) AS item
-            GROUP BY i.part_code, i.part_name, COALESCE(item->>'dimensionName', 'Dimensi')
-            HAVING COUNT(*) FILTER (WHERE item->>'status' <> 'OK') > 0
-            ORDER BY ng_count DESC, total_count DESC, i.part_code ASC
-            LIMIT 8
+            GROUP BY i.part_code, COALESCE(item->>'dimensionName', 'Dimensi')
+            ORDER BY i.part_code ASC,
+                     COUNT(*) FILTER (WHERE item->>'status' = 'NG') DESC,
+                     total_count DESC
             "#,
         )
         .fetch_all(&self.pool)
@@ -734,6 +743,44 @@ impl DataStore for PostgresStore {
         let ng: i64 = part_agg.iter().map(|row| row.ng).sum();
         let total = ok + ng;
 
+        let mut dimensions_by_part: std::collections::HashMap<String, Vec<DimensionDeviation>> =
+            std::collections::HashMap::new();
+        for row in dimension_rows {
+            dimensions_by_part
+                .entry(row.part_code.clone())
+                .or_default()
+                .push(DimensionDeviation {
+                    dimension_name: row.dimension_name,
+                    unit: row.unit,
+                    ng_count: row.ng_count,
+                    unreadable_count: row.unreadable_count,
+                    total_count: row.total_count,
+                    ng_rate: rate(row.ng_count, row.total_count),
+                    nominal: row.nominal,
+                    upper_limit: row.upper_limit,
+                    lower_limit: row.lower_limit,
+                    avg_measured: row.avg_measured,
+                });
+        }
+
+        let problem_parts: Vec<ProblemPart> = part_agg
+            .iter()
+            .filter(|row| row.ng > 0)
+            .take(8)
+            .map(|row| ProblemPart {
+                part_code: row.part_code.clone(),
+                part_name: row.part_name.clone(),
+                vendor: row.vendor.clone(),
+                total: row.total,
+                ng: row.ng,
+                ng_rate: rate(row.ng, row.total),
+                dimensions: dimensions_by_part
+                    .get(&row.part_code)
+                    .cloned()
+                    .unwrap_or_default(),
+            })
+            .collect();
+
         Ok(DashboardSummary {
             total,
             ok,
@@ -747,29 +794,7 @@ impl DataStore for PostgresStore {
                     ng: row.ng,
                 })
                 .collect(),
-            failing_dimensions: failing_dimensions
-                .into_iter()
-                .map(|row| FailingDimensionPoint {
-                    part_code: row.part_code,
-                    part_name: row.part_name,
-                    dimension_name: row.dimension_name,
-                    ng_count: row.ng_count,
-                    total_count: row.total_count,
-                    ng_rate: rate(row.ng_count, row.total_count),
-                    unit: row.unit,
-                })
-                .collect(),
-            part_risk: part_agg
-                .into_iter()
-                .take(8)
-                .map(|row| PartRiskPoint {
-                    part_code: row.part_code,
-                    part_name: row.part_name,
-                    total: row.total,
-                    ng: row.ng,
-                    ng_rate: rate(row.ng, row.total),
-                })
-                .collect(),
+            problem_parts,
             recent_inspections: recent_inspections
                 .into_iter()
                 .map(|row| {
@@ -871,19 +896,24 @@ struct DailyTrendRow {
 }
 
 #[derive(Debug, FromRow)]
-struct FailingDimensionRow {
+struct DimensionDeviationRow {
     part_code: String,
-    part_name: String,
     dimension_name: String,
-    ng_count: i64,
-    total_count: i64,
     unit: String,
+    ng_count: i64,
+    unreadable_count: i64,
+    total_count: i64,
+    nominal: f64,
+    upper_limit: f64,
+    lower_limit: f64,
+    avg_measured: f64,
 }
 
 #[derive(Debug, FromRow)]
 struct PartAggRow {
     part_code: String,
     part_name: String,
+    vendor: Option<String>,
     total: i64,
     ng: i64,
     ok: i64,
@@ -938,6 +968,7 @@ fn map_station(row: StationRow) -> anyhow::Result<StationStatusEvent> {
         phase: row.phase.as_deref().map(parse_phase).transpose()?,
         active_part_code: row.active_part_code,
         is_active: row.is_active,
+        detections: None,
     })
 }
 

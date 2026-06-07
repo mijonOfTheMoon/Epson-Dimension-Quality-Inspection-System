@@ -2,19 +2,18 @@
   import { onDestroy } from 'svelte';
   import {
     Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
-    RotateCcw, Send, StopCircle, Trash2, Video, Zap,
+    RotateCcw, StopCircle, Trash2, Video, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
-  import { sendInspectionToTelegram } from '$lib/services/telegram';
   import { auth } from '$lib/stores/auth.svelte';
   import { isSelected, measurementStatusLabel, nextSelection, resolveSelection, selectionPresent } from '$lib/utils/selection';
   import type { StationDetectionGroup } from '$lib/utils/selection';
   import type {
-    DimensionView, InspectionResult, ObjectDetection, PartType, StationPhase, StationStatusEvent,
+    DimensionView, ObjectDetection, PartType, StationPhase, StationStatusEvent,
   } from '$lib/types/api';
 
   interface MergedStation {
@@ -24,10 +23,6 @@
     fps?: number;
     phase?: StationPhase;
     activePartCode?: string;
-  }
-
-  interface StationInspectionGroup {
-    latest: InspectionResult;
     detections: ObjectDetection[];
   }
 
@@ -50,12 +45,13 @@
         fps: station.fps,
         phase: station.phase,
         activePartCode: station.activePartCode,
+        detections: station.detections ?? [],
       });
     }
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
   }
 
-  const inspections = useInspections(40, 10000, 30000, true);
+  const inspections = useInspections(40, 10000, 30000);
   const stations = useStations();
   const parts = useParts();
 
@@ -73,29 +69,25 @@
 
   const merged = $derived(mergeStations(stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
+  const liveStationIds = $derived(
+    new Set(
+      merged
+        .filter((s) => s.online && s.running)
+        .map((s) => s.stationId),
+    ),
+  );
 
   const latestInspections = $derived(inspections.data.slice(0, 10));
   const cameraLoading = $derived(stations.loading && merged.length === 0);
   const supportingDataLoading = $derived((inspections.loading || parts.loading) && merged.length > 0);
   const error = $derived(inspections.error || stations.error || parts.error);
 
-  const latestGroupsByStation = $derived.by(() => {
-    const map = new Map<string, StationInspectionGroup>();
-    for (const inspection of inspections.data) {
-      const group = map.get(inspection.stationId);
-      if (!group) {
-        map.set(inspection.stationId, { latest: inspection, detections: [...inspection.detections] });
-      } else if (group.latest.timestamp === inspection.timestamp) {
-        group.detections.push(...inspection.detections);
-      }
-    }
-    return map;
-  });
-
   const selectionGroups = $derived.by(() => {
     const map = new Map<string, StationDetectionGroup>();
-    for (const [stationId, group] of latestGroupsByStation) {
-      map.set(stationId, { stationId, detections: group.detections });
+    for (const station of merged) {
+      if (station.online && station.running && station.detections.length > 0) {
+        map.set(station.stationId, { stationId: station.stationId, detections: station.detections });
+      }
     }
     return map;
   });
@@ -227,43 +219,6 @@
   });
 
   const measurements = $derived(selectedDetection?.measurements ?? []);
-  const selectedInspection = $derived.by(() => {
-    const key = selectedDetectionKey;
-    if (!key) return null;
-    const group = latestGroupsByStation.get(key.stationId);
-    return group?.latest ?? null;
-  });
-
-  let sendingTelegramLive = $state(false);
-
-  const handleSendTelegramLive = async () => {
-    if (!selectedInspection || !selectedDetection || sendingTelegramLive) return;
-    sendingTelegramLive = true;
-    try {
-      const payload = {
-        id: selectedInspection.id,
-        partName: selectedInspection.partName,
-        partCode: selectedInspection.partCode,
-        status: selectedDetection.status,
-        stationId: selectedInspection.stationId,
-        operatorName: selectedInspection.operatorName,
-        timestamp: selectedInspection.timestamp,
-        confidenceScore: selectedDetection.confidenceScore,
-        measurements: selectedDetection.measurements,
-        frameUrl: selectedInspection.frameUrl,
-      };
-      const ok = await sendInspectionToTelegram(payload);
-      if (ok) {
-        showToast('Berhasil mengirim laporan ke Telegram');
-      } else {
-        showToast('Gagal mengirim ke Telegram', 'error');
-      }
-    } catch (err) {
-      showToast(getErrorMessage(err), 'error');
-    } finally {
-      sendingTelegramLive = false;
-    }
-  };
 
   onDestroy(() => {
     for (const timer of stationRefreshTimers) {
@@ -358,8 +313,7 @@
             {@const activePart = partForCode(station.activePartCode ?? '') ?? selectedPartType}
             {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
-            {@const latestGroup = latestGroupsByStation.get(station.stationId)}
-            {@const detections = latestGroup?.detections ?? []}
+            {@const detections = liveStationIds.has(station.stationId) ? station.detections : []}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
@@ -557,22 +511,6 @@
             </p>
           </div>
           <div class="flex items-center gap-1.5">
-            {#if selectedDetection}
-              <button
-                type="button"
-                disabled={sendingTelegramLive}
-                onclick={() => { void handleSendTelegramLive(); }}
-                class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-bold shadow-sm active:scale-[0.97] transition-premium disabled:opacity-50 disabled:pointer-events-none"
-                title="Kirim laporan ke Telegram"
-              >
-                {#if sendingTelegramLive}
-                  <span class="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
-                {:else}
-                  <Send class="w-3 h-3" />
-                {/if}
-                Telegram
-              </button>
-            {/if}
             {#if selectedDetection}
               <button
                 type="button"

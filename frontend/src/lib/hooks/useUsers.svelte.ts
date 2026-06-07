@@ -2,9 +2,11 @@ import { onMount } from 'svelte';
 import type { User } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 
+let usersCache: User[] | null = null;
+
 export function useUsers() {
-  let data = $state<User[]>([]);
-  let loading = $state(true);
+  let data = $state<User[]>(usersCache ?? []);
+  let loading = $state(usersCache === null);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -12,11 +14,12 @@ export function useUsers() {
   const load = async () => {
     if (!mounted) return;
     const current = ++requestId;
-    loading = true;
+    if (usersCache === null) loading = true;
     try {
       const next = await api.getUsers();
       if (mounted && current === requestId) {
         data = next;
+        usersCache = next;
         error = null;
       }
     } catch (err) {

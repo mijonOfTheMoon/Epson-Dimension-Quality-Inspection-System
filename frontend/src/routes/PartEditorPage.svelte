@@ -104,7 +104,6 @@
     error = null;
     notFound = false;
 
-    // Resume a previously saved draft if the user left mid-edit.
     const draft = loadDraft<PartDraft>(`part-editor:${key}`);
     if (draft) {
       form = draft;
@@ -128,7 +127,6 @@
     initializedFor = key;
   });
 
-  // Persist the working draft so it survives navigating away and back.
   $effect(() => {
     if (initializedFor !== (id ?? 'new')) return;
     saveDraft(draftKey, $state.snapshot(form));

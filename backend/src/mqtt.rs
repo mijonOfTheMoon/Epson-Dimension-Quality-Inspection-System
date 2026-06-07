@@ -8,6 +8,7 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::config::MqttConfig;
+use crate::domain::ObjectDetection;
 use crate::domain::StationPhase;
 use crate::realtime::agent_registry::AgentInfo;
 
@@ -35,6 +36,8 @@ pub struct StationPresence {
     pub video_session_id: Option<String>,
     #[serde(default)]
     pub video_track_name: Option<String>,
+    #[serde(default)]
+    pub detections: Option<Vec<ObjectDetection>>,
 }
 
 #[derive(Clone)]
@@ -212,6 +215,7 @@ impl MqttService {
             presence.active_part_code = None;
             presence.video_session_id = None;
             presence.video_track_name = None;
+            presence.detections = None;
         }
         presence
     }

@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
     "apexcharts": "^5.13.0",
@@ -21,12 +20,9 @@
     "@tailwindcss/vite": "^4.1.12",
     "@tsconfig/svelte": "^5.0.4",
     "@types/node": "^25.9.1",
-    "fast-check": "^3.23.2",
-    "jsdom": "^25.0.1",
     "svelte-check": "^4.1.1",
     "tailwindcss": "^4.1.12",
     "typescript": "^5.7.3",
-    "vite": "^6.3.5",
-    "vitest": "^2.1.9"
+    "vite": "^6.3.5"
   }
 }

@@ -214,6 +214,8 @@ pub struct StationStatusEvent {
     pub active_part_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_active: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detections: Option<Vec<ObjectDetection>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -389,8 +391,7 @@ pub struct DashboardSummary {
     pub ng: i64,
     pub ng_rate: f64,
     pub daily_trend: Vec<DailyTrendPoint>,
-    pub failing_dimensions: Vec<FailingDimensionPoint>,
-    pub part_risk: Vec<PartRiskPoint>,
+    pub problem_parts: Vec<ProblemPart>,
     pub recent_inspections: Vec<RecentInspectionPoint>,
 }
 
@@ -404,24 +405,30 @@ pub struct DailyTrendPoint {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FailingDimensionPoint {
+pub struct ProblemPart {
     pub part_code: String,
     pub part_name: String,
-    pub dimension_name: String,
-    pub ng_count: i64,
-    pub total_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor: Option<String>,
+    pub total: i64,
+    pub ng: i64,
     pub ng_rate: f64,
-    pub unit: String,
+    pub dimensions: Vec<DimensionDeviation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PartRiskPoint {
-    pub part_code: String,
-    pub part_name: String,
-    pub total: i64,
-    pub ng: i64,
+pub struct DimensionDeviation {
+    pub dimension_name: String,
+    pub unit: String,
+    pub ng_count: i64,
+    pub unreadable_count: i64,
+    pub total_count: i64,
     pub ng_rate: f64,
+    pub nominal: f64,
+    pub upper_limit: f64,
+    pub lower_limit: f64,
+    pub avg_measured: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

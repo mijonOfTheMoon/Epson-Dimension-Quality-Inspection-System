@@ -106,6 +106,7 @@ export interface StationStatusEvent {
   phase?: StationPhase;
   activePartCode?: string;
   isActive?: boolean;
+  detections?: ObjectDetection[];
 }
 
 export interface AgentInfo {
@@ -179,16 +180,26 @@ export interface DashboardSummary {
   ng: number;
   ngRate: number;
   dailyTrend: { date: string; ok: number; ng: number }[];
-  failingDimensions: {
+  problemParts: {
     partCode: string;
     partName: string;
-    dimensionName: string;
-    ngCount: number;
-    totalCount: number;
+    vendor?: string;
+    total: number;
+    ng: number;
     ngRate: number;
-    unit: string;
+    dimensions: {
+      dimensionName: string;
+      unit: string;
+      ngCount: number;
+      unreadableCount: number;
+      totalCount: number;
+      ngRate: number;
+      nominal: number;
+      upperLimit: number;
+      lowerLimit: number;
+      avgMeasured: number;
+    }[];
   }[];
-  partRisk: { partCode: string; partName: string; total: number; ng: number; ngRate: number }[];
   recentInspections: {
     id: string;
     timestamp: string;

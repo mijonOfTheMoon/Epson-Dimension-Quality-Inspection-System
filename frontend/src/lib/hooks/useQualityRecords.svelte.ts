@@ -2,9 +2,11 @@ import { onMount } from 'svelte';
 import type { QualityTrackingRecord } from '$lib/types/api';
 import { api, getErrorMessage } from '$lib/services/api';
 
+let qualityCache: QualityTrackingRecord[] | null = null;
+
 export function useQualityRecords() {
-  let data = $state<QualityTrackingRecord[]>([]);
-  let loading = $state(true);
+  let data = $state<QualityTrackingRecord[]>(qualityCache ?? []);
+  let loading = $state(qualityCache === null);
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -12,11 +14,12 @@ export function useQualityRecords() {
   const load = async () => {
     if (!mounted) return;
     const current = ++requestId;
-    loading = true;
+    if (qualityCache === null) loading = true;
     try {
       const next = await api.getQualityRecords();
       if (mounted && current === requestId) {
         data = next;
+        qualityCache = next;
         error = null;
       }
     } catch (err) {
@@ -42,6 +45,7 @@ export function useQualityRecords() {
     reload() { void load(); },
     update(record: QualityTrackingRecord) {
       data = data.map((item) => item.id === record.id ? record : item);
+      qualityCache = data;
     },
   };
 }

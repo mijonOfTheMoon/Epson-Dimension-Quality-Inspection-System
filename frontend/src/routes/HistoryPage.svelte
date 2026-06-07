@@ -12,6 +12,7 @@
     type DetailLoadEvent,
   } from '$lib/utils/detailLoadState';
   import { resolveEntryOverlay } from '$lib/utils/historyOverlay';
+  import { measurementStatusLabel } from '$lib/utils/selection';
 
   const inspections = useInspections(200);
   const parts = useParts();
@@ -208,13 +209,6 @@
     </div>
   {/if}
 
-  {#if loading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-      <span>Memuat arsip riwayat data...</span>
-    </div>
-  {/if}
-
   <div class="flex flex-wrap items-center gap-3">
     <div class="relative flex-1 min-w-[240px]">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -255,6 +249,20 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)] text-slate-800 dark:text-slate-200">
+          {#if loading && inspections.data.length === 0}
+            {#each Array(8) as _row, i (i)}
+              <tr class="animate-pulse" aria-hidden="true">
+                <td class="px-5 py-3.5">
+                  <div class="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700/50"></div>
+                  <div class="h-2.5 w-44 rounded bg-slate-200 dark:bg-slate-700/50 mt-2"></div>
+                </td>
+                <td class="px-5 py-3.5"><div class="h-5 w-14 rounded-full bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-36 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-8 w-8 rounded-xl bg-slate-200 dark:bg-slate-700/50 ml-auto"></div></td>
+              </tr>
+            {/each}
+          {:else}
           {#each paginated as row (row.id)}
             {@const isOK = row.status === 'OK'}
             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-premium duration-150">
@@ -293,16 +301,20 @@
                 <td colspan="5" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
                   {#if rowState.phase === 'loading'}
                     <div class="w-full space-y-4 animate-pulse" aria-hidden="true">
-                      <div class="h-4 w-72 max-w-full rounded bg-slate-200 dark:bg-slate-700/60"></div>
+                      <div class="h-12 w-full rounded-xl bg-slate-200 dark:bg-slate-700/60"></div>
                       <div class="flex flex-col lg:flex-row gap-4 items-start">
-                        <div class="w-full lg:w-1/2 lg:shrink-0 h-64 rounded-2xl bg-slate-200 dark:bg-slate-700/60"></div>
-                        <div class="w-full lg:flex-1">
-                          <div class="grid sm:grid-cols-2 gap-3.5">
+                        <div class="w-full lg:w-1/2 lg:shrink-0 aspect-video rounded-2xl bg-slate-200 dark:bg-slate-700/60"></div>
+                        <div class="w-full lg:flex-1 space-y-4">
+                          <div class="grid grid-cols-2 gap-2.5">
+                            <div class="h-14 rounded-xl bg-slate-200 dark:bg-slate-700/60"></div>
+                            <div class="h-14 rounded-xl bg-slate-200 dark:bg-slate-700/60"></div>
+                          </div>
+                          <div class="grid sm:grid-cols-2 gap-2.5">
                             {#each Array(4) as _placeholder, i (i)}
-                              <div class="p-3.5 rounded-xl border border-[var(--border)] bg-slate-100 dark:bg-slate-800/40">
+                              <div class="p-3 rounded-xl border border-[var(--border)] bg-slate-100 dark:bg-slate-800/40">
                                 <div class="h-2.5 w-20 rounded bg-slate-200 dark:bg-slate-700/60"></div>
-                                <div class="h-5 w-28 rounded bg-slate-200 dark:bg-slate-700/60 mt-3"></div>
-                                <div class="h-2.5 w-32 rounded bg-slate-200 dark:bg-slate-700/60 mt-3"></div>
+                                <div class="h-2.5 w-28 rounded bg-slate-200 dark:bg-slate-700/60 mt-2"></div>
+                                <div class="h-8 w-full rounded bg-slate-200 dark:bg-slate-700/60 mt-3"></div>
                               </div>
                             {/each}
                           </div>
@@ -316,15 +328,26 @@
                   {:else if rowState.phase === 'loaded' && details[row.id]}
                     {@const detail = details[row.id]}
                     <div class="w-full space-y-4">
-                      <div class="text-xs text-slate-700 dark:text-slate-300 font-bold border-l-2 border-indigo-500 pl-2">
-                        Hasil Analisis Dimensi &bull; Operator: <span class="text-slate-950 dark:text-white">{detail.operatorName}</span>
+                      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl bg-slate-100/60 dark:bg-slate-900/40 border border-[var(--border)] px-3.5 py-2.5">
+                        <div class="flex flex-col">
+                          <span class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Operator</span>
+                          <span class="text-xs font-bold text-slate-900 dark:text-white mt-0.5">{detail.operatorName}</span>
+                        </div>
+                        <div class="flex flex-col">
+                          <span class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Stasiun</span>
+                          <span class="text-xs font-bold text-slate-900 dark:text-white mt-0.5 font-mono-data">{detail.stationId}</span>
+                        </div>
+                        <div class="flex flex-col">
+                          <span class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Waktu</span>
+                          <span class="text-xs font-bold text-slate-900 dark:text-white mt-0.5">{new Date(detail.timestamp).toLocaleString('id-ID')}</span>
+                        </div>
                       </div>
 
                       <div class="flex flex-col lg:flex-row gap-4 items-start">
                         {#if detail.frameUrl}
                           {@const overlay = resolveEntryOverlay(detail.detections[0])}
-                          <div class="w-full lg:w-1/2 lg:shrink-0 relative rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
-                            <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-auto block" />
+                          <div class="w-full lg:w-1/2 lg:shrink-0 relative aspect-video rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
+                            <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-full object-contain block" />
                             {#if overlay.positioned}
                               <div
                                 class="absolute pointer-events-none border-2 {overlay.box.status === 'OK' ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
@@ -342,28 +365,55 @@
                           </div>
                         {/if}
 
-                        <div class="w-full {detail.frameUrl ? 'lg:flex-1' : ''}">
-                          <div class="grid sm:grid-cols-2 gap-3.5">
+                        <div class="w-full {detail.frameUrl ? 'lg:flex-1' : ''} space-y-4">
+                          <div class="grid grid-cols-2 gap-2.5 text-center">
+                            <div class="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--border)] p-2.5 shadow-sm">
+                              <div class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Status</div>
+                              <div class="text-sm font-extrabold mt-1.5 {detail.status === 'NG' ? 'text-rose-500' : 'text-emerald-500'}">
+                                {detail.status}
+                              </div>
+                            </div>
+                            <div class="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--border)] p-2.5 shadow-sm">
+                              <div class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Akurasi</div>
+                              <div class="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-1.5 font-mono-data">{detail.confidenceScore}%</div>
+                            </div>
+                          </div>
+
+                          <div class="grid sm:grid-cols-2 gap-2.5">
                             {#each detail.measurements as measurement (measurement.dimensionName)}
+                              {@const delta = measurement.measured - measurement.nominal}
                               {@const mOK = measurement.status === 'OK'}
-                              <div class="p-3.5 rounded-xl border shadow-inner transition-premium hover:-translate-y-[1px] {
-                                mOK 
-                                  ? 'bg-emerald-500/5 border-emerald-500/10 dark:border-emerald-500/5' 
-                                  : 'bg-rose-500/5 border-rose-500/10 dark:border-rose-500/5'
-                              }">
-                                <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wide">{measurement.dimensionName}</div>
-                                <div class="text-base font-extrabold mt-2 flex items-baseline gap-1.5 font-mono-data">
-                                  <span class={mOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                    {measurement.measured} {measurement.unit}
-                                  </span>
-                                  <span class="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded uppercase {
-                                    mOK ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                              <div class="rounded-xl border border-[var(--border)] p-3 bg-slate-50/20 dark:bg-slate-900/10 space-y-2.5">
+                                <div class="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div class="text-xs font-bold text-slate-800 dark:text-slate-100">{measurement.dimensionName}</div>
+                                    <div class="text-[10px] text-[var(--muted-foreground)] font-medium mt-1">
+                                      Toleransi: <span class="font-mono-data text-slate-700 dark:text-slate-300 font-semibold">{measurement.lowerLimit} - {measurement.upperLimit} {measurement.unit}</span>
+                                    </div>
+                                  </div>
+                                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {
+                                    mOK
+                                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                      : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
                                   }">
-                                    {measurement.status}
+                                    {measurementStatusLabel(measurement.status)}
                                   </span>
                                 </div>
-                                <div class="text-[10px] text-[var(--muted-foreground)] font-medium mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/40">
-                                  Nominal: <span class="text-slate-700 dark:text-slate-300">{measurement.nominal}</span> &bull; Range: <span class="text-slate-700 dark:text-slate-300">{measurement.lowerLimit} ~ {measurement.upperLimit} {measurement.unit}</span>
+                                <div class="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 font-mono-data">
+                                  <div>
+                                    <div class="text-[9px] text-[var(--muted-foreground)] tracking-wider uppercase font-sans mb-0.5">Measured</div>
+                                    <div class="text-slate-900 dark:text-white font-bold">{measurement.measured} {measurement.unit}</div>
+                                  </div>
+                                  <div>
+                                    <div class="text-[9px] text-[var(--muted-foreground)] tracking-wider uppercase font-sans mb-0.5">Nominal</div>
+                                    <div class="text-slate-700 dark:text-slate-300 font-bold">{measurement.nominal} {measurement.unit}</div>
+                                  </div>
+                                  <div>
+                                    <div class="text-[9px] text-[var(--muted-foreground)] tracking-wider uppercase font-sans mb-0.5">Delta</div>
+                                    <div class="font-bold {Math.abs(delta) > 0 ? (mOK ? 'text-amber-500' : 'text-rose-500') : 'text-emerald-500'}">
+                                      {delta > 0 ? '+' : ''}{delta.toFixed(3)} {measurement.unit}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             {/each}
@@ -382,6 +432,7 @@
                 {inspections.data.length === 0 ? 'Belum ada rekaman arsip data inspeksi.' : 'Tidak ditemukan baris data yang cocok dengan kriteria filter.'}
               </td>
             </tr>
+          {/if}
           {/if}
         </tbody>
       </table>

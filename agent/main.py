@@ -111,6 +111,7 @@ class InspectionRunner:
         self._video_command: dict[str, Any] | None = None
         self._video_session_id: str | None = None
         self._video_track_name: str | None = None
+        self._live_detections: list[dict[str, Any]] = []
         self._offline_sent = threading.Event()
         self._last_http_status_at = 0.0
         self._frame_interval = 1.0 / FRAME_FPS
@@ -216,6 +217,7 @@ class InspectionRunner:
             active_part_code=active,
             video_session_id=self._video_session_id,
             video_track_name=self._video_track_name,
+            detections=self._live_detections if running else [],
         )
         if send_http:
             self._last_http_status_at = monotonic()
@@ -302,10 +304,12 @@ class InspectionRunner:
         last_frame_sent = 0.0
         last_frame_ts = monotonic()
         fps = 0.0
+        self._live_detections = []
 
         try:
             while not self._stop.is_set() and self._running.is_set():
                 if phase == "calibrating":
+                    self._live_detections = []
                     self._send_status(phase="calibrating", running=True)
                     frames = self._capture_calibration(cap)
                     if len(frames) < CALIBRATION_FRAMES // 2:
@@ -336,6 +340,11 @@ class InspectionRunner:
 
                 mask = compute_foreground_mask(frame, background)
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
+                self._live_detections = (
+                    [detection.to_dict() for detection in result.inspection.detections]
+                    if result.inspection is not None
+                    else []
+                )
 
                 manual_capture = self._drain_command("capture")
                 is_capture_event = manual_capture and result.inspection is not None
@@ -389,6 +398,16 @@ class InspectionRunner:
                 if will_send_frame and display is not None:
                     self._send_frame(display)
                     last_frame_sent = now
+                    self.mqtt.publish_presence(
+                        online=True,
+                        running=True,
+                        phase=phase,
+                        fps=fps,
+                        active_part_code=(self._part.part_code if self._part else None),
+                        video_session_id=self._video_session_id,
+                        video_track_name=self._video_track_name,
+                        detections=self._live_detections,
+                    )
 
                 if now - last_status >= STATUS_INTERVAL:
                     self._send_status(

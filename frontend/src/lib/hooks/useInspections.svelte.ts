@@ -4,9 +4,12 @@ import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
 import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
+const inspectionsCache = new Map<string, InspectionResult[]>();
+
 export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000, includeDetections = false) {
-  let data = $state<InspectionResult[]>([]);
-  let loading = $state(true);
+  const cacheKey = `${limit}|${includeDetections}`;
+  let data = $state<InspectionResult[]>(inspectionsCache.get(cacheKey) ?? []);
+  let loading = $state(!inspectionsCache.has(cacheKey));
   let error = $state<string | null>(null);
   let mounted = false;
   let requestId = 0;
@@ -19,11 +22,12 @@ export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000, 
     if (!showLoading && !backoff.canRequest()) return;
     inFlight = true;
     const current = ++requestId;
-    if (showLoading) loading = true;
+    if (showLoading && !inspectionsCache.has(cacheKey)) loading = true;
     try {
       const next = await api.getInspections({ limit, includeDetections });
       if (!mounted || current !== requestId) return;
       if (!deepEqual(data, next)) data = next;
+      inspectionsCache.set(cacheKey, next);
       error = null;
       backoff.reset();
     } catch (err) {

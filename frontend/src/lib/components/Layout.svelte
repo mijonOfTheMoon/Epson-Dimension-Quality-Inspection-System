@@ -121,13 +121,6 @@
         <button class="lg:hidden p-2 text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] rounded-xl transition-colors duration-200" onclick={() => sidebarOpen = true} aria-label="Buka sidebar">
           <Menu class="w-5 h-5" />
         </button>
-        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
-          <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          System Online
-        </div>
       </div>
 
       <div class="flex items-center gap-2">
