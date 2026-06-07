@@ -484,30 +484,27 @@
       {:else}
         <div class="divide-y divide-[var(--border)] overflow-hidden">
           {#each summary.data.recentInspections as inspection (inspection.id)}
-            <div class="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-premium">
-              <div class="min-w-0 flex items-center gap-3">
-                <span class="inline-flex items-center justify-center w-11 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
-                  inspection.status === 'OK' 
-                    ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
-                    : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
-                }">
-                  {inspection.status}
-                </span>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{inspection.partName}</span>
-                    <span class="text-[10px] font-mono-data text-[var(--muted-foreground)] bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded-md shrink-0">{inspection.partCode}</span>
-                  </div>
-                  <div class="text-[11px] text-[var(--muted-foreground)] mt-1 flex items-center gap-2 font-medium">
-                    <span class="inline-flex items-center gap-1"><Activity class="w-3 h-3" /> {inspection.stationId}</span>
-                    <span class="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
-                    <span class="inline-flex items-center gap-1"><Crosshair class="w-3 h-3" /> {inspection.confidenceScore}% akurasi</span>
-                  </div>
-                </div>
+            <div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0 px-2 rounded-xl hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-premium">
+              <span class="inline-flex items-center justify-center w-11 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
+                inspection.status === 'OK' 
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
+                  : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
+              }">
+                {inspection.status}
+              </span>
+              <div class="flex-1 min-w-0 flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{inspection.partName}</span>
+                <span class="text-[10px] font-mono-data text-[var(--muted-foreground)] bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded-md shrink-0">{inspection.partCode}</span>
               </div>
-              <div class="text-[11px] text-[var(--muted-foreground)] font-medium shrink-0 inline-flex items-center gap-1 self-start sm:self-center" title={formatScanTime(inspection.timestamp)}>
+              <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/40 border border-[var(--border)] px-2.5 py-1 rounded-lg font-mono-data">
+                <Crosshair class="w-3 h-3 text-[var(--muted-foreground)]" /> {inspection.confidenceScore}%
+              </span>
+              <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0 text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 border border-[var(--border)] px-2.5 py-1 rounded-lg">
+                <Activity class="w-3 h-3 text-[var(--muted-foreground)]" /> {inspection.stationId}
+              </span>
+              <span class="inline-flex items-center gap-1 shrink-0 text-[11px] text-[var(--muted-foreground)] font-medium w-[88px] justify-end" title={formatScanTime(inspection.timestamp)}>
                 <Clock3 class="w-3 h-3" /> {relativeScanTime(inspection.timestamp)}
-              </div>
+              </span>
             </div>
           {/each}
         </div>
