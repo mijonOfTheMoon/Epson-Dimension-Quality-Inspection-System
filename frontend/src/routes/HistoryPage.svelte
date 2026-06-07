@@ -241,7 +241,9 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 border-b border-[var(--border)] text-left font-bold text-xs uppercase tracking-wider">
-            <th class="px-5 py-4">Part / Kode</th>
+            <th class="px-5 py-4">Part</th>
+            <th class="px-5 py-4">Kode</th>
+            <th class="px-5 py-4">Vendor</th>
             <th class="px-5 py-4">Status</th>
             <th class="px-5 py-4">Akurasi</th>
             <th class="px-5 py-4">Waktu Pengerjaan</th>
@@ -252,10 +254,9 @@
           {#if loading && inspections.data.length === 0}
             {#each Array(8) as _row, i (i)}
               <tr class="animate-pulse" aria-hidden="true">
-                <td class="px-5 py-3.5">
-                  <div class="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700/50"></div>
-                  <div class="h-2.5 w-44 rounded bg-slate-200 dark:bg-slate-700/50 mt-2"></div>
-                </td>
+                <td class="px-5 py-3.5"><div class="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-3 w-20 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-3 w-24 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
                 <td class="px-5 py-3.5"><div class="h-5 w-14 rounded-full bg-slate-200 dark:bg-slate-700/50"></div></td>
                 <td class="px-5 py-3.5"><div class="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
                 <td class="px-5 py-3.5"><div class="h-4 w-36 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
@@ -268,8 +269,9 @@
             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-premium duration-150">
               <td class="px-5 py-3.5">
                 <div class="font-semibold text-slate-900 dark:text-white">{row.partName}</div>
-                <div class="text-[10px] text-[var(--muted-foreground)] font-semibold font-mono-data mt-1.5">Code: {row.partCode} &bull; Vendor: {row.vendor}</div>
               </td>
+              <td class="px-5 py-3.5 text-xs font-semibold font-mono-data text-slate-600 dark:text-slate-300">{row.partCode}</td>
+              <td class="px-5 py-3.5 text-xs font-medium text-slate-600 dark:text-slate-300">{row.vendor}</td>
               <td class="px-5 py-3.5">
                 <span class="inline-flex px-2.5 py-1 rounded-full text-[10px] font-extrabold tracking-wide uppercase {
                   isOK 
@@ -298,7 +300,7 @@
             {#if expandedId === row.id}
               {@const rowState = detailState[row.id] ?? { phase: 'idle' }}
               <tr>
-                <td colspan="5" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
+                <td colspan="7" class="px-5 py-5 bg-slate-50/50 dark:bg-slate-900/20 border-t border-b border-[var(--border)]">
                   {#if rowState.phase === 'loading'}
                     <div class="w-full space-y-4 animate-pulse" aria-hidden="true">
                       <div class="h-12 w-full rounded-xl bg-slate-200 dark:bg-slate-700/60"></div>
@@ -428,7 +430,7 @@
           {/each}
           {#if !loading && paginated.length === 0}
             <tr>
-              <td colspan="5" class="px-5 py-16 text-center text-[var(--muted-foreground)] font-medium">
+              <td colspan="7" class="px-5 py-16 text-center text-[var(--muted-foreground)] font-medium">
                 {inspections.data.length === 0 ? 'Belum ada rekaman arsip data inspeksi.' : 'Tidak ditemukan baris data yang cocok dengan kriteria filter.'}
               </td>
             </tr>
