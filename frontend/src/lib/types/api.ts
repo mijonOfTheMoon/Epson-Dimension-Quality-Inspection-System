@@ -111,8 +111,8 @@ export interface StationStatusEvent {
 
 export interface MqttWsInfo {
   url: string;
-  username?: string;
-  password?: string;
+  username: string;
+  password: string;
   presenceTopic: string;
 }
 

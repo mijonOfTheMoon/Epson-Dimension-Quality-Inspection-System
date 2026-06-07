@@ -60,7 +60,7 @@ Initial migration melakukan hal berikut:
 - Membuat schema `partman`.
 - Mengaktifkan extension `pg_partman`.
 - Mengaktifkan extension `pg_cron`.
-- Membuat tabel aplikasi: `event_log`, `users`, `parts`, `inspections`, `stations`, `quality_records`, dan `schema_migrations`.
+- Membuat tabel aplikasi: `event_log`, `users`, `parts`, `inspections`, `quality_records`, dan `schema_migrations`.
 - Membuat `inspections` sebagai partitioned table.
 - Mendaftarkan `public.inspections` ke `pg_partman`.
 - Menjadwalkan maintenance partisi harian.
@@ -247,7 +247,11 @@ MQTT_USERNAME=<username>
 MQTT_PASSWORD=<password>
 MQTT_TOPIC_PREFIX=diminspect/production
 MQTT_USE_TLS=true
+MQTT_WS_USERNAME=<subscribe-only-username>
+MQTT_WS_PASSWORD=<subscribe-only-password>
 ```
+
+`MQTT_USERNAME`/`MQTT_PASSWORD` dipakai backend dan agent sebagai publisher penuh. `MQTT_WS_USERNAME`/`MQTT_WS_PASSWORD` adalah kredensial broker khusus subscribe-only yang dikirim backend ke browser lewat `GET /api/realtime/mqtt`. Jika dikosongkan, backend fallback ke kredensial publisher penuh.
 
 Jika memakai Cloudflare R2:
 
@@ -303,7 +307,7 @@ Application smoke test:
 - [ ] Dashboard load.
 - [ ] History load.
 - [ ] Quality Tracking load.
-- [ ] Agent status masuk ke backend.
+- [ ] Agent presence muncul di Live Tracking via MQTT-over-WebSocket.
 - [ ] Agent inspection ingest menulis row baru ke `inspections`.
 - [ ] R2 thumbnail muncul jika object store aktif.
 

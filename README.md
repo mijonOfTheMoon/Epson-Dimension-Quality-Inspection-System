@@ -6,17 +6,19 @@ Sistem inspeksi dimensi berbasis computer vision dengan Agent Python OpenCV, Bac
 
 ```text
 [Browser: Svelte UI] ----REST----> [nginx proxy] ----REST----> [Backend Rust Axum]
+[Browser: Svelte UI] --MQTT/WSS (subscribe presence)--> [EMQX broker]
                                                               |
-[Agent PC: Python OpenCV] --MQTT--> [HiveMQ] <--MQTT command--+
-[Agent PC: Python OpenCV] --HTTP inspection/status----------->+
+[Agent PC: Python OpenCV] --MQTT--> [EMQX] <--MQTT command----+
+[Agent PC: Python OpenCV] --HTTP inspection (capture only)--->+
 [Agent PC: Python OpenCV] --WebRTC video--> [Cloudflare Realtime] <--WebRTC-- [Browser]
                                                               |
                                       [PostgreSQL 17 + pg_partman] + [Cloudflare R2 optional]
 ```
 
-- Browser hanya bicara ke nginx proxy di `http://localhost`.
+- Browser bicara ke nginx proxy untuk REST, dan **langsung ke EMQX broker via MQTT-over-WebSocket** untuk presence/status kamera realtime (memakai kredensial broker khusus subscribe-only).
+- Station liveness adalah retained MQTT presence (single source of truth) — tidak ada lagi tabel `stations` atau heartbeat HTTP.
 - Backend port `4000` dan frontend port `8080` hanya exposed di Docker network.
-- Agent standby via MQTT dan HTTP outbound; tidak butuh inbound port.
+- Agent standby via MQTT; HTTP outbound hanya untuk capture inspection. Tidak butuh inbound port.
 - Frame capture disimpan ke Cloudflare R2 jika object store aktif.
 
 ## Run
@@ -37,7 +39,7 @@ Endpoint publik:
 ## Main Features
 
 - Dashboard realtime dari tabel `inspections`: total OK/NG, tren harian, dimensi sering NG, part berisiko, dan scan terbaru.
-- Live Tracking: stream kamera, start/stop/capture/recalibrate agent, bounding box selectable, stats dimensi, dan reset overlay lokal.
+- Live Tracking: stream kamera, start/stop/capture/recalibrate agent, bounding box realtime yang selectable (presence + deteksi via MQTT-over-WebSocket langsung dari broker), analisis dimensi, dan reset overlay. Hapus kamera (admin saja) mematikan agent lokal dan menghapusnya dari tampilan.
 - Riwayat Inspeksi: tabel inspection history, detail measurement, dan thumbnail frame R2 bila tersedia.
 - Quality Tracking: rekap harian per part, NG rate, status request vendor, dan status history.
 - Konfigurasi Part/User: tabel utama dengan search/filter dan halaman editor terpisah.
@@ -63,8 +65,12 @@ JWT_SECRET=change-me-in-production-please-use-long-secret
 AGENT_TOKEN=change-me-agent-shared-token
 OBJECT_STORE_ENABLED=false
 MQTT_HOST=
+MQTT_WS_USERNAME=
+MQTT_WS_PASSWORD=
 CLOUDFLARE_REALTIME_ENABLED=false
 ```
+
+`MQTT_WS_USERNAME`/`MQTT_WS_PASSWORD` adalah kredensial broker khusus subscribe-only yang dibagikan ke browser untuk presence realtime. Jika kosong, backend fallback ke `MQTT_USERNAME`/`MQTT_PASSWORD` (kurang aman karena memberi akses penuh ke browser).
 
 Agent env:
 
@@ -81,8 +87,9 @@ MQTT_HOST=
 - Backend schema source of truth ada di `backend/migrations/20240101000001_initial.up.sql`.
 - Tidak ada migration incremental untuk initial setup.
 - Database local dan Supabase Postgres 17 memakai native range partitioning untuk `inspections`, dengan maintenance partisi lewat `pg_partman` dan `pg_cron`.
-- Frontend memakai relative path `/api/*` dan polling untuk live data non-video.
+- Frontend memakai relative path `/api/*` dan polling untuk data non-realtime; presence/status kamera di Live Tracking dibaca langsung dari broker via MQTT-over-WebSocket.
 - Agent manual capture hanya mengirim inspection saat ada detection valid.
+- Satu `STATION_ID` hanya boleh dipakai satu agent; agent menerapkan strict anti-race saat start (yang kalah otomatis berhenti).
 - Panduan migrasi database ke Supabase Postgres 17 + pg_partman ada di `docs/supabase.md`.
 
 ## Validation

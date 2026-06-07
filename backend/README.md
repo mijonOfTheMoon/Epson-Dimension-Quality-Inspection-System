@@ -1,6 +1,6 @@
 # DimInspect Backend
 
-Rust 1.91 + Axum API untuk auth, inspections, stations, agents, parts, users, dashboard, quality records, MQTT command publishing, agent HTTP ingest, R2 snapshot upload, dan Cloudflare Realtime viewer signaling.
+Rust 1.91 + Axum API untuk auth, inspections, agents (command), parts, users, dashboard, quality records, MQTT command publishing, agent HTTP inspection ingest, R2 snapshot upload, Cloudflare Realtime viewer signaling, dan realtime MQTT connection info untuk browser.
 
 ## Run
 
@@ -14,6 +14,8 @@ Service listen di `PORT` dan expose:
 - `GET /health` dan `GET /api/health`
 - REST endpoints di `/api/*`
 - Agent ingest: `POST /api/agent/inspections`
+- Realtime presence config: `GET /api/realtime/mqtt` (URL WSS broker + kredensial subscribe-only)
+- Hapus kamera (admin): `DELETE /api/stations/{stationId}`
 - Viewer signaling: `POST /api/video/stations/{stationId}/viewer-session`
 
 ## Data
@@ -47,13 +49,19 @@ MQTT_USERNAME=...
 MQTT_PASSWORD=...
 MQTT_TOPIC_PREFIX=diminspect/development
 MQTT_PRESENCE_STALE_AFTER_MS=15000
+MQTT_WS_USERNAME=
+MQTT_WS_PASSWORD=
 
 CLOUDFLARE_REALTIME_ENABLED=false
 CLOUDFLARE_REALTIME_APP_ID=...
 CLOUDFLARE_REALTIME_APP_SECRET=...
 ```
 
-Backend membaca retained MQTT presence sebelum publish command dan menganggap presence stale sebagai offline setelah `MQTT_PRESENCE_STALE_AFTER_MS`. Video subscriber dibuat lewat backend supaya Cloudflare app secret tidak dikirim ke browser.
+- `MQTT_USERNAME`/`MQTT_PASSWORD` dipakai backend & agent (publisher penuh).
+- Station liveness adalah retained MQTT presence (single source of truth) — tidak ada tabel `stations` maupun heartbeat HTTP. Backend membaca retained presence sebelum publish command dan menganggap presence stale sebagai offline setelah `MQTT_PRESENCE_STALE_AFTER_MS`.
+- Browser tidak polling status ke backend; ia subscribe presence langsung ke broker via MQTT-over-WebSocket. `GET /api/realtime/mqtt` mengembalikan URL WSS (`wss://<host>:8084/mqtt`) + kredensial. Untuk least-privilege, set `MQTT_WS_USERNAME`/`MQTT_WS_PASSWORD` ke user broker khusus subscribe-only pada topik presence; jika kosong, backend fallback ke kredensial publisher penuh.
+- Hapus kamera (`DELETE /api/stations/{id}`, admin saja) mem-publish command `shutdown` (agent lokal berhenti total) lalu meng-clear retained presence agar hilang dari tampilan.
+- Video subscriber dibuat lewat backend supaya Cloudflare app secret tidak dikirim ke browser.
 
 ## Validation
 

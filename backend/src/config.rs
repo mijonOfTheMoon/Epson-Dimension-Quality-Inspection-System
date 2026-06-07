@@ -30,7 +30,8 @@ pub struct Config {
     pub bcrypt_rounds: u32,
     pub agent_token: String,
     pub mqtt: Option<MqttConfig>,
-    pub mqtt_jwt_secret: Option<String>,
+    pub mqtt_ws_username: Option<String>,
+    pub mqtt_ws_password: Option<String>,
     pub cloudflare_realtime: Option<CloudflareRealtimeConfig>,
     pub object_store: Option<ObjectStoreConfig>,
 }
@@ -90,10 +91,8 @@ impl Config {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
         let mqtt = mqtt_config(&node_env)?;
-        let mqtt_jwt_secret = std::env::var("MQTT_JWT_SECRET")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let mqtt_ws_username = optional_env("MQTT_WS_USERNAME");
+        let mqtt_ws_password = optional_env("MQTT_WS_PASSWORD");
         let cloudflare_realtime = cloudflare_realtime_config()?;
         let object_store = object_store_config()?;
         let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
@@ -117,7 +116,8 @@ impl Config {
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
             agent_token,
             mqtt,
-            mqtt_jwt_secret,
+            mqtt_ws_username,
+            mqtt_ws_password,
             cloudflare_realtime,
             object_store,
         })
@@ -227,6 +227,13 @@ fn validate_signed_url_ttl(ttl: u64) -> anyhow::Result<()> {
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn optional_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn require_env(key: &str) -> anyhow::Result<String> {

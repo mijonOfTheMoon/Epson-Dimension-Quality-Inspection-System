@@ -21,7 +21,7 @@ CAMERA_INDEX=0
 BACKEND_HTTP_URL=http://localhost:4000
 AGENT_TOKEN=change-me-agent-shared-token
 
-MQTT_HOST=your-hivemq-host.s1.eu.hivemq.cloud
+MQTT_HOST=your-broker-host.emqxsl.com
 MQTT_PORT=8883
 MQTT_USERNAME=diminspect
 MQTT_PASSWORD=change-me
