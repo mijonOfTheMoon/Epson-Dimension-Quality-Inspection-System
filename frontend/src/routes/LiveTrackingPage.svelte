@@ -265,7 +265,7 @@
       <div class="flex items-center justify-between mb-4 border-b border-[var(--border)] pb-3">
         <h3 class="text-base font-bold text-slate-900 dark:text-white">Feed Kamera Aktif</h3>
         <span class="text-xs text-[var(--muted-foreground)] font-semibold">
-          {focusedStationId ? `Kamera Fokus: ${focusedStationId}` : `Total: ${merged.length} Stasiun`}
+          {focusedStationId ? `Kamera Fokus: ${focusedStationId}` : `Total: ${merged.length} Station`}
         </span>
       </div>
 
@@ -619,7 +619,7 @@
                   <span class="text-[10px] text-slate-400 font-bold shrink-0">{new Date(inspection.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
                 <div class="text-[10px] text-[var(--muted-foreground)] font-medium flex justify-between font-mono-data mt-1">
-                  <span>Stasiun: {inspection.stationId}</span>
+                  <span>Station: {inspection.stationId}</span>
                   <span>Akurasi: {inspection.confidenceScore}%</span>
                 </div>
               </div>

@@ -372,5 +372,5 @@ pub struct RecentInspectionPoint {
     pub part_code: String,
     pub part_name: String,
     pub status: InspectionStatus,
-    pub detections: i64,
+    pub confidence_score: f64,
 }

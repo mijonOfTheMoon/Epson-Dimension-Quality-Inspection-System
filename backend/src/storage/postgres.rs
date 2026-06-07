@@ -624,7 +624,7 @@ impl DataStore for PostgresStore {
                    part_code,
                    part_name,
                    status,
-                   COALESCE(jsonb_array_length(detections), 0)::bigint AS detection_count
+                   confidence_score
             FROM inspections
             ORDER BY timestamp DESC
             LIMIT 10
@@ -699,7 +699,7 @@ impl DataStore for PostgresStore {
                         part_code: row.part_code,
                         part_name: row.part_name,
                         status: parse_status(&row.status)?,
-                        detections: row.detection_count,
+                        confidence_score: row.confidence_score,
                     })
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?,
@@ -808,7 +808,7 @@ struct RecentInspectionRow {
     part_code: String,
     part_name: String,
     status: String,
-    detection_count: i64,
+    confidence_score: f64,
 }
 
 fn map_inspection(row: InspectionRow) -> anyhow::Result<InspectionCreatedEvent> {

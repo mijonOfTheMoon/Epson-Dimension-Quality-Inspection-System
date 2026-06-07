@@ -484,9 +484,9 @@
       {:else}
         <div class="divide-y divide-[var(--border)] overflow-hidden">
           {#each summary.data.recentInspections as inspection (inspection.id)}
-            <div class="py-4.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-premium">
-              <div class="min-w-0 flex items-start gap-3">
-                <span class="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
+            <div class="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-premium">
+              <div class="min-w-0 flex items-center gap-3">
+                <span class="inline-flex items-center justify-center w-11 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
                   inspection.status === 'OK' 
                     ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
                     : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
@@ -494,17 +494,19 @@
                   {inspection.status}
                 </span>
                 <div class="min-w-0">
-                  <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{inspection.partName}</span>
-                  <div class="text-[11px] text-[var(--muted-foreground)] mt-1.5 font-medium">
-                    Kode <span class="font-mono-data">{inspection.partCode}</span> &bull; Stasiun {inspection.stationId}
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{inspection.partName}</span>
+                    <span class="text-[10px] font-mono-data text-[var(--muted-foreground)] bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded-md shrink-0">{inspection.partCode}</span>
+                  </div>
+                  <div class="text-[11px] text-[var(--muted-foreground)] mt-1 flex items-center gap-2 font-medium">
+                    <span class="inline-flex items-center gap-1"><Activity class="w-3 h-3" /> {inspection.stationId}</span>
+                    <span class="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+                    <span class="inline-flex items-center gap-1"><Crosshair class="w-3 h-3" /> {inspection.confidenceScore}% akurasi</span>
                   </div>
                 </div>
               </div>
-              <div class="text-right shrink-0 self-start sm:self-auto" title={formatScanTime(inspection.timestamp)}>
-                <div class="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono-data">{inspection.detections} <span class="text-[11px] font-semibold text-[var(--muted-foreground)]">objek</span></div>
-                <div class="text-[11px] text-[var(--muted-foreground)] font-medium mt-0.5 inline-flex items-center gap-1">
-                  <Clock3 class="w-3 h-3" /> {relativeScanTime(inspection.timestamp)}
-                </div>
+              <div class="text-[11px] text-[var(--muted-foreground)] font-medium shrink-0 inline-flex items-center gap-1 self-start sm:self-center" title={formatScanTime(inspection.timestamp)}>
+                <Clock3 class="w-3 h-3" /> {relativeScanTime(inspection.timestamp)}
               </div>
             </div>
           {/each}

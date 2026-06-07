@@ -123,7 +123,7 @@
   };
 
   const exportCSV = () => {
-    const headers = ['ID', 'Part', 'Part Code', 'Status', 'Operator', 'Station', 'Timestamp', 'Confidence', 'FrameUrl'];
+    const headers = ['ID', 'Part', 'Part Code', 'Status', 'Operator', 'Station', 'Timestamp', 'Akurasi', 'FrameUrl'];
     const lines = [headers.map(csvField).join(',')];
     for (const r of filtered) {
       lines.push([
@@ -243,7 +243,7 @@
           <tr class="bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 border-b border-[var(--border)] text-left font-bold text-xs uppercase tracking-wider">
             <th class="px-5 py-4">Part / Kode</th>
             <th class="px-5 py-4">Status</th>
-            <th class="px-5 py-4">Confidence</th>
+            <th class="px-5 py-4">Akurasi</th>
             <th class="px-5 py-4">Waktu Pengerjaan</th>
             <th class="px-5 py-4 text-right">Detail</th>
           </tr>
@@ -334,7 +334,7 @@
                           <span class="text-xs font-bold text-slate-900 dark:text-white mt-0.5">{detail.operatorName}</span>
                         </div>
                         <div class="flex flex-col">
-                          <span class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Stasiun</span>
+                          <span class="text-[9px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Station</span>
                           <span class="text-xs font-bold text-slate-900 dark:text-white mt-0.5 font-mono-data">{detail.stationId}</span>
                         </div>
                         <div class="flex flex-col">

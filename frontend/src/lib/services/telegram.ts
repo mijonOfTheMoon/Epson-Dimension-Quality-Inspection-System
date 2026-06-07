@@ -82,7 +82,7 @@ function buildInspectionCaption(detail: InspectionLike): string {
     `• <b>Nama Part:</b> ${detail.partName}\n` +
     `• <b>Kode Part:</b> ${detail.partCode}\n` +
     `• <b>Status:</b> ${detail.status}\n` +
-    `• <b>Stasiun:</b> ${detail.stationId}\n` +
+    `• <b>Station:</b> ${detail.stationId}\n` +
     `• <b>Operator:</b> ${detail.operatorName}\n` +
     `• <b>Waktu:</b> ${formattedDate}\n` +
     `• <b>Confidence:</b> ${detail.confidenceScore}%\n\n` +

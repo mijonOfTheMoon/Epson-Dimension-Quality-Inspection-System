@@ -1,6 +1,6 @@
 # DimInspect Agent
 
-Agent Python OpenCV berjalan di mesin operator dan connect outbound ke MQTT untuk standby command/presence. Data inspeksi dikirim ke backend lewat HTTP; status & presence stasiun di-publish realtime ke MQTT (bukan lagi via HTTP). Live video dipublish ke Cloudflare Realtime/WebRTC saat sesi berjalan.
+Agent Python OpenCV berjalan di mesin operator dan connect outbound ke MQTT untuk standby command/presence. Data inspeksi dikirim ke backend lewat HTTP; status & presence station di-publish realtime ke MQTT (bukan lagi via HTTP). Live video dipublish ke Cloudflare Realtime/WebRTC saat sesi berjalan.
 
 ## Run
 

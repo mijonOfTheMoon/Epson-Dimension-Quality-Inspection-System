@@ -207,6 +207,6 @@ export interface DashboardSummary {
     partCode: string;
     partName: string;
     status: InspectionStatus;
-    detections: number;
+    confidenceScore: number;
   }[];
 }
