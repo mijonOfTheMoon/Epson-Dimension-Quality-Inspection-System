@@ -61,8 +61,11 @@ export interface RequestOptions {
 
 async function request<T>(path: string, init?: RequestInit, options?: RequestOptions): Promise<T> {
   const token = tokenStorage.get();
+  const body = init?.body;
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData || isBlob ? {} : { 'Content-Type': 'application/json' }),
     ...(init?.headers as Record<string, string> ?? {}),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -267,5 +270,10 @@ export const api = {
   },
   deleteUser(id: string) {
     return request<void>(`/api/users/${id}`, { method: 'DELETE' });
+  },
+  uploadAvatar(file: Blob) {
+    const fd = new FormData();
+    fd.append('file', file, 'avatar.jpg');
+    return request<{ objectKey: string }>('/api/users/avatar', { method: 'POST', body: fd });
   },
 };

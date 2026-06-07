@@ -5,7 +5,8 @@
   import { api, getErrorMessage } from '$lib/services/api';
   import { auth } from '$lib/stores/auth.svelte';
   import { clearDraft, loadDraft, saveDraft } from '$lib/services/draft';
-  import { fileToAvatarDataUrl } from '$lib/services/image';
+  import { fileToAvatarBlob } from '$lib/services/image';
+  import { avatarPlaceholder } from '$lib/utils/avatar';
   import type { User, UserRole } from '$lib/types/api';
   import Notice from '$lib/components/Notice.svelte';
 
@@ -16,7 +17,7 @@
     username: string;
     password: string;
     role: UserRole;
-    avatar: string;
+    avatarKey: string | null;
   }
 
   const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
@@ -33,6 +34,8 @@
   const draftKey = $derived(`user-editor:${id ?? 'new'}`);
 
   let form = $state<UserDraft>(emptyForm());
+  let avatarPreviewUrl = $state<string | null>(null);
+  let localPreviewUrl: string | null = null;
   let saving = $state(false);
   let error = $state<string | null>(null);
   let initializedFor = $state<string | null>(null);
@@ -44,7 +47,7 @@
       username: '',
       password: '',
       role: 'operator',
-      avatar: '',
+      avatarKey: null,
     };
   }
 
@@ -54,8 +57,15 @@
       username: user.username,
       password: '',
       role: user.role,
-      avatar: user.avatar ?? '',
+      avatarKey: null,
     };
+  }
+
+  function clearLocalPreview() {
+    if (localPreviewUrl) {
+      URL.revokeObjectURL(localPreviewUrl);
+      localPreviewUrl = null;
+    }
   }
 
   $effect(() => {
@@ -67,12 +77,16 @@
     const draft = loadDraft<UserDraft>(`user-editor:${key}`);
     if (draft) {
       form = draft;
+      clearLocalPreview();
+      avatarPreviewUrl = null;
       initializedFor = key;
       return;
     }
 
     if (!id) {
       form = emptyForm();
+      clearLocalPreview();
+      avatarPreviewUrl = null;
       initializedFor = key;
       return;
     }
@@ -84,6 +98,8 @@
       return;
     }
     form = formFromUser(user);
+    clearLocalPreview();
+    avatarPreviewUrl = user.avatar ?? null;
     initializedFor = key;
   });
 
@@ -94,11 +110,19 @@
 
   const resetForm = () => {
     error = null;
+    clearLocalPreview();
     if (id) {
       const user = users.data.find((item) => item.id === id);
-      form = user ? formFromUser(user) : emptyForm();
+      if (user) {
+        form = formFromUser(user);
+        avatarPreviewUrl = user.avatar ?? null;
+      } else {
+        form = emptyForm();
+        avatarPreviewUrl = null;
+      }
     } else {
       form = emptyForm();
+      avatarPreviewUrl = null;
     }
   };
 
@@ -113,7 +137,12 @@
     avatarBusy = true;
     error = null;
     try {
-      form.avatar = await fileToAvatarDataUrl(file);
+      const blob = await fileToAvatarBlob(file);
+      const { objectKey } = await api.uploadAvatar(blob);
+      form.avatarKey = objectKey;
+      clearLocalPreview();
+      localPreviewUrl = URL.createObjectURL(blob);
+      avatarPreviewUrl = localPreviewUrl;
     } catch (err) {
       error = getErrorMessage(err);
     } finally {
@@ -122,7 +151,9 @@
   };
 
   const removeAvatar = () => {
-    form.avatar = '';
+    form.avatarKey = null;
+    clearLocalPreview();
+    avatarPreviewUrl = null;
   };
 
   const validate = () => {
@@ -147,7 +178,7 @@
         username: form.username.trim(),
         name: form.name.trim(),
         role: form.role,
-        avatar: form.avatar.trim() || undefined,
+        avatar: form.avatarKey ?? undefined,
       };
       if (id) {
         const updated = await api.updateUser(id, {
@@ -223,11 +254,11 @@
         <div class="space-y-1.5 text-xs font-bold text-slate-500 md:col-span-2">
           <span class="tracking-wide text-[10px] uppercase">Foto Avatar (Opsional)</span>
           <div class="flex items-center gap-4">
-            {#if form.avatar}
-              <img src={form.avatar} alt="Pratinjau avatar" class="w-16 h-16 rounded-2xl object-cover border border-[var(--border)] shadow-sm" />
+            {#if avatarPreviewUrl}
+              <img src={avatarPreviewUrl} alt="Pratinjau avatar" class="w-16 h-16 rounded-2xl object-cover border border-[var(--border)] shadow-sm" />
             {:else}
               <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg font-bold shadow-sm">
-                {form.name.trim().charAt(0).toUpperCase() || '?'}
+                {avatarPlaceholder(form.name)}
               </div>
             {/if}
             <div class="flex items-center gap-2">
@@ -237,11 +268,11 @@
                   <span>Memproses...</span>
                 {:else}
                   <Upload class="w-4 h-4" />
-                  <span>{form.avatar ? 'Ganti Gambar' : 'Unggah Gambar'}</span>
+                  <span>{avatarPreviewUrl ? 'Ganti Gambar' : 'Unggah Gambar'}</span>
                 {/if}
                 <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
               </label>
-              {#if form.avatar}
+              {#if avatarPreviewUrl}
                 <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
                   <Trash2 class="w-4 h-4" /> Hapus
                 </button>

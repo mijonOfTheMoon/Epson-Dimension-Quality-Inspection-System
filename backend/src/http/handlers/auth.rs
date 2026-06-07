@@ -23,15 +23,29 @@ pub async fn login(
         return Err(AppError::BadRequest("Invalid request".into()));
     }
     match state.auth.login(&body.username, &body.password).await? {
-        Some(result) => Ok(Json(result)),
+        Some(mut result) => {
+            crate::http::handlers::users::attach_avatar_urls(
+                std::slice::from_mut(&mut result.user),
+                state.object_store.clone(),
+            )
+            .await;
+            Ok(Json(result))
+        }
         None => Err(AppError::UnauthorizedMessage("Invalid credentials".into())),
     }
 }
 
 pub async fn me(
+    State(state): State<AppState>,
     Extension(current): Extension<CurrentUser>,
 ) -> AppResult<Json<crate::domain::SafeUser>> {
-    Ok(Json(require_auth(&current)?))
+    let mut user = require_auth(&current)?;
+    crate::http::handlers::users::attach_avatar_urls(
+        std::slice::from_mut(&mut user),
+        state.object_store.clone(),
+    )
+    .await;
+    Ok(Json(user))
 }
 
 pub async fn logout(Extension(current): Extension<CurrentUser>) -> AppResult<StatusCode> {

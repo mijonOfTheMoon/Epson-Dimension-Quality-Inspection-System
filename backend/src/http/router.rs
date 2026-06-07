@@ -85,6 +85,7 @@ pub fn build_router(
             "/api/users",
             get(handlers::users::list).post(handlers::users::create),
         )
+        .route("/api/users/avatar", post(handlers::users::upload_avatar))
         .route(
             "/api/users/{id}",
             patch(handlers::users::update).delete(handlers::users::delete_user),

@@ -31,6 +31,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
+[dev-dependencies]
+proptest = "1"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

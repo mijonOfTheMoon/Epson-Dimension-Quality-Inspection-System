@@ -1,5 +1,7 @@
 export const MAX_AVATAR_FILE_BYTES = 5 * 1024 * 1024;
 
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -16,12 +18,12 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-export async function fileToAvatarDataUrl(
+export async function fileToAvatarBlob(
   file: File,
   size = 256,
   quality = 0.85,
-): Promise<string> {
-  if (!file.type.startsWith('image/')) {
+): Promise<Blob> {
+  if (!ACCEPTED_TYPES.includes(file.type)) {
     throw new Error('File harus berupa gambar.');
   }
   if (file.size > MAX_AVATAR_FILE_BYTES) {
@@ -42,5 +44,12 @@ export async function fileToAvatarDataUrl(
   const sy = (img.naturalHeight - edge) / 2;
   ctx.drawImage(img, sx, sy, edge, edge, 0, 0, size, size);
 
-  return canvas.toDataURL('image/jpeg', quality);
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', quality);
+  });
+  if (!blob) {
+    throw new Error('Browser tidak mendukung pemrosesan gambar.');
+  }
+
+  return blob;
 }

@@ -1,4 +1,5 @@
 mod auth;
+mod avatar;
 mod cloudflare;
 mod config;
 mod domain;

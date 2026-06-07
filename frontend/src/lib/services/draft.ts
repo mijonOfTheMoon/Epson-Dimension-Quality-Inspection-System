@@ -1,6 +1,23 @@
-// Lightweight session-scoped draft persistence for editor forms.
-// Keeps in-progress form data alive across navigation (and reloads within
-// the same tab session) so users can leave an editor and resume later.
+function isDataUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^data:/i.test(value.trim());
+}
+
+function stripDataUrls<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => !isDataUrl(item))
+      .map((item) => stripDataUrls(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (isDataUrl(item)) continue;
+      result[key] = stripDataUrls(item);
+    }
+    return result as T;
+  }
+  return value;
+}
 
 export function loadDraft<T>(key: string): T | null {
   try {
@@ -13,9 +30,9 @@ export function loadDraft<T>(key: string): T | null {
 
 export function saveDraft<T>(key: string, value: T): void {
   try {
-    sessionStorage.setItem(key, JSON.stringify(value));
+    sessionStorage.setItem(key, JSON.stringify(stripDataUrls(value)));
   } catch {
-    // Ignore quota or serialization errors; persistence is best-effort.
+    void 0;
   }
 }
 
@@ -23,6 +40,6 @@ export function clearDraft(key: string): void {
   try {
     sessionStorage.removeItem(key);
   } catch {
-    // Ignore storage access errors.
+    void 0;
   }
 }

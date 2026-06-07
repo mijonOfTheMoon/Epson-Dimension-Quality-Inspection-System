@@ -195,6 +195,7 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
     let secret_access_key = require_env("OBJECT_STORE_SECRET_ACCESS_KEY")?;
 
     let signed_url_ttl = parse_env("OBJECT_STORE_SIGNED_URL_TTL_SECONDS", 86_400_u64)?;
+    validate_signed_url_ttl(signed_url_ttl)?;
     let upload_timeout = parse_env("OBJECT_STORE_UPLOAD_TIMEOUT_SECONDS", 10_u64)?;
     Ok(Some(ObjectStoreConfig {
         bucket,
@@ -204,6 +205,18 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
         signed_url_ttl: Duration::from_secs(signed_url_ttl),
         upload_timeout: Duration::from_secs(upload_timeout),
     }))
+}
+
+const SIGNED_URL_TTL_MIN_SECONDS: u64 = 60;
+const SIGNED_URL_TTL_MAX_SECONDS: u64 = 604_800;
+
+fn validate_signed_url_ttl(ttl: u64) -> anyhow::Result<()> {
+    if !(SIGNED_URL_TTL_MIN_SECONDS..=SIGNED_URL_TTL_MAX_SECONDS).contains(&ttl) {
+        return Err(anyhow!(
+            "OBJECT_STORE_SIGNED_URL_TTL_SECONDS must be between 60 and 604800 seconds"
+        ));
+    }
+    Ok(())
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -257,4 +270,41 @@ fn validate_timezone(value: String) -> anyhow::Result<String> {
     }
 
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_signed_url_ttl, SIGNED_URL_TTL_MAX_SECONDS, SIGNED_URL_TTL_MIN_SECONDS};
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 100, ..ProptestConfig::default() })]
+
+        // Feature: avatar-r2-migration, Property 13: Config signed-URL TTL bounds
+        #[test]
+        fn prop_signed_url_ttl_bounds(
+            ttl in prop_oneof![
+                Just(0u64),
+                Just(SIGNED_URL_TTL_MIN_SECONDS - 1),
+                Just(SIGNED_URL_TTL_MIN_SECONDS),
+                Just(SIGNED_URL_TTL_MAX_SECONDS),
+                Just(SIGNED_URL_TTL_MAX_SECONDS + 1),
+                Just(u64::MAX),
+                SIGNED_URL_TTL_MIN_SECONDS..=SIGNED_URL_TTL_MAX_SECONDS,
+                0..SIGNED_URL_TTL_MIN_SECONDS,
+                (SIGNED_URL_TTL_MAX_SECONDS + 1)..=u64::MAX,
+            ]
+        ) {
+            let result = validate_signed_url_ttl(ttl);
+            let within_bounds =
+                (SIGNED_URL_TTL_MIN_SECONDS..=SIGNED_URL_TTL_MAX_SECONDS).contains(&ttl);
+
+            prop_assert_eq!(result.is_ok(), within_bounds);
+
+            if !within_bounds {
+                let message = result.unwrap_err().to_string();
+                prop_assert!(message.contains("OBJECT_STORE_SIGNED_URL_TTL_SECONDS"));
+            }
+        }
+    }
 }

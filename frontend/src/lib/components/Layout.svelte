@@ -7,6 +7,7 @@
   } from 'lucide-svelte';
   import { auth } from '$lib/stores/auth.svelte';
   import { theme } from '$lib/stores/theme.svelte';
+  import { avatarPlaceholder } from '$lib/utils/avatar';
   import type { UserRole } from '$lib/types/api';
   import Logo from '../../assets/Logo.png';
 
@@ -98,7 +99,7 @@
           <img src={auth.user.avatar} alt={auth.user?.name ?? ''} class="w-9 h-9 rounded-xl object-cover border border-indigo-500/30 group-hover:scale-105 transition-transform" />
         {:else}
           <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-semibold text-indigo-300 group-hover:scale-105 transition-transform">
-            {auth.user?.name?.charAt(0).toUpperCase() ?? ''}
+            {auth.user ? avatarPlaceholder(auth.user.name) : ''}
           </div>
         {/if}
         <div class="flex-1 min-w-0">

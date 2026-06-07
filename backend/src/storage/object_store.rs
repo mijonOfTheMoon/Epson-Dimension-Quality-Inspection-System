@@ -60,6 +60,39 @@ impl R2Store {
         Ok(())
     }
 
+    pub async fn delete_object(&self, key: &str) -> anyhow::Result<()> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .context("R2 delete failed")?;
+
+        Ok(())
+    }
+
+    pub async fn object_exists(&self, key: &str) -> anyhow::Result<bool> {
+        match self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(error) => {
+                let service_error = error.into_service_error();
+                if service_error.is_not_found() {
+                    Ok(false)
+                } else {
+                    Err(anyhow::Error::new(service_error).context("R2 head failed"))
+                }
+            }
+        }
+    }
+
     pub async fn signed_get_url(&self, key: &str) -> anyhow::Result<String> {
         let presigning = PresigningConfig::expires_in(self.signed_url_ttl)?;
         let request = self
