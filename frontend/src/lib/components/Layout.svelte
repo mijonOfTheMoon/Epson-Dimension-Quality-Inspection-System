@@ -139,7 +139,7 @@
     </header>
 
     <main class="flex-1 overflow-y-auto p-5 lg:p-8 scrollbar-thin bg-slate-50/50 dark:bg-slate-950/40">
-      <div class="max-w-[1600px] mx-auto animate-in fade-in duration-300">
+      <div class="max-w-[1600px] mx-auto">
         {@render children()}
       </div>
     </main>

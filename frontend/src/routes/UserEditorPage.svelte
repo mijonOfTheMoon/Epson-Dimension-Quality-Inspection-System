@@ -76,9 +76,14 @@
 
     const draft = loadDraft<UserDraft>(`user-editor:${key}`);
     if (draft) {
+      if (id && users.loading) return;
       form = draft;
       clearLocalPreview();
-      avatarPreviewUrl = null;
+      if (id && !draft.avatarKey) {
+        avatarPreviewUrl = users.data.find((item) => item.id === id)?.avatar ?? null;
+      } else {
+        avatarPreviewUrl = null;
+      }
       initializedFor = key;
       return;
     }

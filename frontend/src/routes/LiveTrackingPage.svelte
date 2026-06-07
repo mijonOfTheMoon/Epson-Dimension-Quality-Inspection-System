@@ -76,9 +76,7 @@
     ),
   );
 
-  const latestInspections = $derived(inspections.data.slice(0, 10));
   const cameraLoading = $derived(stations.loading && merged.length === 0);
-  const supportingDataLoading = $derived((inspections.loading || parts.loading) && merged.length > 0);
   const error = $derived(inspections.error || stations.error || parts.error);
 
   const selectionGroups = $derived.by(() => {
@@ -195,9 +193,26 @@
     merged.filter((s) => s.running || pendingStart[s.stationId]).length,
   );
 
+  let sessionStartedAt = $state<number | null>(null);
+
+  $effect(() => {
+    const active = optimisticRunningCount > 0;
+    if (active) {
+      if (sessionStartedAt === null) sessionStartedAt = Date.now();
+    } else if (sessionStartedAt !== null) {
+      sessionStartedAt = null;
+    }
+  });
+
+  const sessionInspections = $derived.by(() => {
+    const startedAt = sessionStartedAt;
+    if (startedAt === null) return [];
+    return inspections.data.filter((item) => Date.parse(item.timestamp) >= startedAt);
+  });
+
   const sessionStats = $derived.by(() => {
     let total = 0, ok = 0, ng = 0;
-    for (const item of latestInspections) {
+    for (const item of sessionInspections) {
       total += 1;
       if (item.status === 'OK') ok += 1;
       else if (item.status === 'NG') ng += 1;
@@ -242,18 +257,6 @@
         <span class="font-medium">{error}</span>
       </div>
       <button onclick={retry} class="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors">Coba lagi</button>
-    </div>
-  {/if}
-
-  {#if cameraLoading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-      <span>Memuat daftar kamera tersedia...</span>
-    </div>
-  {:else if supportingDataLoading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-      <span>Memuat data pendukung live tracking...</span>
     </div>
   {/if}
 
@@ -579,7 +582,7 @@
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm overflow-hidden flex flex-col">
         <div class="p-4 border-b border-[var(--border)] flex items-center justify-between bg-slate-50/30 dark:bg-slate-900/10">
           <h3 class="text-sm font-bold text-slate-800 dark:text-white">Sesi Saat Ini</h3>
-          <span class="inline-flex px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-bold text-indigo-600 dark:text-indigo-400">{latestInspections.length} Total</span>
+          <span class="inline-flex px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-bold text-indigo-600 dark:text-indigo-400">{sessionInspections.length} Total</span>
         </div>
         
         <div class="grid grid-cols-3 gap-1 p-3.5 border-b border-[var(--border)] text-center font-mono-data shadow-inner bg-slate-50/10 dark:bg-slate-900/5">
@@ -598,10 +601,10 @@
         </div>
 
         <div class="p-4 space-y-3 max-h-[300px] overflow-y-auto scrollbar-thin">
-          {#if latestInspections.length === 0}
+          {#if sessionInspections.length === 0}
             <div class="text-center py-12 text-xs text-[var(--muted-foreground)] font-medium border border-dashed border-[var(--border)] rounded-xl">Belum ada aktivitas scan terdeteksi pada sesi ini.</div>
           {:else}
-            {#each latestInspections as inspection (inspection.id)}
+            {#each sessionInspections as inspection (inspection.id)}
               {@const isOK = inspection.status === 'OK'}
               <div class="p-3 rounded-xl border transition-all hover:-translate-y-[1px] hover:shadow-sm {
                 isOK 
