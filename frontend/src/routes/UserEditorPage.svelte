@@ -208,7 +208,7 @@
       <button onclick={() => navigate('/user-management')} class="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2.5 transition-colors group">
         <ArrowLeft class="w-3.5 h-3.5 transition-transform group-hover:-translate-x-[2px]" /> Kembali
       </button>
-      <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Akun Pengguna' : 'Tambah User Baru'}</h1>
+      <h1 class="text-slate-900 dark:text-white tracking-tight">{isEdit ? 'Edit Pengguna' : 'Tambah Pengguna'}</h1>
     </div>
 
     <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
@@ -240,55 +240,45 @@
       Akun pengguna tidak ditemukan di database.
     </div>
   {:else}
-    <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
-      <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Informasi Profil Personil</h3>
-      <div class="grid md:grid-cols-2 gap-4">
-        <label class="space-y-1.5 text-xs font-bold text-slate-500">
-          <span class="tracking-wide text-[10px] uppercase">Nama Lengkap</span>
-          <input bind:value={form.name} class="input text-slate-900 dark:text-white font-semibold" placeholder="Nama lengkap personil QC" required />
-        </label>
-        <label class="space-y-1.5 text-xs font-bold text-slate-500">
-          <span class="tracking-wide text-[10px] uppercase">Username Kredensial</span>
-          <input bind:value={form.username} class="input font-mono-data text-indigo-600 dark:text-indigo-400 font-bold" placeholder="username_qc" required />
-        </label>
-        <div class="space-y-1.5 text-xs font-bold text-slate-500 md:col-span-2">
-          <span class="tracking-wide text-[10px] uppercase">Foto Avatar (Opsional)</span>
-          <div class="flex items-center gap-4">
-            {#if avatarPreviewUrl}
-              <img src={avatarPreviewUrl} alt="Pratinjau avatar" class="w-16 h-16 rounded-2xl object-cover border border-[var(--border)] shadow-sm" />
-            {:else}
-              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg font-bold shadow-sm">
-                {avatarPlaceholder(form.name)}
-              </div>
-            {/if}
-            <div class="flex items-center gap-2">
-              <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm cursor-pointer {avatarBusy ? 'opacity-60 pointer-events-none' : ''}">
-                {#if avatarBusy}
-                  <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-400/40 border-t-slate-500 animate-spin"></span>
-                  <span>Memproses...</span>
-                {:else}
-                  <Upload class="w-4 h-4" />
-                  <span>{avatarPreviewUrl ? 'Ganti Gambar' : 'Unggah Gambar'}</span>
-                {/if}
-                <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
-              </label>
-              {#if avatarPreviewUrl}
-                <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
-                  <Trash2 class="w-4 h-4" /> Hapus
-                </button>
-              {/if}
-            </div>
+    <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-5">
+      <div class="flex items-center gap-4">
+        {#if avatarPreviewUrl}
+          <img src={avatarPreviewUrl} alt="Avatar" class="w-16 h-16 rounded-2xl object-cover border border-[var(--border)] shadow-sm" />
+        {:else}
+          <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg font-bold shadow-sm">
+            {avatarPlaceholder(form.name)}
           </div>
-          <p class="text-[10px] font-medium text-[var(--muted-foreground)] normal-case tracking-normal pt-0.5">Format gambar, maks. 5 MB. Otomatis dipotong jadi persegi.</p>
+        {/if}
+        <div class="flex items-center gap-2">
+          <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold hover:bg-[var(--accent)] text-slate-700 dark:text-slate-300 transition-premium shadow-sm cursor-pointer {avatarBusy ? 'opacity-60 pointer-events-none' : ''}">
+            {#if avatarBusy}
+              <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-400/40 border-t-slate-500 animate-spin"></span>
+              <span>Memproses...</span>
+            {:else}
+              <Upload class="w-4 h-4" />
+              <span>{avatarPreviewUrl ? 'Ganti Foto' : 'Unggah Foto'}</span>
+            {/if}
+            <input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarBusy} />
+          </label>
+          {#if avatarPreviewUrl}
+            <button type="button" onclick={removeAvatar} class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs font-bold hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 transition-premium shadow-sm">
+              <Trash2 class="w-4 h-4" /> Hapus
+            </button>
+          {/if}
         </div>
       </div>
-    </section>
 
-    <section class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm space-y-4">
-      <h3 class="text-base font-bold text-slate-900 dark:text-white border-b border-[var(--border)] pb-2">Akses &amp; Tingkat Keamanan</h3>
       <div class="grid md:grid-cols-2 gap-4">
         <label class="space-y-1.5 text-xs font-bold text-slate-500">
-          <span class="tracking-wide text-[10px] uppercase">Tingkat Hak Akses (Role)</span>
+          <span class="tracking-wide text-[10px] uppercase">Nama</span>
+          <input bind:value={form.name} class="input text-slate-900 dark:text-white font-semibold" placeholder="Nama lengkap" required />
+        </label>
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">Username</span>
+          <input bind:value={form.username} class="input font-mono-data text-indigo-600 dark:text-indigo-400 font-bold" placeholder="username" required />
+        </label>
+        <label class="space-y-1.5 text-xs font-bold text-slate-500">
+          <span class="tracking-wide text-[10px] uppercase">Role</span>
           <select bind:value={form.role} class="input font-semibold text-xs py-2.5">
             {#each ROLE_OPTIONS as role (role.value)}
               <option value={role.value}>{role.label}</option>
@@ -296,10 +286,8 @@
           </select>
         </label>
         <label class="space-y-1.5 text-xs font-bold text-slate-500">
-          <span class="tracking-wide text-[10px] uppercase">
-            {isEdit ? 'Kunci Keamanan Baru (Biarkan kosong jika tidak diganti)' : 'Kunci Keamanan (Password)'}
-          </span>
-          <input type="password" bind:value={form.password} class="input text-slate-900 dark:text-white font-semibold" placeholder="Min. 4 karakter" />
+          <span class="tracking-wide text-[10px] uppercase">Password</span>
+          <input type="password" bind:value={form.password} class="input text-slate-900 dark:text-white font-semibold" placeholder={isEdit ? 'Kosongkan jika tidak diganti' : 'Min. 4 karakter'} />
         </label>
       </div>
     </section>
