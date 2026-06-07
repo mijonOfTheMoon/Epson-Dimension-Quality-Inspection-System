@@ -77,13 +77,6 @@
   {#if error}<Notice text={error} />{/if}
   {#if parts.error}<Notice text={parts.error} />{/if}
 
-  {#if parts.loading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-      <span>Memuat data spesifikasi part...</span>
-    </div>
-  {/if}
-
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="relative flex-1 min-w-[240px]">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -119,6 +112,24 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)] text-slate-800 dark:text-slate-200">
+          {#if parts.loading && parts.data.length === 0}
+            {#each Array(6) as _row, i (i)}
+              <tr class="animate-pulse" aria-hidden="true">
+                <td class="px-5 py-3.5"><div class="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-36 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-6 rounded bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-40 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <div class="h-8 w-8 rounded-xl bg-slate-200 dark:bg-slate-700/50"></div>
+                    <div class="h-8 w-8 rounded-xl bg-slate-200 dark:bg-slate-700/50"></div>
+                    <div class="h-8 w-8 rounded-xl bg-slate-200 dark:bg-slate-700/50"></div>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          {:else}
           {#each filtered as part (part.id)}
             {@const isExpanded = expandedId === part.id}
             <tr
@@ -198,6 +209,7 @@
                 Tidak ditemukan part terdaftar yang cocok dengan filter pencarian.
               </td>
             </tr>
+          {/if}
           {/if}
         </tbody>
       </table>

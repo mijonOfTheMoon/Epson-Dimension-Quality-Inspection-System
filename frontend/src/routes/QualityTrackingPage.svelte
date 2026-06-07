@@ -121,13 +121,6 @@
     </div>
   {/if}
 
-  {#if quality.loading}
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold text-[var(--muted-foreground)] shadow-sm animate-pulse flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full border-2 border-[var(--muted-foreground)]/30 border-t-[var(--muted-foreground)] animate-spin"></span>
-      <span>Memuat data tracking kualitas...</span>
-    </div>
-  {/if}
-
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4.5">
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
       <div class="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider uppercase">Total Scan Hari Ini</div>
@@ -187,6 +180,23 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)] text-slate-800 dark:text-slate-200">
+          {#if quality.loading && quality.data.length === 0}
+            {#each Array(6) as _row, i (i)}
+              <tr class="animate-pulse" aria-hidden="true">
+                <td class="px-5 py-3.5"><div class="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5">
+                  <div class="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700/50"></div>
+                  <div class="h-2.5 w-20 rounded bg-slate-200 dark:bg-slate-700/50 mt-2"></div>
+                </td>
+                <td class="px-5 py-3.5"><div class="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700/50"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-10 rounded bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-8 rounded bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+                <td class="px-5 py-3.5"><div class="h-5 w-16 rounded-full bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+                <td class="px-5 py-3.5"><div class="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+                <td class="px-5 py-3.5"><div class="h-4 w-4 rounded bg-slate-200 dark:bg-slate-700/50 mx-auto"></div></td>
+              </tr>
+            {/each}
+          {:else}
           {#each summary.filtered as record (record.id)}
             {@const statusCfg = STATUS_CONFIG[record.requestStatus]}
             {@const StatusIcon = statusCfg.icon}
@@ -285,12 +295,13 @@
             {/if}
           {/each}
 
-          {#if summary.filtered.length === 0}
+          {#if !quality.loading && summary.filtered.length === 0}
             <tr>
               <td colspan="8" class="px-5 py-16 text-center text-[var(--muted-foreground)] font-medium">
                 Tidak ditemukan data kualitas untuk kriteria pencarian dan filter terpilih.
               </td>
             </tr>
+          {/if}
           {/if}
         </tbody>
       </table>
