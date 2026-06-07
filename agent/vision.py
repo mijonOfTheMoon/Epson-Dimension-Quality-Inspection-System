@@ -149,6 +149,7 @@ class InspectionPayload:
     partName: str
     partCode: str
     partId: str
+    vendor: str
     status: str
     confidenceScore: float
     measurements: list[Measurement]
@@ -159,6 +160,7 @@ class InspectionPayload:
             "partName": self.partName,
             "partCode": self.partCode,
             "partId": self.partId,
+            "vendor": self.vendor,
             "status": self.status,
             "confidenceScore": self.confidenceScore,
             "measurements": [measurement.to_dict() for measurement in self.measurements],
@@ -432,6 +434,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         partName=part.part_name,
         partCode=part.part_code,
         partId=part.part_id,
+        vendor=part.vendor,
         status=status,
         confidenceScore=confidence,
         measurements=measurements,

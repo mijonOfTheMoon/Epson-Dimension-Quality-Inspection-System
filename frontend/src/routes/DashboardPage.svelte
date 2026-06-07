@@ -108,6 +108,16 @@
     minute: '2-digit',
   });
 
+  const relativeScanTime = (timestamp: string) => {
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'Baru saja';
+    if (minutes < 60) return `${minutes} mnt lalu`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} jam lalu`;
+    return `${Math.floor(hours / 24)} hr lalu`;
+  };
+
   let dailyTrendChartEl = $state<HTMLDivElement | null>(null);
   let ratioChartEl = $state<HTMLDivElement | null>(null);
   let dailyTrendChartInstance: ApexCharts | null = null;
@@ -474,7 +484,7 @@
       {:else}
         <div class="divide-y divide-[var(--border)] overflow-hidden">
           {#each summary.data.recentInspections as inspection (inspection.id)}
-            <div class="py-4.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-premium">
+            <div class="py-4.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-premium">
               <div class="min-w-0 flex items-start gap-3">
                 <span class="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold tracking-wide shrink-0 {
                   inspection.status === 'OK' 
@@ -486,11 +496,16 @@
                 <div class="min-w-0">
                   <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{inspection.partName}</span>
                   <div class="text-[11px] text-[var(--muted-foreground)] mt-1.5 font-medium">
-                    Kode: <span class="font-mono-data">{inspection.partCode}</span> &bull; {inspection.stationId} &bull; {inspection.detections} objek &bull; {formatScanTime(inspection.timestamp)}
+                    Kode <span class="font-mono-data">{inspection.partCode}</span> &bull; Stasiun {inspection.stationId}
                   </div>
                 </div>
               </div>
-              <div class="text-[11px] text-slate-400 dark:text-slate-500 font-mono-data bg-slate-50 dark:bg-slate-800/40 px-3 py-1 rounded-lg border border-[var(--border)] shrink-0 self-start sm:self-auto shadow-inner">{inspection.id}</div>
+              <div class="text-right shrink-0 self-start sm:self-auto" title={formatScanTime(inspection.timestamp)}>
+                <div class="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono-data">{inspection.detections} <span class="text-[11px] font-semibold text-[var(--muted-foreground)]">objek</span></div>
+                <div class="text-[11px] text-[var(--muted-foreground)] font-medium mt-0.5 inline-flex items-center gap-1">
+                  <Clock3 class="w-3 h-3" /> {relativeScanTime(inspection.timestamp)}
+                </div>
+              </div>
             </div>
           {/each}
         </div>

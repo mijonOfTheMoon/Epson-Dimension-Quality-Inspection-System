@@ -190,7 +190,7 @@
           Mengirim...
         {:else}
           <Send class="w-4 h-4" />
-          Kirim Rekap NG ke Telegram
+          Kirim Rekap ke Telegram
         {/if}
       </button>
       <button 
