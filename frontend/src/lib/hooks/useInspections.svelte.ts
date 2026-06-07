@@ -4,7 +4,7 @@ import { api, getErrorMessage } from '$lib/services/api';
 import { createPollingBackoff } from '$lib/services/backoff';
 import { startVisibilityPolling, deepEqual } from '$lib/services/polling';
 
-export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000) {
+export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000, includeDetections = false) {
   let data = $state<InspectionResult[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -21,7 +21,7 @@ export function useInspections(limit = 200, visibleMs = 3000, hiddenMs = 15000) 
     const current = ++requestId;
     if (showLoading) loading = true;
     try {
-      const next = await api.getInspections({ limit });
+      const next = await api.getInspections({ limit, includeDetections });
       if (!mounted || current !== requestId) return;
       if (!deepEqual(data, next)) data = next;
       error = null;

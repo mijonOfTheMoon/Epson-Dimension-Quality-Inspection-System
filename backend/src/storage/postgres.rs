@@ -362,16 +362,21 @@ impl DataStore for PostgresStore {
         query: InspectionQuery,
     ) -> anyhow::Result<Vec<InspectionCreatedEvent>> {
         let limit = resolve_inspection_limit(query.limit);
-        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
+        let payload_columns = if query.include_detections.unwrap_or(false) {
+            "measurements, detections"
+        } else {
+            "'[]'::jsonb as measurements, '[]'::jsonb as detections"
+        };
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(format!(
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
                    operator_id, operator_name, status, confidence_score,
-                   measurements, detections,
+                   {payload_columns},
                    trigger, frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE 1 = 1
-            "#,
-        );
+            "#
+        ));
 
         if let Some(status) = query.status {
             builder.push(" AND status = ");

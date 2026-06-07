@@ -172,11 +172,12 @@ export const api = {
   deletePart(id: string) {
     return request<void>(`/api/parts/${id}`, { method: 'DELETE' });
   },
-  async getInspections(params: { limit?: number; status?: 'OK' | 'NG'; partCode?: string } = {}) {
+  async getInspections(params: { limit?: number; status?: 'OK' | 'NG'; partCode?: string; includeDetections?: boolean } = {}) {
     const query = new URLSearchParams();
     if (params.limit) query.set('limit', String(params.limit));
     if (params.status) query.set('status', params.status);
     if (params.partCode) query.set('partCode', params.partCode);
+    if (params.includeDetections) query.set('includeDetections', 'true');
     const suffix = query.size ? `?${query.toString()}` : '';
     const data = await request<InspectionCreatedEvent[]>(`/api/inspections${suffix}`, undefined, { timeoutMs: POLLING_TIMEOUT_MS });
     return data.map(normalizeInspectionEvent);

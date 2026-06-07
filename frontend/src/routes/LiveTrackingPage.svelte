@@ -55,7 +55,7 @@
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
   }
 
-  const inspections = useInspections(40, 10000, 30000);
+  const inspections = useInspections(40, 10000, 30000, true);
   const stations = useStations();
   const parts = useParts();
 

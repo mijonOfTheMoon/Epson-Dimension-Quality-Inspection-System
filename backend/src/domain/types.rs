@@ -378,6 +378,7 @@ pub struct InspectionQuery {
     pub limit: Option<i64>,
     pub status: Option<InspectionStatus>,
     pub part_code: Option<String>,
+    pub include_detections: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
