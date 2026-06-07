@@ -366,7 +366,7 @@ impl DataStore for PostgresStore {
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
                    operator_id, operator_name, status, confidence_score,
-                   '[]'::jsonb as measurements, '[]'::jsonb as detections,
+                   measurements, detections,
                    trigger, frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE 1 = 1

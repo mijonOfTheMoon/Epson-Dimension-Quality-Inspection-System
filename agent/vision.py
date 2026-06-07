@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -387,7 +386,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         status = "OK" if detection_ok else "NG"
         color = (0, 255, 0) if status == "OK" else (0, 0, 255)
         detection = ObjectDetection(
-            id=f"obj-{index}-{uuid4().hex[:12]}",
+            id=f"obj-{index}",
             label=f"{part.part_code} #{index}",
             bbox=BoundingBox(
                 x=round((x / frame.shape[1]) * 100, 2),
