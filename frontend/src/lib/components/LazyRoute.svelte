@@ -15,26 +15,44 @@
   let status = $state<'loading' | 'ready' | 'error'>('loading');
   let LoadedComponent = $state<Component<any> | null>(null);
 
-  async function load() {
-    status = 'loading';
-    LoadedComponent = null;
+  async function load(current: () => Promise<LoadedModule>) {
     try {
-      const module = await loader();
+      const module = await current();
+      if (current !== loader) return;
       LoadedComponent = module.default;
       status = 'ready';
     } catch {
+      if (current !== loader) return;
       status = 'error';
     }
   }
 
   $effect(() => {
-    void load();
+    const current = loader;
+    if (LoadedComponent === null) status = 'loading';
+    void load(current);
   });
 </script>
 
-{#if status === 'loading'}
+{#if status === 'error'}
+  <div class="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6">
+    <div class="w-full max-w-sm">
+      <Notice text="Gagal memuat halaman" tone="error" />
+    </div>
+    <button
+      type="button"
+      class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--muted)]"
+      onclick={() => void load(loader)}
+    >
+      Coba lagi
+    </button>
+  </div>
+{:else if LoadedComponent}
+  {@const Loaded = LoadedComponent}
+  <Loaded {...rest} />
+{:else}
   <div
-    class="flex h-screen items-center justify-center bg-[var(--background)] text-[var(--muted-foreground)] text-sm"
+    class="flex min-h-[60vh] items-center justify-center text-[var(--muted-foreground)] text-sm"
     role="status"
     aria-live="polite"
   >
@@ -44,20 +62,4 @@
     ></span>
     Memuat halaman...
   </div>
-{:else if status === 'error'}
-  <div class="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--background)] p-6">
-    <div class="w-full max-w-sm">
-      <Notice text="Gagal memuat halaman" tone="error" />
-    </div>
-    <button
-      type="button"
-      class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--muted)]"
-      onclick={() => void load()}
-    >
-      Coba lagi
-    </button>
-  </div>
-{:else if status === 'ready' && LoadedComponent}
-  {@const Loaded = LoadedComponent}
-  <Loaded {...rest} />
 {/if}
