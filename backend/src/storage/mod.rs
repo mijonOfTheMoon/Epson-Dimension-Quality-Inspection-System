@@ -9,15 +9,10 @@ use crate::domain::*;
 #[async_trait]
 pub trait DataStore: Send + Sync {
     async fn init(&self) -> anyhow::Result<()>;
-    async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>>;
     async fn ingest_inspections_atomic(
         &self,
         events: &[InspectionCreatedEvent],
     ) -> anyhow::Result<Vec<String>>;
-    async fn upsert_station_status(
-        &self,
-        event: StationStatusEvent,
-    ) -> anyhow::Result<StationStatusEvent>;
     async fn list_inspections(
         &self,
         query: InspectionQuery,
@@ -26,10 +21,6 @@ pub trait DataStore: Send + Sync {
         &self,
         event_id: &str,
     ) -> anyhow::Result<Option<InspectionCreatedEvent>>;
-    async fn deactivate_station(
-        &self,
-        station_id: &str,
-    ) -> anyhow::Result<Option<StationStatusEvent>>;
     async fn list_parts(&self) -> anyhow::Result<Vec<PartType>>;
     async fn find_part(&self, part_code: &str) -> anyhow::Result<Option<PartType>>;
     async fn create_part(&self, input: PartInput) -> anyhow::Result<PartType>;

@@ -13,7 +13,7 @@ Service listen di `PORT` dan expose:
 
 - `GET /health` dan `GET /api/health`
 - REST endpoints di `/api/*`
-- Agent ingest: `POST /api/agent/status`, `POST /api/agent/inspections`
+- Agent ingest: `POST /api/agent/inspections`
 - Viewer signaling: `POST /api/video/stations/{stationId}/viewer-session`
 
 ## Data

@@ -4,7 +4,7 @@ use axum::Json;
 use bytes::Bytes;
 
 use crate::auth::extract::extract_bearer_token;
-use crate::domain::{IngestEvent, InspectionCreatedEvent, StationStatusEvent};
+use crate::domain::{IngestEvent, InspectionCreatedEvent};
 use crate::error::{AppError, AppResult};
 use crate::http::response::DuplicatedResponse;
 use crate::http::AppState;
@@ -15,24 +15,6 @@ const INSPECTION_FIELD: &str = "inspection";
 const EVENT_FIELD: &str = "event";
 const SNAPSHOT_FIELD: &str = "snapshot";
 const FRAME_FIELD: &str = "frame";
-
-pub async fn status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(event): Json<StationStatusEvent>,
-) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
-    require_agent_token(&state, &headers)?;
-    let saved = state.ingestion.ingest(IngestEvent::Station(event)).await?;
-    match saved {
-        Some(event) => Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(event)?))),
-        None => Ok((
-            StatusCode::ACCEPTED,
-            Json(serde_json::to_value(DuplicatedResponse {
-                duplicated: true,
-            })?),
-        )),
-    }
-}
 
 pub async fn inspection(
     State(state): State<AppState>,

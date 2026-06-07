@@ -93,7 +93,6 @@ pub fn build_router(
             "/api/agents/{stationId}/command",
             post(handlers::agents::command),
         )
-        .route("/api/agent/status", post(handlers::agent_ingest::status))
         .route(
             "/api/agent/inspections",
             post(handlers::agent_ingest::inspection),

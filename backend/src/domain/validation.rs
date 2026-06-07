@@ -64,33 +64,9 @@ pub fn validate_inspection(event: &InspectionCreatedEvent) -> AppResult<()> {
     reject_issues(issues)
 }
 
-pub fn validate_station(event: &StationStatusEvent) -> AppResult<()> {
-    let mut issues = Vec::new();
-    if event.event_id.trim().is_empty() {
-        issues.push(issue(
-            "eventId",
-            "String must contain at least 1 character(s)",
-        ));
-    }
-    if event.station_id.trim().is_empty() {
-        issues.push(issue(
-            "stationId",
-            "String must contain at least 1 character(s)",
-        ));
-    }
-    if DateTime::parse_from_rfc3339(&event.timestamp).is_err() {
-        issues.push(issue("timestamp", "Invalid datetime"));
-    }
-    if event.fps.is_some_and(|fps| fps < 0.0) {
-        issues.push(issue("fps", "Number must be greater than or equal to 0"));
-    }
-    reject_issues(issues)
-}
-
 pub fn validate_ingest_event(event: &IngestEvent) -> AppResult<()> {
     match event {
         IngestEvent::Inspection(event) => validate_inspection(event),
-        IngestEvent::Station(event) => validate_station(event),
     }
 }
 

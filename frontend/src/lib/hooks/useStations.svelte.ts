@@ -93,8 +93,16 @@ export function useStations() {
           error = null;
         }
       });
-      client.on('message', (_topic, payload) => {
+      client.on('message', (topic, payload) => {
         if (!mounted) return;
+        if (payload.length === 0) {
+          const parts = topic.split('/');
+          const stationId = parts[parts.length - 2];
+          if (stationId && presenceMap.delete(stationId)) {
+            rebuildFromPresence();
+          }
+          return;
+        }
         try {
           const parsed = JSON.parse(payload.toString()) as PresencePayload;
           const event = presenceToEvent(parsed);

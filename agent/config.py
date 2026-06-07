@@ -15,7 +15,6 @@ class AgentConfig:
     agent_log_level: str
     station_id: str
     camera_index: int
-    http_status_interval_seconds: float
     backend_http_url: str
     agent_token: str
     mqtt_host: str
@@ -35,7 +34,6 @@ def load_config() -> AgentConfig:
         agent_log_level=os.getenv("AGENT_LOG_LEVEL", "INFO").strip() or "INFO",
         station_id=os.getenv("STATION_ID", "Station 1"),
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
-        http_status_interval_seconds=float(os.getenv("HTTP_STATUS_INTERVAL_SECONDS", "30")),
         backend_http_url=os.getenv("BACKEND_HTTP_URL", "http://localhost:4000"),
         agent_token=os.getenv("AGENT_TOKEN", "change-me-agent-shared-token"),
         mqtt_host=os.getenv("MQTT_HOST", ""),

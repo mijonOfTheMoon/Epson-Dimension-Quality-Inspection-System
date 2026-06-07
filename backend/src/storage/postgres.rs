@@ -9,7 +9,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
-use sqlx::{Executor, FromRow, PgPool, Postgres, QueryBuilder, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -257,48 +257,6 @@ impl PostgresStore {
 
         Ok(())
     }
-
-    async fn upsert_station(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        event: &StationStatusEvent,
-    ) -> anyhow::Result<()> {
-        Self::upsert_station_on(&mut **tx, event).await
-    }
-
-    async fn upsert_station_on<'e, E>(executor: E, event: &StationStatusEvent) -> anyhow::Result<()>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        sqlx::query(
-            r#"
-            INSERT INTO stations (station_id, event_id, timestamp, state, fps, running, phase, active_part_code, is_active)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
-            ON CONFLICT (station_id) DO UPDATE
-            SET event_id         = EXCLUDED.event_id,
-                timestamp        = EXCLUDED.timestamp,
-                state            = EXCLUDED.state,
-                fps              = EXCLUDED.fps,
-                running          = EXCLUDED.running,
-                phase            = EXCLUDED.phase,
-                active_part_code = EXCLUDED.active_part_code,
-                is_active        = COALESCE($9, stations.is_active)
-            "#,
-        )
-        .bind(&event.station_id)
-        .bind(&event.event_id)
-        .bind(parse_timestamp(&event.timestamp)?)
-        .bind(event.state.as_str())
-        .bind(event.fps)
-        .bind(event.running.unwrap_or(false))
-        .bind(event.phase.map(StationPhase::as_str))
-        .bind(&event.active_part_code)
-        .bind(event.is_active)
-        .execute(executor)
-        .await?;
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -306,25 +264,6 @@ impl DataStore for PostgresStore {
     async fn init(&self) -> anyhow::Result<()> {
         sqlx::migrate!("./migrations").run(&self.pool).await?;
         self.seed_static_data().await
-    }
-
-    async fn ingest(&self, event: IngestEvent) -> anyhow::Result<Option<IngestEvent>> {
-        let mut tx = self.pool.begin().await?;
-        let logged = Self::insert_event_log(&mut tx, &event).await?;
-        if !logged {
-            tx.commit().await?;
-            return Ok(None);
-        }
-
-        match &event {
-            IngestEvent::Inspection(inspection) => {
-                self.insert_inspection(&mut tx, inspection).await?
-            }
-            IngestEvent::Station(station) => self.upsert_station(&mut tx, station).await?,
-        }
-
-        tx.commit().await?;
-        Ok(Some(event))
     }
 
     async fn ingest_inspections_atomic(
@@ -347,14 +286,6 @@ impl DataStore for PostgresStore {
         }
         tx.commit().await?;
         Ok(saved_ids)
-    }
-
-    async fn upsert_station_status(
-        &self,
-        event: StationStatusEvent,
-    ) -> anyhow::Result<StationStatusEvent> {
-        Self::upsert_station_on(&self.pool, &event).await?;
-        Ok(event)
     }
 
     async fn list_inspections(
@@ -419,29 +350,6 @@ impl DataStore for PostgresStore {
         .await?;
 
         row.map(map_inspection).transpose()
-    }
-
-    async fn deactivate_station(
-        &self,
-        station_id: &str,
-    ) -> anyhow::Result<Option<StationStatusEvent>> {
-        let row = sqlx::query_as::<_, StationRow>(
-            r#"
-            UPDATE stations
-            SET state = 'offline',
-                running = false,
-                phase = 'idle',
-                active_part_code = NULL,
-                is_active = false,
-                timestamp = now()
-            WHERE station_id = $1
-            RETURNING event_id, station_id, timestamp, state, fps, running, phase, active_part_code, is_active
-            "#,
-        )
-        .bind(station_id)
-        .fetch_optional(&self.pool)
-        .await?;
-        row.map(map_station).transpose()
     }
 
     async fn list_parts(&self) -> anyhow::Result<Vec<PartType>> {
@@ -820,19 +728,6 @@ struct InspectionRow {
 }
 
 #[derive(Debug, FromRow)]
-struct StationRow {
-    event_id: String,
-    station_id: String,
-    timestamp: DateTime<Utc>,
-    state: String,
-    fps: Option<f64>,
-    running: Option<bool>,
-    phase: Option<String>,
-    active_part_code: Option<String>,
-    is_active: Option<bool>,
-}
-
-#[derive(Debug, FromRow)]
 struct PartRow {
     id: String,
     part_name: String,
@@ -942,22 +837,6 @@ fn map_inspection(row: InspectionRow) -> anyhow::Result<InspectionCreatedEvent> 
     })
 }
 
-fn map_station(row: StationRow) -> anyhow::Result<StationStatusEvent> {
-    Ok(StationStatusEvent {
-        event_type: StationEventType::StationStatus,
-        event_id: row.event_id,
-        station_id: row.station_id,
-        timestamp: iso(row.timestamp),
-        state: parse_station_state(&row.state)?,
-        fps: row.fps,
-        running: Some(row.running.unwrap_or(false)),
-        phase: row.phase.as_deref().map(parse_phase).transpose()?,
-        active_part_code: row.active_part_code,
-        is_active: row.is_active,
-        detections: None,
-    })
-}
-
 fn map_part(row: PartRow) -> anyhow::Result<PartType> {
     Ok(PartType {
         id: row.id,
@@ -1036,25 +915,6 @@ fn parse_request_status(value: &str) -> anyhow::Result<RequestStatus> {
         "shipped" => Ok(RequestStatus::Shipped),
         "received" => Ok(RequestStatus::Received),
         _ => Err(anyhow!("invalid request status: {value}")),
-    }
-}
-
-fn parse_station_state(value: &str) -> anyhow::Result<StationState> {
-    match value {
-        "online" => Ok(StationState::Online),
-        "offline" => Ok(StationState::Offline),
-        _ => Err(anyhow!("invalid station state: {value}")),
-    }
-}
-
-fn parse_phase(value: &str) -> anyhow::Result<StationPhase> {
-    match value {
-        "idle" => Ok(StationPhase::Idle),
-        "calibrating" => Ok(StationPhase::Calibrating),
-        "ready" => Ok(StationPhase::Ready),
-        "stabilizing" => Ok(StationPhase::Stabilizing),
-        "locked" => Ok(StationPhase::Locked),
-        _ => Err(anyhow!("invalid station phase: {value}")),
     }
 }
 

@@ -122,6 +122,31 @@ impl MqttService {
         ))
     }
 
+    pub async fn clear_presence(&self, station_id: &str) -> anyhow::Result<()> {
+        let topic = self.presence_topic(station_id);
+        let (client, mut eventloop) = self.client("clear-presence");
+        client
+            .publish(topic, QoS::AtLeastOnce, true, Vec::<u8>::new())
+            .await
+            .context("failed to clear MQTT presence")?;
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match tokio::time::timeout(remaining, eventloop.poll()).await {
+                Ok(Ok(Event::Incoming(Packet::PubAck(_)))) => return Ok(()),
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    return Err(anyhow!(error).context("failed while clearing MQTT presence"))
+                }
+                Err(_) => break,
+            }
+        }
+        Err(anyhow!(
+            "timed out waiting for MQTT presence clear acknowledgement"
+        ))
+    }
+
     fn client(&self, purpose: &str) -> (AsyncClient, rumqttc::EventLoop) {
         let mut options = MqttOptions::new(
             format!("diminspect-backend-{}-{}", purpose, Uuid::new_v4()),

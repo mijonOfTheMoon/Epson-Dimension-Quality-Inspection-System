@@ -83,18 +83,6 @@ pub enum StationPhase {
     Locked,
 }
 
-impl StationPhase {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Idle => "idle",
-            Self::Calibrating => "calibrating",
-            Self::Ready => "ready",
-            Self::Stabilizing => "stabilizing",
-            Self::Locked => "locked",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DimensionView {
@@ -123,12 +111,6 @@ pub enum InspectionTrigger {
 pub enum InspectionEventType {
     #[serde(rename = "inspection.created")]
     InspectionCreated,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum StationEventType {
-    #[serde(rename = "station.status")]
-    StationStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,77 +178,33 @@ pub struct InspectionCreatedEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StationStatusEvent {
-    #[serde(rename = "eventType")]
-    pub event_type: StationEventType,
-    pub event_id: String,
-    pub station_id: String,
-    pub timestamp: String,
-    pub state: StationState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fps: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub running: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub phase: Option<StationPhase>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_part_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_active: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detections: Option<Vec<ObjectDetection>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum StationState {
-    Online,
-    Offline,
-}
-
-impl StationState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Online => "online",
-            Self::Offline => "offline",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum IngestEvent {
     Inspection(Box<InspectionCreatedEvent>),
-    Station(StationStatusEvent),
 }
 
 impl IngestEvent {
     pub fn event_id(&self) -> &str {
         match self {
             Self::Inspection(event) => &event.event_id,
-            Self::Station(event) => &event.event_id,
         }
     }
 
     pub fn event_type(&self) -> &'static str {
         match self {
             Self::Inspection(_) => "inspection.created",
-            Self::Station(_) => "station.status",
         }
     }
 
     pub fn station_id(&self) -> &str {
         match self {
             Self::Inspection(event) => &event.station_id,
-            Self::Station(event) => &event.station_id,
         }
     }
 
     pub fn timestamp(&self) -> &str {
         match self {
             Self::Inspection(event) => &event.timestamp,
-            Self::Station(event) => &event.timestamp,
         }
     }
 }
@@ -274,12 +212,6 @@ impl IngestEvent {
 impl From<InspectionCreatedEvent> for IngestEvent {
     fn from(value: InspectionCreatedEvent) -> Self {
         Self::Inspection(Box::new(value))
-    }
-}
-
-impl From<StationStatusEvent> for IngestEvent {
-    fn from(value: StationStatusEvent) -> Self {
-        Self::Station(value)
     }
 }
 

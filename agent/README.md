@@ -18,7 +18,6 @@ python main.py
 STATION_ID=Station 1
 AGENT_LOG_LEVEL=INFO
 CAMERA_INDEX=0
-HTTP_STATUS_INTERVAL_SECONDS=30
 BACKEND_HTTP_URL=http://localhost:4000
 AGENT_TOKEN=change-me-agent-shared-token
 
@@ -45,7 +44,6 @@ CLOUDFLARE_REALTIME_API_BASE_URL=https://rtc.live.cloudflare.com/v1
 - Manual capture hanya mengirim `inspection.created` jika ada detection valid.
 - `STATION_ID` wajib unik per agent dan `AGENT_TOKEN` harus sama dengan backend.
 - `AGENT_LOG_LEVEL` opsional; gunakan `INFO` untuk operasional normal, `DEBUG` saat troubleshooting lokal.
-- `HTTP_STATUS_INTERVAL_SECONDS` mengatur heartbeat HTTP persistence; MQTT presence tetap realtime sekitar 5 detik.
 
 ## Vision Defaults
 

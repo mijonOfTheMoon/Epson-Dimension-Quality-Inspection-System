@@ -32,25 +32,14 @@ impl IngestionService {
         snapshot: Option<Bytes>,
     ) -> anyhow::Result<Option<IngestEvent>> {
         validate_ingest_event(&event).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        let event = match event {
-            IngestEvent::Station(event) => {
-                let saved = self.store.upsert_station_status(event).await?;
-                return Ok(Some(IngestEvent::Station(saved)));
-            }
-            IngestEvent::Inspection(event) => *event,
-        };
+        let IngestEvent::Inspection(event) = event;
+        let event = *event;
 
         let parent_event_id = event.event_id.clone();
         let station_id = event.station_id.clone();
         let captured_at = event.timestamp.clone();
         let source_detections = event.detections.clone();
-        let entries: Vec<InspectionCreatedEvent> = split_inspection_objects(event)
-            .into_iter()
-            .filter_map(|entry| match entry {
-                IngestEvent::Inspection(inspection) => Some(*inspection),
-                IngestEvent::Station(_) => None,
-            })
-            .collect();
+        let entries: Vec<InspectionCreatedEvent> = split_inspection_objects(event);
         verify_entries_consistent(&entries, &source_detections)?;
 
         if entries.is_empty() {
@@ -129,7 +118,7 @@ fn bbox_equal(left: &BoundingBox, right: &BoundingBox) -> bool {
     left.x == right.x && left.y == right.y && left.width == right.width && left.height == right.height
 }
 
-fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
+fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<InspectionCreatedEvent> {
     event
         .detections
         .iter()
@@ -140,7 +129,7 @@ fn split_inspection_objects(event: InspectionCreatedEvent) -> Vec<IngestEvent> {
             item.confidence_score = detection.confidence_score;
             item.measurements = detection.measurements.clone();
             item.detections = vec![detection.clone()];
-            IngestEvent::Inspection(Box::new(item))
+            item
         })
         .collect()
 }

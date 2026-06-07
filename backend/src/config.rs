@@ -30,6 +30,7 @@ pub struct Config {
     pub bcrypt_rounds: u32,
     pub agent_token: String,
     pub mqtt: Option<MqttConfig>,
+    pub mqtt_jwt_secret: Option<String>,
     pub cloudflare_realtime: Option<CloudflareRealtimeConfig>,
     pub object_store: Option<ObjectStoreConfig>,
 }
@@ -89,6 +90,10 @@ impl Config {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
         let mqtt = mqtt_config(&node_env)?;
+        let mqtt_jwt_secret = std::env::var("MQTT_JWT_SECRET")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         let cloudflare_realtime = cloudflare_realtime_config()?;
         let object_store = object_store_config()?;
         let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
@@ -112,6 +117,7 @@ impl Config {
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
             agent_token,
             mqtt,
+            mqtt_jwt_secret,
             cloudflare_realtime,
             object_store,
         })

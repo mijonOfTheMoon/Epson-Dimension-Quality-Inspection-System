@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -15,13 +15,29 @@ from config import AgentConfig
 CommandHandler = Callable[[dict[str, Any]], None]
 logger = logging.getLogger(__name__)
 
+PRESENCE_FRESH_SECONDS = 12.0
+
 
 def _safe_topic_segment(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in value)
 
 
+def _now() -> datetime:
+    return datetime.now(ZoneInfo("Asia/Jakarta"))
+
+
 def _now_iso() -> str:
-    return datetime.now(ZoneInfo("Asia/Jakarta")).isoformat()
+    return _now().isoformat()
+
+
+def _is_fresh(updated_at: Any) -> bool:
+    if not isinstance(updated_at, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return False
+    return _now() - parsed <= timedelta(seconds=PRESENCE_FRESH_SECONDS)
 
 
 class MqttLink:
@@ -29,14 +45,17 @@ class MqttLink:
         self.config = config
         self.on_command = on_command
         self._lock = threading.Lock()
-        self._connected_at = _now_iso()
+        self.instance_id = uuid4().hex
+        self.connected_at = _now_iso()
         station_segment = _safe_topic_segment(config.station_id)
         prefix = config.mqtt_topic_prefix.rstrip("/")
         self.presence_topic = f"{prefix}/stations/{station_segment}/presence"
         self.commands_topic = f"{prefix}/stations/{station_segment}/commands"
+        self.claims_topic = f"{prefix}/stations/{station_segment}/claims"
+        self._yield_to: str | None = None
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"diminspect-agent-{station_segment}-{uuid4()}",
+            client_id=f"diminspect-agent-{station_segment}-{self.instance_id}",
             clean_session=True,
         )
         if config.mqtt_username:
@@ -59,12 +78,32 @@ class MqttLink:
         self._client.connect_async(self.config.mqtt_host, self.config.mqtt_port, keepalive=30)
         self._client.loop_start()
 
-    def stop(self) -> None:
+    def stop(self, *, mode: str = "offline") -> None:
         try:
-            self.publish_offline(wait=True)
+            if mode == "offline":
+                self.publish_offline(wait=True)
+            elif mode == "clear":
+                self.clear_retained_presence(wait=True)
         finally:
             self._client.disconnect()
             self._client.loop_stop()
+
+    def publish_claim(self) -> None:
+        payload = {
+            "stationId": self.config.station_id,
+            "instanceId": self.instance_id,
+            "connectedAt": self.connected_at,
+        }
+        with self._lock:
+            self._client.publish(
+                self.claims_topic,
+                payload=json.dumps(payload, separators=(",", ":")),
+                qos=1,
+                retain=False,
+            )
+
+    def should_yield(self) -> bool:
+        return self._yield_to is not None
 
     def publish_presence(
         self,
@@ -80,13 +119,14 @@ class MqttLink:
     ) -> None:
         payload: dict[str, Any] = {
             "stationId": self.config.station_id,
+            "instanceId": self.instance_id,
             "online": online,
             "running": running,
             "phase": phase,
             "updatedAt": _now_iso(),
         }
         if online:
-            payload["connectedAt"] = self._connected_at
+            payload["connectedAt"] = self.connected_at
         if fps is not None:
             payload["fps"] = round(fps, 2)
         if active_part_code:
@@ -116,14 +156,26 @@ class MqttLink:
         if wait:
             info.wait_for_publish(timeout=2)
 
+    def clear_retained_presence(self, *, wait: bool = False) -> None:
+        with self._lock:
+            info = self._client.publish(self.presence_topic, payload=b"", qos=1, retain=True)
+        if wait:
+            info.wait_for_publish(timeout=2)
+
     def _offline_payload(self) -> dict[str, Any]:
         return {
             "stationId": self.config.station_id,
+            "instanceId": self.instance_id,
             "online": False,
             "running": False,
             "phase": "idle",
             "updatedAt": _now_iso(),
         }
+
+    def _claims_me(self, connected_at: Any, instance_id: Any) -> bool:
+        if not isinstance(connected_at, str) or not isinstance(instance_id, str):
+            return False
+        return (connected_at, instance_id) < (self.connected_at, self.instance_id)
 
     def _on_connect(
         self,
@@ -137,7 +189,8 @@ class MqttLink:
             logger.warning("MQTT connect failed: %s", reason_code)
             return
         client.subscribe(self.commands_topic, qos=1)
-        self.publish_presence(online=True, running=False, phase="idle")
+        client.subscribe(self.presence_topic, qos=1)
+        client.subscribe(self.claims_topic, qos=1)
 
     def _on_disconnect(
         self,
@@ -155,5 +208,26 @@ class MqttLink:
             payload = json.loads(message.payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return
-        if isinstance(payload, dict):
+        if not isinstance(payload, dict):
+            return
+        topic = message.topic
+        if topic == self.commands_topic:
             self.on_command(payload)
+        elif topic == self.presence_topic:
+            self._record_presence(payload)
+        elif topic == self.claims_topic:
+            self._record_claim(payload)
+
+    def _record_presence(self, payload: dict[str, Any]) -> None:
+        instance_id = payload.get("instanceId")
+        if instance_id == self.instance_id or not isinstance(instance_id, str):
+            return
+        if payload.get("online") and _is_fresh(payload.get("updatedAt")):
+            self._yield_to = instance_id
+
+    def _record_claim(self, payload: dict[str, Any]) -> None:
+        instance_id = payload.get("instanceId")
+        if instance_id == self.instance_id:
+            return
+        if self._claims_me(payload.get("connectedAt"), instance_id):
+            self._yield_to = instance_id

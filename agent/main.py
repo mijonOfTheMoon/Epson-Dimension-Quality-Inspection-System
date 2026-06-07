@@ -25,6 +25,7 @@ from vision import (
 )
 
 STATUS_INTERVAL = 5.0
+CLAIM_WINDOW_SECONDS = 2.5
 CALIBRATION_FRAMES = 30
 FOREGROUND_AREA_THRESHOLD = 4000
 STABILITY_FRAMES = 5
@@ -72,30 +73,6 @@ def build_inspection_event(config: AgentConfig, payload: InspectionPayload, trig
     }
 
 
-def build_station_status(
-    config: AgentConfig,
-    *,
-    running: bool,
-    phase: Phase = "idle",
-    fps: float = 0.0,
-    active_part_code: str | None = None,
-    state: str = "online",
-) -> dict[str, Any]:
-    event: dict[str, Any] = {
-        "eventId": str(uuid4()),
-        "eventType": "station.status",
-        "stationId": config.station_id,
-        "timestamp": now_iso(),
-        "state": state,
-        "fps": round(fps, 2),
-        "running": running,
-        "phase": phase,
-    }
-    if active_part_code:
-        event["activePartCode"] = active_part_code
-    return event
-
-
 class InspectionRunner:
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -113,7 +90,7 @@ class InspectionRunner:
         self._video_track_name: str | None = None
         self._live_detections: list[dict[str, Any]] = []
         self._offline_sent = threading.Event()
-        self._last_http_status_at = 0.0
+        self._delete_requested = False
         self._frame_interval = 1.0 / FRAME_FPS
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
@@ -121,6 +98,15 @@ class InspectionRunner:
 
     def start(self) -> None:
         self.mqtt.start()
+        self.mqtt.publish_claim()
+        sleep(CLAIM_WINDOW_SECONDS)
+        if self.mqtt.should_yield():
+            logger.error(
+                "Station '%s' sudah aktif di agent lain; agent ini berhenti.",
+                self.config.station_id,
+            )
+            self.mqtt.stop(mode="silent")
+            return
         self._main_loop()
 
     def shutdown(self, *_: Any) -> None:
@@ -147,6 +133,9 @@ class InspectionRunner:
             self._running.set()
         elif kind == "stop":
             self._running.clear()
+        elif kind == "shutdown":
+            self._delete_requested = True
+            self.shutdown()
         elif kind in ("capture", "recalibrate"):
             if kind == "capture":
                 view = str(command.get("inspectionView", self._inspection_view))
@@ -185,17 +174,9 @@ class InspectionRunner:
             else:
                 now = monotonic()
                 if now - last_idle_status >= STATUS_INTERVAL:
-                    self._send_status(
-                        phase="idle",
-                        running=False,
-                        send_http=self._http_status_due(),
-                    )
+                    self._send_status(phase="idle", running=False)
                     last_idle_status = now
                 sleep(0.5)
-
-    def _http_status_due(self) -> bool:
-        interval = max(5.0, self.config.http_status_interval_seconds)
-        return monotonic() - self._last_http_status_at >= interval
 
     def _send_status(
         self,
@@ -203,12 +184,8 @@ class InspectionRunner:
         phase: Phase,
         running: bool,
         fps: float = 0.0,
-        send_http: bool = True,
     ) -> None:
         active = self._part.part_code if self._part else None
-        event = build_station_status(
-            self.config, running=running, phase=phase, fps=fps, active_part_code=active,
-        )
         self.mqtt.publish_presence(
             online=True,
             running=running,
@@ -219,25 +196,12 @@ class InspectionRunner:
             video_track_name=self._video_track_name,
             detections=self._live_detections if running else [],
         )
-        if send_http:
-            self._last_http_status_at = monotonic()
-            self.http.send_status(event)
 
     def _send_offline_status(self) -> None:
         if self._offline_sent.is_set():
             return
         self._offline_sent.set()
-        active = self._part.part_code if self._part else None
-        event = build_station_status(
-            self.config,
-            running=False,
-            phase="idle",
-            active_part_code=active,
-            state="offline",
-        )
         self.mqtt.publish_offline()
-        self._last_http_status_at = monotonic()
-        self.http.send_status(event)
 
     def _send_frame(self, frame: cv2.Mat) -> None:
         self.video.submit_frame(frame)
@@ -412,12 +376,7 @@ class InspectionRunner:
                     )
 
                 if now - last_status >= STATUS_INTERVAL:
-                    self._send_status(
-                        phase=phase,
-                        running=True,
-                        fps=fps,
-                        send_http=self._http_status_due(),
-                    )
+                    self._send_status(phase=phase, running=True, fps=fps)
                     last_status = now
 
         finally:
@@ -454,8 +413,7 @@ class InspectionRunner:
     def close(self) -> None:
         self.shutdown()
         self.video.stop()
-        self._send_offline_status()
-        self.mqtt.stop()
+        self.mqtt.stop(mode="clear" if self._delete_requested else "offline")
         self.http.close()
 def main() -> None:
     config = load_config()

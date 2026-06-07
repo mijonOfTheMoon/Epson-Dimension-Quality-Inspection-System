@@ -86,18 +86,6 @@ BEGIN
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS stations (
-  station_id text PRIMARY KEY,
-  event_id text NOT NULL,
-  timestamp timestamptz NOT NULL,
-  state text NOT NULL CHECK (state IN ('online', 'offline')),
-  fps double precision,
-  running boolean NOT NULL DEFAULT false,
-  phase text,
-  active_part_code text,
-  is_active boolean NOT NULL DEFAULT true
-);
-
 CREATE TABLE IF NOT EXISTS quality_records (
   id text PRIMARY KEY,
   date date NOT NULL,

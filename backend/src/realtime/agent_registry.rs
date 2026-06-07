@@ -56,4 +56,5 @@ pub enum AgentCommandType {
     Stop,
     Capture,
     Recalibrate,
+    Shutdown,
 }

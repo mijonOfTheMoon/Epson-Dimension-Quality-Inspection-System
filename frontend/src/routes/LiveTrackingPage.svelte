@@ -64,6 +64,7 @@
   let selectedDetectionKey = $state<{ stationId: string; detectionId: string } | null>(null);
   let videoPlaying = $state<Record<string, boolean>>({});
   const canControl = $derived(auth.user?.role === 'admin' || auth.user?.role === 'operator');
+  const isAdmin = $derived(auth.user?.role === 'admin');
 
   const merged = $derived(mergeStations(stations.data));
   const visibleStations = $derived(focusedStationId ? merged.filter((s) => s.stationId === focusedStationId) : merged);
@@ -346,6 +347,7 @@
                       <Maximize2 class="w-4 h-4" />
                     {/if}
                   </button>
+                  {#if isAdmin}
                   <div class="relative">
                     <button
                       type="button"
@@ -368,6 +370,7 @@
                       </div>
                     {/if}
                   </div>
+                  {/if}
                 </div>
               </div>
 
