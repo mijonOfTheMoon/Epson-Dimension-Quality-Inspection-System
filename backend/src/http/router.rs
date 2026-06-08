@@ -111,6 +111,8 @@ pub fn build_router(
         )
         .route("/api/quality-records", get(handlers::quality_records::list))
         .route("/api/realtime/mqtt", get(handlers::realtime::mqtt_config))
+        .route("/api/share/channels", get(handlers::share::channels))
+        .route("/api/share/recap", post(handlers::share::recap))
         .route(
             "/api/quality-records/{id}/status",
             patch(handlers::quality_records::update_status),

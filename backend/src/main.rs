@@ -8,6 +8,7 @@ mod http;
 mod ingestion;
 mod mqtt;
 mod realtime;
+mod share;
 mod storage;
 
 use std::net::SocketAddr;

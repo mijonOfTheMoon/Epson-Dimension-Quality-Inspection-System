@@ -37,6 +37,7 @@ docker compose up --build
 - Live video memakai Cloudflare Realtime/WebRTC lewat endpoint signaling backend.
 - Favicon memakai logo yang sama dengan navbar.
 - Frame thumbnail memakai signed URL dari backend jika R2 aktif.
+- Riwayat Inspeksi punya filter rentang waktu dan tombol Bagikan Rekap (Telegram, Email, Discord, WhatsApp). Rekap dibangun dan dikirim oleh backend; tidak ada kredensial provider di frontend.
 
 ## Validation
 

@@ -45,6 +45,7 @@ pub trait DataStore: Send + Sync {
         changed_by: &str,
     ) -> anyhow::Result<Option<QualityTrackingRecord>>;
     async fn get_dashboard_summary(&self) -> anyhow::Result<DashboardSummary>;
+    async fn aggregate_recap(&self, filters: RecapFilters) -> anyhow::Result<RecapData>;
 }
 
 #[derive(Debug, Clone)]

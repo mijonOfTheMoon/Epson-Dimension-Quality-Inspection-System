@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { Search, Download, ChevronDown, ChevronUp, Send } from 'lucide-svelte';
+  import { Search, Download, ChevronDown, ChevronUp, Share2 } from 'lucide-svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
+  import ShareRecapModal from '$lib/components/ShareRecapModal.svelte';
   import { api, getErrorMessage } from '$lib/services/api';
-  import { sendNgSummaryToTelegram } from '$lib/services/telegram';
   import {
     detailLoadReducer,
     DETAIL_TIMEOUT_MS,
@@ -13,6 +13,7 @@
   } from '$lib/utils/detailLoadState';
   import { resolveEntryOverlay } from '$lib/utils/historyOverlay';
   import { measurementStatusLabel } from '$lib/utils/selection';
+  import type { ShareRecapFilters } from '$lib/types/api';
 
   const inspections = useInspections(200);
   const parts = useParts();
@@ -20,34 +21,14 @@
   let search = $state('');
   let statusFilter = $state<'all' | 'OK' | 'NG'>('all');
   let partFilter = $state('all');
+  let rangePreset = $state<'all' | 'today' | '7d' | '30d' | 'custom'>('all');
+  let customFrom = $state('');
+  let customTo = $state('');
   let expandedId = $state<string | null>(null);
 
   let detailState = $state<Record<string, DetailLoadState>>({});
   let details = $state<Record<string, any>>({});
-  let sendingSummary = $state(false);
-  let toast = $state<{ text: string; tone: 'success' | 'error' } | null>(null);
-
-  const showToast = (text: string, tone: 'success' | 'error' = 'success') => {
-    toast = { text, tone };
-    setTimeout(() => { toast = null; }, 3500);
-  };
-
-  const handleSendNgSummary = async () => {
-    if (sendingSummary) return;
-    sendingSummary = true;
-    try {
-      const ok = await sendNgSummaryToTelegram();
-      if (ok) {
-        showToast('Rekap kecacatan berhasil dikirim ke Telegram');
-      } else {
-        showToast('Gagal mengirim rekap ke Telegram', 'error');
-      }
-    } catch (err) {
-      showToast(getErrorMessage(err), 'error');
-    } finally {
-      sendingSummary = false;
-    }
-  };
+  let shareOpen = $state(false);
 
   const dispatchDetail = (id: string, event: DetailLoadEvent) => {
     detailState[id] = detailLoadReducer(detailState[id] ?? { phase: 'idle' }, event);
@@ -99,11 +80,40 @@
   const loading = $derived(inspections.loading || parts.loading);
   const error = $derived(inspections.error || parts.error);
 
+  const rangeBounds = $derived.by(() => {
+    const now = new Date();
+    if (rangePreset === 'today') {
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      return { from: start, to: null as Date | null };
+    }
+    if (rangePreset === '7d') return { from: new Date(now.getTime() - 7 * 86400000), to: null as Date | null };
+    if (rangePreset === '30d') return { from: new Date(now.getTime() - 30 * 86400000), to: null as Date | null };
+    if (rangePreset === 'custom') {
+      const from = customFrom ? new Date(`${customFrom}T00:00:00`) : null;
+      const to = customTo ? new Date(`${customTo}T23:59:59`) : null;
+      return { from, to };
+    }
+    return { from: null as Date | null, to: null as Date | null };
+  });
+
+  const customInvalid = $derived(
+    rangePreset === 'custom' && customFrom !== '' && customTo !== '' && customFrom > customTo,
+  );
+
   const filtered = $derived.by(() => {
     const q = search.toLowerCase();
+    const { from, to } = customInvalid ? { from: null, to: null } : rangeBounds;
+    const fromMs = from ? from.getTime() : null;
+    const toMs = to ? to.getTime() : null;
     return inspections.data.filter((row) => {
       if (statusFilter !== 'all' && row.status !== statusFilter) return false;
       if (partFilter !== 'all' && row.partCode !== partFilter) return false;
+      if (fromMs !== null || toMs !== null) {
+        const ts = new Date(row.timestamp).getTime();
+        if (fromMs !== null && ts < fromMs) return false;
+        if (toMs !== null && ts > toMs) return false;
+      }
       if (q) {
         return row.id.toLowerCase().includes(q)
           || row.partName.toLowerCase().includes(q)
@@ -111,6 +121,37 @@
       }
       return true;
     });
+  });
+
+  const rangeLabel = $derived(
+    rangePreset === 'today' ? 'Hari ini'
+      : rangePreset === '7d' ? '7 hari'
+        : rangePreset === '30d' ? '30 hari'
+          : rangePreset === 'custom' ? `${customFrom || '...'} s/d ${customTo || '...'}`
+            : 'Semua waktu',
+  );
+
+  const scopeLabel = $derived(
+    [
+      rangeLabel,
+      statusFilter !== 'all' ? `Status ${statusFilter}` : null,
+      partFilter !== 'all' ? `Part ${partFilter}` : null,
+      search.trim() ? `Pencarian "${search.trim()}"` : null,
+    ].filter(Boolean).join(' · '),
+  );
+
+  const shareFilters = $derived<ShareRecapFilters>({
+    search: search.trim() || undefined,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    partCode: partFilter === 'all' ? undefined : partFilter,
+    from: !customInvalid && rangeBounds.from ? rangeBounds.from.toISOString() : undefined,
+    to: !customInvalid && rangeBounds.to ? rangeBounds.to.toISOString() : undefined,
+  });
+
+  const sharePreview = $derived({
+    total: filtered.length,
+    ok: filtered.filter((row) => row.status === 'OK').length,
+    ng: filtered.filter((row) => row.status === 'NG').length,
   });
 
   const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / perPage)));
@@ -157,6 +198,18 @@
     partFilter = (event.currentTarget as HTMLSelectElement).value;
     page = 1;
   };
+  const onRangeChange = (event: Event) => {
+    rangePreset = (event.currentTarget as HTMLSelectElement).value as typeof rangePreset;
+    page = 1;
+  };
+  const onCustomFrom = (event: Event) => {
+    customFrom = (event.currentTarget as HTMLInputElement).value;
+    page = 1;
+  };
+  const onCustomTo = (event: Event) => {
+    customTo = (event.currentTarget as HTMLInputElement).value;
+    page = 1;
+  };
   const goToPreviousPage = () => {
     page = Math.max(1, currentPage - 1);
   };
@@ -166,32 +219,17 @@
 </script>
 
 <div class="space-y-6 select-none font-sans">
-  {#if toast}
-    <div class="fixed top-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-bold text-white border animate-in fade-in slide-in-from-top-4 duration-300 {
-      toast.tone === 'error'
-        ? 'bg-rose-600/95 border-rose-500/30 backdrop-blur-md shadow-rose-600/25'
-        : 'bg-emerald-600/95 border-emerald-500/30 backdrop-blur-md shadow-emerald-600/25'
-    }">
-      {toast.text}
-    </div>
-  {/if}
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
       <h1 class="text-slate-900 dark:text-white tracking-tight">Riwayat Inspeksi</h1>
     </div>
     <div class="flex items-center gap-2.5 self-start sm:self-auto">
       <button
-        disabled={sendingSummary}
-        onclick={handleSendNgSummary}
+        disabled={filtered.length === 0}
+        onclick={() => (shareOpen = true)}
         class="inline-flex items-center justify-center gap-2 px-4.5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
       >
-        {#if sendingSummary}
-          <span class="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
-          Mengirim...
-        {:else}
-          <Send class="w-4 h-4" />
-          Kirim Rekap ke Telegram
-        {/if}
+        <Share2 class="w-4 h-4" /> Bagikan Rekap
       </button>
       <button 
         onclick={exportCSV} 
@@ -230,6 +268,18 @@
         <option value={part.partCode}>{part.partName}</option>
       {/each}
     </select>
+    <select value={rangePreset} onchange={onRangeChange} class="input min-w-[130px] w-auto py-2.5 px-3">
+      <option value="all">Semua Waktu</option>
+      <option value="today">Hari ini</option>
+      <option value="7d">7 hari</option>
+      <option value="30d">30 hari</option>
+      <option value="custom">Custom</option>
+    </select>
+    {#if rangePreset === 'custom'}
+      <input type="date" value={customFrom} oninput={onCustomFrom} class="input w-auto py-2.5 px-3 {customInvalid ? 'border-rose-400' : ''}" />
+      <span class="text-xs text-[var(--muted-foreground)] font-semibold">s/d</span>
+      <input type="date" value={customTo} oninput={onCustomTo} class="input w-auto py-2.5 px-3 {customInvalid ? 'border-rose-400' : ''}" />
+    {/if}
   </div>
 
   <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
@@ -462,4 +512,12 @@
       </button>
     </div>
   {/if}
+
+  <ShareRecapModal
+    open={shareOpen}
+    filters={shareFilters}
+    scopeLabel={scopeLabel}
+    preview={sharePreview}
+    onClose={() => (shareOpen = false)}
+  />
 </div>

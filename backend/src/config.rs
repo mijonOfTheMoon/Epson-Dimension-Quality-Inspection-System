@@ -34,6 +34,39 @@ pub struct Config {
     pub mqtt_ws_password: Option<String>,
     pub cloudflare_realtime: Option<CloudflareRealtimeConfig>,
     pub object_store: Option<ObjectStoreConfig>,
+    pub share: ShareConfig,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ShareConfig {
+    pub telegram: Option<TelegramConfig>,
+    pub brevo: Option<BrevoConfig>,
+    pub discord: Option<DiscordConfig>,
+    pub fonnte: Option<FonnteConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TelegramConfig {
+    pub bot_token: String,
+    pub chat_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrevoConfig {
+    pub api_key: String,
+    pub sender_email: String,
+    pub sender_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscordConfig {
+    pub webhook_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FonnteConfig {
+    pub token: String,
+    pub target: String,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +128,7 @@ impl Config {
         let mqtt_ws_password = optional_env("MQTT_WS_PASSWORD");
         let cloudflare_realtime = cloudflare_realtime_config()?;
         let object_store = object_store_config()?;
+        let share = share_config();
         let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
 
         Ok(Self {
@@ -120,6 +154,7 @@ impl Config {
             mqtt_ws_password,
             cloudflare_realtime,
             object_store,
+            share,
         })
     }
 }
@@ -283,4 +318,40 @@ fn validate_timezone(value: String) -> anyhow::Result<String> {
     }
 
     Ok(value)
+}
+
+fn share_config() -> ShareConfig {
+    let telegram = match (
+        optional_env("TELEGRAM_BOT_TOKEN"),
+        optional_env("TELEGRAM_CHAT_ID"),
+    ) {
+        (Some(bot_token), Some(chat_id)) => Some(TelegramConfig { bot_token, chat_id }),
+        _ => None,
+    };
+
+    let brevo = match (
+        optional_env("BREVO_API_KEY"),
+        optional_env("BREVO_SENDER_EMAIL"),
+    ) {
+        (Some(api_key), Some(sender_email)) => Some(BrevoConfig {
+            api_key,
+            sender_email,
+            sender_name: optional_env("BREVO_SENDER_NAME").unwrap_or_else(|| "DimInspect".to_string()),
+        }),
+        _ => None,
+    };
+
+    let discord = optional_env("DISCORD_WEBHOOK_URL").map(|webhook_url| DiscordConfig { webhook_url });
+
+    let fonnte = match (optional_env("FONNTE_TOKEN"), optional_env("FONNTE_TARGET")) {
+        (Some(token), Some(target)) => Some(FonnteConfig { token, target }),
+        _ => None,
+    };
+
+    ShareConfig {
+        telegram,
+        brevo,
+        discord,
+        fonnte,
+    }
 }

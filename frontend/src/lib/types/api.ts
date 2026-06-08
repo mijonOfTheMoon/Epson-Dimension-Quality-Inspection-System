@@ -116,6 +116,26 @@ export interface MqttWsInfo {
   presenceTopic: string;
 }
 
+export type ShareChannel = 'telegram' | 'email' | 'discord' | 'whatsapp';
+
+export interface ShareRecapFilters {
+  search?: string;
+  status?: InspectionStatus;
+  partCode?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface ShareRecapRequest {
+  channels: ShareChannel[];
+  emailRecipients: string[];
+  filters: ShareRecapFilters;
+}
+
+export interface ShareRecapResult {
+  results: Record<string, { ok: boolean; error?: string }>;
+}
+
 export interface AgentCommandResponse {
   stationId: string;
   command: AgentCommandType;

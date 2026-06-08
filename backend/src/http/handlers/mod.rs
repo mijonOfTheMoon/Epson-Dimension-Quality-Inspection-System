@@ -7,6 +7,7 @@ pub mod inspections;
 pub mod parts;
 pub mod quality_records;
 pub mod realtime;
+pub mod share;
 pub mod stations;
 pub mod users;
 pub mod video;

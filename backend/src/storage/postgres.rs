@@ -705,6 +705,105 @@ impl DataStore for PostgresStore {
                 .collect::<anyhow::Result<Vec<_>>>()?,
         })
     }
+
+    async fn aggregate_recap(&self, filters: RecapFilters) -> anyhow::Result<RecapData> {
+        let mut totals_q: QueryBuilder<Postgres> = QueryBuilder::new(
+            "SELECT COUNT(*)::bigint AS total, \
+             COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng, \
+             COUNT(*) FILTER (WHERE status = 'OK')::bigint AS ok \
+             FROM inspections WHERE 1 = 1",
+        );
+        push_recap_filters(&mut totals_q, &filters);
+        let totals = totals_q
+            .build_query_as::<RecapTotalsRow>()
+            .fetch_one(&self.pool)
+            .await?;
+
+        let has_part = filters
+            .part_code
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+
+        let breakdown = if has_part {
+            let mut dim_q: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT COALESCE(item->>'dimensionName', 'Dimensi') AS dimension_name, \
+                 COUNT(*)::bigint AS total, \
+                 COUNT(*) FILTER (WHERE item->>'status' = 'NG')::bigint AS ng \
+                 FROM inspections i \
+                 CROSS JOIN LATERAL jsonb_array_elements(i.measurements) AS item \
+                 WHERE 1 = 1",
+            );
+            push_recap_filters(&mut dim_q, &filters);
+            dim_q.push(
+                " GROUP BY COALESCE(item->>'dimensionName', 'Dimensi') \
+                 ORDER BY ng DESC, total DESC",
+            );
+            let rows = dim_q
+                .build_query_as::<RecapDimensionRow>()
+                .fetch_all(&self.pool)
+                .await?;
+            RecapBreakdown::ByDimension(
+                rows.into_iter()
+                    .map(|row| RecapDimension {
+                        dimension_name: row.dimension_name,
+                        total: row.total,
+                        ng: row.ng,
+                    })
+                    .collect(),
+            )
+        } else {
+            let mut part_q: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT part_code, part_name, COALESCE(MAX(vendor), '-') AS vendor, \
+                 COUNT(*)::bigint AS total, \
+                 COUNT(*) FILTER (WHERE status = 'NG')::bigint AS ng \
+                 FROM inspections WHERE 1 = 1",
+            );
+            push_recap_filters(&mut part_q, &filters);
+            part_q.push(
+                " GROUP BY part_code, part_name \
+                 ORDER BY ng DESC, total DESC, part_code ASC LIMIT 20",
+            );
+            let rows = part_q
+                .build_query_as::<RecapPartRow>()
+                .fetch_all(&self.pool)
+                .await?;
+            RecapBreakdown::ByPart(
+                rows.into_iter()
+                    .map(|row| RecapPart {
+                        part_name: row.part_name,
+                        part_code: row.part_code,
+                        vendor: row.vendor,
+                        total: row.total,
+                        ng: row.ng,
+                    })
+                    .collect(),
+            )
+        };
+
+        let mode = match filters.status {
+            Some(InspectionStatus::Ng) => RecapMode::Defect,
+            Some(InspectionStatus::Ok) => RecapMode::Passed,
+            None => RecapMode::Mixed,
+        };
+        let title = match mode {
+            RecapMode::Mixed => "Rekap Inspeksi",
+            RecapMode::Defect => "Rekap Temuan NG",
+            RecapMode::Passed => "Rekap Lolos Inspeksi",
+        }
+        .to_string();
+
+        Ok(RecapData {
+            mode,
+            title,
+            scope_label: build_scope_label(&filters, &self.timezone),
+            total: totals.total,
+            ok: totals.ok,
+            ng: totals.ng,
+            ng_rate: rate(totals.ng, totals.total),
+            breakdown,
+        })
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -1011,4 +1110,104 @@ fn iso(value: DateTime<Utc>) -> String {
 
 fn iso_now() -> String {
     iso(Utc::now())
+}
+
+#[derive(Debug, FromRow)]
+struct RecapTotalsRow {
+    total: i64,
+    ng: i64,
+    ok: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct RecapPartRow {
+    part_code: String,
+    part_name: String,
+    vendor: String,
+    total: i64,
+    ng: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct RecapDimensionRow {
+    dimension_name: String,
+    total: i64,
+    ng: i64,
+}
+
+fn push_recap_filters(builder: &mut QueryBuilder<Postgres>, filters: &RecapFilters) {
+    if let Some(status) = filters.status {
+        builder.push(" AND status = ");
+        builder.push_bind(status.as_str());
+    }
+    if let Some(part_code) = filters
+        .part_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND part_code = ");
+        builder.push_bind(part_code.to_string());
+    }
+    if let Some(from) = filters.from {
+        builder.push(" AND timestamp >= ");
+        builder.push_bind(from);
+    }
+    if let Some(to) = filters.to {
+        builder.push(" AND timestamp <= ");
+        builder.push_bind(to);
+    }
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{search}%");
+        builder.push(" AND (part_name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR COALESCE(operator_name, '') ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR event_id ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
+    }
+}
+
+fn build_scope_label(filters: &RecapFilters, timezone: &Tz) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    match (filters.from, filters.to) {
+        (Some(from), Some(to)) => {
+            parts.push(format!("{} – {}", fmt_scope_date(from, timezone), fmt_scope_date(to, timezone)))
+        }
+        (Some(from), None) => parts.push(format!("Sejak {}", fmt_scope_date(from, timezone))),
+        (None, Some(to)) => parts.push(format!("Sampai {}", fmt_scope_date(to, timezone))),
+        (None, None) => parts.push("Semua waktu".to_string()),
+    }
+    if let Some(part_code) = filters
+        .part_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("Part {part_code}"));
+    }
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("Pencarian \"{search}\""));
+    }
+    parts.join(" · ")
+}
+
+fn fmt_scope_date(value: DateTime<Utc>, timezone: &Tz) -> String {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+    ];
+    let local = value.with_timezone(timezone);
+    let month = MONTHS[(local.format("%m").to_string().parse::<usize>().unwrap_or(1) - 1).min(11)];
+    format!("{} {} {}", local.format("%-d"), month, local.format("%Y"))
 }

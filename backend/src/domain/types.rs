@@ -374,3 +374,53 @@ pub struct RecentInspectionPoint {
     pub status: InspectionStatus,
     pub confidence_score: f64,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecapMode {
+    Mixed,
+    Defect,
+    Passed,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RecapFilters {
+    pub search: Option<String>,
+    pub status: Option<InspectionStatus>,
+    pub part_code: Option<String>,
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecapPart {
+    pub part_name: String,
+    pub part_code: String,
+    pub vendor: String,
+    pub total: i64,
+    pub ng: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecapDimension {
+    pub dimension_name: String,
+    pub total: i64,
+    pub ng: i64,
+}
+
+#[derive(Debug, Clone)]
+pub enum RecapBreakdown {
+    ByPart(Vec<RecapPart>),
+    ByDimension(Vec<RecapDimension>),
+}
+
+#[derive(Debug, Clone)]
+pub struct RecapData {
+    pub mode: RecapMode,
+    pub title: String,
+    pub scope_label: String,
+    pub total: i64,
+    pub ok: i64,
+    pub ng: i64,
+    pub ng_rate: f64,
+    pub breakdown: RecapBreakdown,
+}

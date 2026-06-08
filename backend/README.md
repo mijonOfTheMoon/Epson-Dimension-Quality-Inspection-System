@@ -1,6 +1,6 @@
 # DimInspect Backend
 
-Rust 1.91 + Axum API untuk auth, inspections, agents (command), parts, users, dashboard, quality records, MQTT command publishing, agent HTTP inspection ingest, R2 snapshot upload, Cloudflare Realtime viewer signaling, dan realtime MQTT connection info untuk browser.
+Rust 1.91 + Axum API untuk auth, inspections, agents (command), parts, users, dashboard, quality records, MQTT command publishing, agent HTTP inspection ingest, R2 snapshot upload, Cloudflare Realtime viewer signaling, realtime MQTT connection info untuk browser, dan berbagi rekap ke channel eksternal.
 
 ## Run
 
@@ -17,6 +17,8 @@ Service listen di `PORT` dan expose:
 - Realtime presence config: `GET /api/realtime/mqtt` (URL WSS broker + kredensial subscribe-only)
 - Hapus kamera (admin): `DELETE /api/stations/{stationId}`
 - Viewer signaling: `POST /api/video/stations/{stationId}/viewer-session`
+- Channel berbagi aktif: `GET /api/share/channels`
+- Bagikan rekap terfilter: `POST /api/share/recap`
 
 ## Data
 
@@ -62,6 +64,26 @@ CLOUDFLARE_REALTIME_APP_SECRET=...
 - Browser tidak polling status ke backend; ia subscribe presence langsung ke broker via MQTT-over-WebSocket. `GET /api/realtime/mqtt` mengembalikan URL WSS (`wss://<host>:8084/mqtt`) + kredensial. Untuk least-privilege, set `MQTT_WS_USERNAME`/`MQTT_WS_PASSWORD` ke user broker khusus subscribe-only pada topik presence; jika kosong, backend fallback ke kredensial publisher penuh.
 - Hapus kamera (`DELETE /api/stations/{id}`, admin saja) mem-publish command `shutdown` (agent lokal berhenti total) lalu meng-clear retained presence agar hilang dari tampilan.
 - Video subscriber dibuat lewat backend supaya Cloudflare app secret tidak dikirim ke browser.
+
+## Bagikan Rekap
+
+Rekap inspeksi terfilter (pencarian, status, part, rentang waktu) dibagikan ke channel eksternal lewat backend; semua kredensial provider ada di server, tidak pernah di browser.
+
+```text
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+BREVO_API_KEY=
+BREVO_SENDER_EMAIL=
+BREVO_SENDER_NAME=
+DISCORD_WEBHOOK_URL=
+FONNTE_TOKEN=
+FONNTE_TARGET=
+```
+
+- `GET /api/share/channels` mengembalikan channel yang kredensialnya lengkap; channel tanpa konfigurasi tidak ditawarkan.
+- `POST /api/share/recap` menerima daftar channel, penerima email, dan filter; backend meng-query ulang data sesuai filter, merender template per channel, lalu mengirim. Hasil dikembalikan per-channel.
+- Telegram, Discord, dan WhatsApp (Fonnte) memakai tujuan tetap dari env. Email (Brevo) memakai penerima yang diinput pengguna.
+- Judul dan isi rekap menyesuaikan filter: NG menonjolkan temuan, OK menonjolkan kelolosan, part tunggal menampilkan rincian per dimensi.
 
 ## Validation
 

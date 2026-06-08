@@ -10,6 +10,8 @@ import type {
   PartType,
   QualityTrackingRecord,
   RequestStatus,
+  ShareRecapRequest,
+  ShareRecapResult,
   User,
   UserRole,
   VideoTrackPullResponse,
@@ -199,6 +201,20 @@ export const api = {
     } catch {
       return null;
     }
+  },
+  async getShareChannels(): Promise<string[]> {
+    try {
+      const data = await request<{ channels: string[] }>('/api/share/channels');
+      return data.channels;
+    } catch {
+      return [];
+    }
+  },
+  shareRecap(body: ShareRecapRequest): Promise<ShareRecapResult> {
+    return request<ShareRecapResult>('/api/share/recap', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
   getQualityRecords() {
     return request<QualityTrackingRecord[]>('/api/quality-records');
