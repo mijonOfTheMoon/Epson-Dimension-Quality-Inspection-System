@@ -2,15 +2,17 @@
   import { untrack } from 'svelte';
   import { Video } from 'lucide-svelte';
   import { videoWatchSocketUrl } from '$lib/services/api';
+  import type { ObjectDetection } from '$lib/types/api';
 
   interface Props {
     stationId: string;
     online: boolean;
     running: boolean;
     onPlayingChange?: (playing: boolean) => void;
+    onDetections?: (detections: ObjectDetection[]) => void;
   }
 
-  let { stationId, online, running, onPlayingChange }: Props = $props();
+  let { stationId, online, running, onPlayingChange, onDetections }: Props = $props();
 
   let imgEl = $state<HTMLImageElement | null>(null);
   let message = $state('Kamera Siap - Konfigurasi lalu klik Mulai');
@@ -56,6 +58,7 @@
     releaseFrame();
     if (imgEl) imgEl.removeAttribute('src');
     setPlaying(false);
+    onDetections?.([]);
   };
 
   const renderFrame = (blob: Blob) => {
@@ -76,16 +79,30 @@
 
     message = 'Menghubungkan stream...';
     const ws = new WebSocket(videoWatchSocketUrl(sid));
-    ws.binaryType = 'blob';
+    ws.binaryType = 'arraybuffer';
     socket = ws;
 
     ws.onmessage = (event) => {
-      if (event.data instanceof Blob) renderFrame(event.data);
+      if (!(event.data instanceof ArrayBuffer) || event.data.byteLength < 4) return;
+      const view = new DataView(event.data);
+      const metaLen = view.getUint32(0);
+      const jpegStart = 4 + metaLen;
+      if (metaLen > 0) {
+        try {
+          const metaText = new TextDecoder().decode(new Uint8Array(event.data, 4, metaLen));
+          const parsed = JSON.parse(metaText) as { detections?: ObjectDetection[] };
+          onDetections?.(Array.isArray(parsed.detections) ? parsed.detections : []);
+        } catch { }
+      } else {
+        onDetections?.([]);
+      }
+      renderFrame(new Blob([new Uint8Array(event.data, jpegStart)], { type: 'image/jpeg' }));
     };
     ws.onclose = () => {
       if (closedByUs) return;
       socket = null;
       setPlaying(false);
+      onDetections?.([]);
       message = 'Koneksi terputus, menghubungkan ulang...';
       clearReconnect();
       reconnectTimer = window.setTimeout(() => connect(sid, on, run), reconnectDelayMs);

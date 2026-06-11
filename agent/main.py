@@ -2,6 +2,7 @@ import logging
 import queue
 import signal
 import threading
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from time import monotonic, sleep
@@ -11,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import cv2
 
-from config import FRAME_FPS, FRAME_QUALITY, CAMERA_WIDTH, CAMERA_HEIGHT, AgentConfig, load_config
+from config import FRAME_FPS, FRAME_QUALITY, CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, AgentConfig, load_config
 from http_client import BackendHttpClient
 from mqtt_link import MqttLink
 from webrtc_publisher import WebRTCPublisher
@@ -19,13 +20,13 @@ from ws_video import WsVideoPublisher
 from vision import (
     InspectionPayload,
     PartSpec,
-    calibrate_background,
-    compute_foreground_mask,
+    compute_object_mask,
     get_camera,
     inspect_frame,
     calibrate_aruco_ratio,
     annotate_calibration,
     payload_from_detections,
+    render_overlay,
     reset_tracker,
     save_persisted_ratio,
 )
@@ -56,9 +57,8 @@ class CameraStream:
             if not ok:
                 sleep(0.005)
                 continue
-            flipped = cv2.flip(frame, 1)
             with self._lock:
-                self._latest = flipped
+                self._latest = frame
                 self._seq += 1
 
     def read(self) -> tuple[int, cv2.Mat | None]:
@@ -125,11 +125,13 @@ class InspectionRunner:
         self._video_session_id: str | None = None
         self._video_track_name: str | None = None
         self._live_detections: list[dict[str, Any]] = []
+        self._live_overlay: list[dict[str, Any]] = []
         self._offline_sent = threading.Event()
         self._delete_requested = False
         self._frame_interval = 1.0 / FRAME_FPS
         self._presence_interval = 0.1
         self._calibrating = threading.Event()
+        self._video_meta_enabled = config.video_transport == "ws"
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
         self.video = (
@@ -226,6 +228,7 @@ class InspectionRunner:
         fps: float = 0.0,
     ) -> None:
         active = self._part.part_code if self._part else None
+        detections = None if self._video_meta_enabled else (self._live_detections if running else [])
         self.mqtt.publish_presence(
             online=True,
             running=running,
@@ -234,7 +237,7 @@ class InspectionRunner:
             active_part_code=active,
             video_session_id=self._video_session_id,
             video_track_name=self._video_track_name,
-            detections=self._live_detections if running else [],
+            detections=detections,
         )
 
     def _send_offline_status(self) -> None:
@@ -317,7 +320,12 @@ class InspectionRunner:
                 sleep(0.001)
                 continue
             last_seq = seq
-            self._send_frame(frame)
+            annotated = render_overlay(frame, self._live_overlay)
+            if self._video_meta_enabled:
+                meta = json.dumps({"detections": self._live_detections}, separators=(",", ":"))
+                self.video.submit_frame(annotated, meta)
+            else:
+                self.video.submit_frame(annotated)
             last_sent = now
 
     def _run_inspection_session(self) -> None:
@@ -327,7 +335,7 @@ class InspectionRunner:
             return
 
         try:
-            cam = CameraStream(self.config.camera_index, FRAME_FPS, CAMERA_WIDTH, CAMERA_HEIGHT)
+            cam = CameraStream(self.config.camera_index, CAMERA_FPS, CAMERA_WIDTH, CAMERA_HEIGHT)
         except RuntimeError:
             self._running.clear()
             self._send_status(phase="idle", running=False)
@@ -341,13 +349,13 @@ class InspectionRunner:
         self._video_track_name = None
         self.video.start(video_track_name, self._on_video_ready)
         phase: Phase = "calibrating"
-        background = None
         last_status = 0.0
         last_presence = 0.0
         last_seq = -1
         last_frame_ts = monotonic()
         fps = 0.0
         self._live_detections = []
+        self._live_overlay = []
         stream_stop = threading.Event()
         stream_thread: threading.Thread | None = None
 
@@ -361,7 +369,6 @@ class InspectionRunner:
                     if len(frames) < CALIBRATION_FRAMES // 2:
                         sleep(0.5)
                         continue
-                    background = calibrate_background(frames)
                     reset_tracker()
                     phase = "ready"
                     self._calibrating.clear()
@@ -394,13 +401,14 @@ class InspectionRunner:
                     phase = "calibrating"
                     continue
 
-                mask = compute_foreground_mask(frame, background)
+                mask = compute_object_mask(frame)
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
                 self._live_detections = (
                     [detection.to_dict() for detection in result.inspection.detections]
                     if result.inspection is not None
                     else []
                 )
+                self._live_overlay = result.overlay
 
                 if result.triggered:
                     payload = payload_from_detections(self._part, result.triggered)
@@ -422,7 +430,7 @@ class InspectionRunner:
                         active_part_code=(self._part.part_code if self._part else None),
                         video_session_id=self._video_session_id,
                         video_track_name=self._video_track_name,
-                        detections=self._live_detections,
+                        detections=None if self._video_meta_enabled else self._live_detections,
                     )
 
                 if now - last_status >= STATUS_INTERVAL:

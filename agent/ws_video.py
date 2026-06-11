@@ -57,11 +57,11 @@ class WsVideoPublisher:
             thread.join(timeout=2.0)
         self._thread = None
 
-    def submit_frame(self, frame: cv2.Mat) -> None:
+    def submit_frame(self, frame: cv2.Mat, meta: str | None = None) -> None:
         with self._condition:
             if not self._active:
                 return
-            self._latest = frame.copy()
+            self._latest = (frame.copy(), meta)
             self._condition.notify()
 
     def _build_url(self) -> str:
@@ -104,15 +104,18 @@ class WsVideoPublisher:
                     self._condition.wait(timeout=SEND_WAIT_TIMEOUT)
                 if not self._active:
                     return
-                frame = self._latest
+                payload = self._latest
                 self._latest = None
-            if frame is None:
+            if payload is None:
                 continue
+            frame, meta = payload
             ok, buffer = cv2.imencode(".jpg", frame, self._encode_params)
             if not ok:
                 continue
+            meta_bytes = meta.encode("utf-8") if meta else b""
+            message = len(meta_bytes).to_bytes(4, "big") + meta_bytes + buffer.tobytes()
             try:
-                connection.send_binary(buffer.tobytes())
+                connection.send_binary(message)
             except Exception as exc:
                 logger.warning("WS video send failed: %s", exc)
                 with self._lock:

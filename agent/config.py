@@ -17,8 +17,9 @@ def _int_env(name: str, default: int) -> int:
 
 FRAME_FPS = _int_env("FRAME_FPS", 30)
 FRAME_QUALITY = _int_env("FRAME_QUALITY", 62)
-CAMERA_WIDTH = _int_env("CAMERA_WIDTH", 1280)
-CAMERA_HEIGHT = _int_env("CAMERA_HEIGHT", 720)
+CAMERA_WIDTH = _int_env("CAMERA_WIDTH", 0)
+CAMERA_HEIGHT = _int_env("CAMERA_HEIGHT", 0)
+CAMERA_FPS = _int_env("CAMERA_FPS", 0)
 
 
 @dataclass(frozen=True)

@@ -115,7 +115,7 @@ class WebRTCPublisher:
         future = asyncio.run_coroutine_threadsafe(self._stop_async(), loop)
         future.add_done_callback(self._log_future_error)
 
-    def submit_frame(self, frame: cv2.Mat) -> None:
+    def submit_frame(self, frame: cv2.Mat, meta: str | None = None) -> None:
         with self._lock:
             track = self._track
         if track is not None:

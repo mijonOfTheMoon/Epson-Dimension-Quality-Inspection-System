@@ -57,6 +57,11 @@
   let busy = $state<Record<string, boolean>>({});
   let toast = $state<{ text: string; tone: 'info' | 'error' } | null>(null);
   let videoTransport = $state<VideoTransport>('cloudflare');
+  let wsDetections = $state<Record<string, ObjectDetection[]>>({});
+
+  const setWsDetections = (stationId: string, detections: ObjectDetection[]) => {
+    wsDetections = { ...wsDetections, [stationId]: detections };
+  };
 
   onMount(async () => {
     const config = await api.getRealtimeConfig();
@@ -88,8 +93,9 @@
   const selectionGroups = $derived.by(() => {
     const map = new Map<string, StationDetectionGroup>();
     for (const station of merged) {
-      if (station.online && station.running && videoPlaying[station.stationId] && station.detections.length > 0) {
-        map.set(station.stationId, { stationId: station.stationId, detections: station.detections });
+      const list = videoTransport === 'ws' ? (wsDetections[station.stationId] ?? []) : station.detections;
+      if (station.online && station.running && videoPlaying[station.stationId] && list.length > 0) {
+        map.set(station.stationId, { stationId: station.stationId, detections: list });
       }
     }
     return map;
@@ -299,12 +305,12 @@
             {@const activePart = partForCode(station.activePartCode ?? '') ?? selectedPartType}
             {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
-            {@const detections = liveStationIds.has(station.stationId) && videoPlaying[station.stationId] ? station.detections : []}
+            {@const detections = liveStationIds.has(station.stationId) && videoPlaying[station.stationId] ? (videoTransport === 'ws' ? (wsDetections[station.stationId] ?? []) : station.detections) : []}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
                 {#if videoTransport === 'ws'}
-                  <WsVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
+                  <WsVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} onDetections={(d) => setWsDetections(station.stationId, d)} />
                 {:else}
                   <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
                 {/if}
@@ -315,46 +321,18 @@
                   </div>
                 {/if}
 
-                {#if detections.length > 0}
-                  <svg class="absolute inset-0 w-full h-full z-20 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    {#each detections as detection (detection.id)}
-                      {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
-                      {@const shape = detection.shape}
-                      {@const stroke = selected ? '#ffffff' : (detection.status === 'OK' ? '#34d399' : '#fb7185')}
-                      {@const sw = selected ? 2.5 : 1.5}
-                      {#if shape?.type === 'circle'}
-                        <ellipse cx={shape.cx} cy={shape.cy} rx={shape.rx} ry={shape.ry} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
-                      {:else if shape?.type === 'rect'}
-                        <polygon points={shape.points.map((p) => p.join(',')).join(' ')} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
-                      {:else}
-                        <rect x={detection.bbox.x} y={detection.bbox.y} width={detection.bbox.width} height={detection.bbox.height} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
-                      {/if}
-                    {/each}
-                  </svg>
-                {/if}
-
                 {#each detections as detection (detection.id)}
                   {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
-                  {@const isOK = detection.status === 'OK'}
-                  <div
-                    class="absolute {selected ? 'z-30' : 'z-20'}"
+                  <button
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      selectedDetectionKey = nextSelection({ stationId: station.stationId, detectionId: detection.id });
+                    }}
+                    class="absolute bg-transparent cursor-pointer transition-all {selected ? 'z-30 ring-2 ring-white bg-white/10 rounded-sm' : 'z-20'}"
                     style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
-                  >
-                    <button
-                      onclick={(event) => {
-                        event.stopPropagation();
-                        selectedDetectionKey = nextSelection({ stationId: station.stationId, detectionId: detection.id });
-                      }}
-                      class="absolute inset-0 bg-transparent cursor-pointer"
-                      title={`${detection.label} - Klik untuk statistik`}
-                      aria-label={detection.label}
-                    ></button>
-                    <span
-                      class="absolute left-0 bottom-full mb-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap shadow-md pointer-events-none {isOK ? 'bg-emerald-500/90 text-white' : 'bg-rose-500/90 text-white'}"
-                    >
-                      {detection.label} &middot; {detection.status} &middot; {detection.confidenceScore}%
-                    </span>
-                  </div>
+                    title={`${detection.label} - Klik untuk statistik`}
+                    aria-label={detection.label}
+                  ></button>
                 {/each}
 
                 <div class="absolute top-3.5 left-3.5 flex flex-col gap-1.5 z-20">

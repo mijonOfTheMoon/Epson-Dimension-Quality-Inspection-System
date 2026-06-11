@@ -4,10 +4,16 @@ use std::sync::Mutex;
 use bytes::Bytes;
 use tokio::sync::broadcast;
 
-const CHANNEL_CAPACITY: usize = 8;
+const CHANNEL_CAPACITY: usize = 16;
+
+#[derive(Clone)]
+pub enum FrameMessage {
+    Binary(Bytes),
+    Text(String),
+}
 
 pub struct VideoHub {
-    stations: Mutex<HashMap<String, broadcast::Sender<Bytes>>>,
+    stations: Mutex<HashMap<String, broadcast::Sender<FrameMessage>>>,
 }
 
 impl VideoHub {
@@ -17,7 +23,7 @@ impl VideoHub {
         }
     }
 
-    pub fn sender(&self, station_id: &str) -> broadcast::Sender<Bytes> {
+    pub fn sender(&self, station_id: &str) -> broadcast::Sender<FrameMessage> {
         let mut stations = self.stations.lock().expect("video hub poisoned");
         stations
             .entry(station_id.to_string())
@@ -25,7 +31,7 @@ impl VideoHub {
             .clone()
     }
 
-    pub fn subscribe(&self, station_id: &str) -> broadcast::Receiver<Bytes> {
+    pub fn subscribe(&self, station_id: &str) -> broadcast::Receiver<FrameMessage> {
         self.sender(station_id).subscribe()
     }
 }

@@ -51,10 +51,6 @@ export interface BoundingBox {
   height: number;
 }
 
-export type DetectionShape =
-  | { type: 'rect'; points: [number, number][] }
-  | { type: 'circle'; cx: number; cy: number; rx: number; ry: number };
-
 export interface ObjectDetection {
   id: string;
   label: string;
@@ -62,7 +58,6 @@ export interface ObjectDetection {
   status: InspectionStatus;
   confidenceScore: number;
   measurements: Measurement[];
-  shape?: DetectionShape;
 }
 
 export interface InspectionResult {
