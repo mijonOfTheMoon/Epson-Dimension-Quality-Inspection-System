@@ -22,6 +22,8 @@ from vision import (
     compute_foreground_mask,
     get_camera,
     inspect_frame,
+    calibrate_aruco_ratio,
+    set_manual_ratio,
 )
 
 STATUS_INTERVAL = 5.0
@@ -136,7 +138,7 @@ class InspectionRunner:
         elif kind == "shutdown":
             self._delete_requested = True
             self.shutdown()
-        elif kind in ("capture", "recalibrate"):
+        elif kind in ("capture", "recalibrate", "calibrate_aruco"):
             if kind == "capture":
                 view = str(command.get("inspectionView", self._inspection_view))
                 self._inspection_view = view if view in {"top", "side"} else self._inspection_view
@@ -144,6 +146,10 @@ class InspectionRunner:
                 self._commands.put_nowait(command)
             except queue.Full:
                 pass
+        elif kind == "set_ratio":
+            new_ratio = command.get("ratio")
+            if isinstance(new_ratio, (int, float)):
+                set_manual_ratio(float(new_ratio))
 
     def _drain_command(self, kind: str) -> bool:
         drained = False
@@ -304,6 +310,10 @@ class InspectionRunner:
                     phase = "calibrating"
                     continue
 
+                if self._drain_command("calibrate_aruco"):
+                    calibrate_aruco_ratio(frame)
+                    continue
+
                 mask = compute_foreground_mask(frame, background)
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
                 self._live_detections = (
@@ -415,6 +425,7 @@ class InspectionRunner:
         self.video.stop()
         self.mqtt.stop(mode="clear" if self._delete_requested else "offline")
         self.http.close()
+
 def main() -> None:
     config = load_config()
     configure_logging(config.agent_log_level)
@@ -424,7 +435,6 @@ def main() -> None:
         runner.start()
     finally:
         runner.close()
-
 
 if __name__ == "__main__":
     main()
