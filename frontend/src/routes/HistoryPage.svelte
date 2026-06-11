@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Download, ChevronDown, ChevronUp, Share2 } from 'lucide-svelte';
+  import { Search, Download, ChevronDown, ChevronUp, Share2, Calendar } from 'lucide-svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import FrameThumbnail from '$lib/components/FrameThumbnail.svelte';
@@ -24,6 +24,7 @@
   let rangePreset = $state<'all' | 'today' | '7d' | '30d' | 'custom'>('all');
   let customFrom = $state('');
   let customTo = $state('');
+  let rangeOpen = $state(false);
   let expandedId = $state<string | null>(null);
 
   let detailState = $state<Record<string, DetailLoadState>>({});
@@ -198,9 +199,17 @@
     partFilter = (event.currentTarget as HTMLSelectElement).value;
     page = 1;
   };
-  const onRangeChange = (event: Event) => {
-    rangePreset = (event.currentTarget as HTMLSelectElement).value as typeof rangePreset;
+  const RANGE_OPTIONS: { value: typeof rangePreset; label: string }[] = [
+    { value: 'all', label: 'Semua Waktu' },
+    { value: 'today', label: 'Hari ini' },
+    { value: '7d', label: '7 hari' },
+    { value: '30d', label: '30 hari' },
+    { value: 'custom', label: 'Custom' },
+  ];
+  const selectRange = (value: typeof rangePreset) => {
+    rangePreset = value;
     page = 1;
+    if (value !== 'custom') rangeOpen = false;
   };
   const onCustomFrom = (event: Event) => {
     customFrom = (event.currentTarget as HTMLInputElement).value;
@@ -268,18 +277,52 @@
         <option value={part.partCode}>{part.partName}</option>
       {/each}
     </select>
-    <select value={rangePreset} onchange={onRangeChange} class="input min-w-[130px] w-auto py-2.5 px-3">
-      <option value="all">Semua Waktu</option>
-      <option value="today">Hari ini</option>
-      <option value="7d">7 hari</option>
-      <option value="30d">30 hari</option>
-      <option value="custom">Custom</option>
-    </select>
-    {#if rangePreset === 'custom'}
-      <input type="date" value={customFrom} oninput={onCustomFrom} class="input w-auto py-2.5 px-3 {customInvalid ? 'border-rose-400' : ''}" />
-      <span class="text-xs text-[var(--muted-foreground)] font-semibold">s/d</span>
-      <input type="date" value={customTo} oninput={onCustomTo} class="input w-auto py-2.5 px-3 {customInvalid ? 'border-rose-400' : ''}" />
-    {/if}
+    <div class="relative">
+      <button
+        type="button"
+        onclick={() => (rangeOpen = !rangeOpen)}
+        class="input w-auto py-2.5 px-3 inline-flex items-center gap-2 font-semibold text-xs {rangePreset !== 'all' ? 'text-indigo-600 dark:text-indigo-400 border-indigo-500/40' : ''}"
+      >
+        <Calendar class="w-4 h-4 shrink-0" />
+        <span class="whitespace-nowrap">{rangeLabel}</span>
+        <ChevronDown class="w-3.5 h-3.5 shrink-0 transition-transform {rangeOpen ? 'rotate-180' : ''}" />
+      </button>
+      {#if rangeOpen}
+        <button class="fixed inset-0 z-30" onclick={() => (rangeOpen = false)} aria-label="Tutup pilihan waktu"></button>
+        <div class="absolute right-0 mt-2 z-40 w-64 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-150">
+          <div class="space-y-0.5">
+            {#each RANGE_OPTIONS as option (option.value)}
+              <button
+                type="button"
+                onclick={() => selectRange(option.value)}
+                class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-colors {
+                  rangePreset === option.value
+                    ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-[var(--accent)]'
+                }"
+              >
+                {option.label}
+              </button>
+            {/each}
+          </div>
+          {#if rangePreset === 'custom'}
+            <div class="mt-2 pt-2 border-t border-[var(--border)] space-y-2">
+              <label class="block space-y-1">
+                <span class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Dari</span>
+                <input type="date" value={customFrom} oninput={onCustomFrom} class="input py-2 px-2.5 text-xs {customInvalid ? 'border-rose-400' : ''}" />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sampai</span>
+                <input type="date" value={customTo} oninput={onCustomTo} class="input py-2 px-2.5 text-xs {customInvalid ? 'border-rose-400' : ''}" />
+              </label>
+              {#if customInvalid}
+                <p class="text-[10px] font-medium text-rose-500">Tanggal "Sampai" harus setelah "Dari".</p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 
   <div class="text-xs text-[var(--muted-foreground)] font-bold tracking-wide bg-slate-100/50 dark:bg-slate-900/30 border border-[var(--border)] w-fit px-3 py-1.5 rounded-lg shadow-sm">
