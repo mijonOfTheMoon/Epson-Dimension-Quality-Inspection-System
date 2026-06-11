@@ -55,7 +55,5 @@ pub enum AgentCommandType {
     Start,
     Stop,
     Recalibrate,
-    #[serde(rename = "calibrate_aruco")]
-    CalibrateAruco,
     Shutdown,
 }

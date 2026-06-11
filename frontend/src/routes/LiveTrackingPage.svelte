@@ -427,10 +427,7 @@
                     <div class="grid grid-cols-2 gap-2">
                       <button
                         disabled={!station.online || isBusy}
-                        onclick={() => runCommand(station.stationId, 'Kalibrasi', async () => {
-                          await api.recalibrate(station.stationId);
-                          await api.calibrateAruco(station.stationId);
-                        })}
+                        onclick={() => runCommand(station.stationId, 'Kalibrasi', () => api.recalibrate(station.stationId))}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <RefreshCcw class="w-4 h-4 animate-in spin-in duration-300" /> Kalibrasi

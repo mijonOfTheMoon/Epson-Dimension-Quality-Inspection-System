@@ -3,7 +3,7 @@ export type MeasurementStatus = InspectionStatus | 'UNREADABLE';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
 export type StationPhase = 'idle' | 'calibrating' | 'ready';
-export type AgentCommandType = 'start' | 'stop' | 'recalibrate' | 'calibrate_aruco';
+export type AgentCommandType = 'start' | 'stop' | 'recalibrate';
 export type DimensionView = 'top' | 'side';
 export type DimensionKind = 'width' | 'length' | 'diameter' | 'outer_diameter' | 'inner_diameter' | 'hole_diameter';
 

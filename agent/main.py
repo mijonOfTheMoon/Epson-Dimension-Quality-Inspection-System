@@ -2,6 +2,7 @@ import logging
 import queue
 import signal
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from time import monotonic, sleep
 from typing import Any
@@ -23,6 +24,7 @@ from vision import (
     get_camera,
     inspect_frame,
     calibrate_aruco_ratio,
+    annotate_calibration,
     payload_from_detections,
     reset_tracker,
 )
@@ -94,6 +96,7 @@ class InspectionRunner:
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
         self.video = WebRTCPublisher(config, FRAME_FPS)
+        self._upload_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload")
 
     def start(self) -> None:
         self.mqtt.start()
@@ -135,7 +138,7 @@ class InspectionRunner:
         elif kind == "shutdown":
             self._delete_requested = True
             self.shutdown()
-        elif kind in ("recalibrate", "calibrate_aruco"):
+        elif kind == "recalibrate":
             try:
                 self._commands.put_nowait(command)
             except queue.Full:
@@ -206,6 +209,15 @@ class InspectionRunner:
         ok, buffer = cv2.imencode(".jpg", frame, encode_params)
         return buffer.tobytes() if ok else None
 
+    def _upload_inspection(self, event: dict[str, Any], frame: cv2.Mat, encode_params: list[int]) -> None:
+        snapshot = self._encode_jpeg(frame, encode_params)
+        if snapshot is None:
+            logger.error("Clean frame unavailable for capture; sending inspection without snapshot")
+        try:
+            self.http.send_inspection(event, snapshot)
+        except Exception as exc:
+            logger.error("Inspection upload failed: %s", exc)
+
     def _on_video_ready(self, session_id: str, track_name: str) -> None:
         self._video_session_id = session_id
         self._video_track_name = track_name
@@ -222,7 +234,9 @@ class InspectionRunner:
 
     def _capture_calibration(self, cap: cv2.VideoCapture) -> list[cv2.Mat]:
         frames: list[cv2.Mat] = []
+        aruco_seen = False
         last_send = 0.0
+        last_presence = 0.0
         while len(frames) < CALIBRATION_FRAMES and not self._stop.is_set() and self._running.is_set():
             ret, frame = cap.read()
             if not ret:
@@ -230,11 +244,16 @@ class InspectionRunner:
                 continue
             frame = cv2.flip(frame, 1)
             frames.append(frame)
+            if calibrate_aruco_ratio(frame):
+                aruco_seen = True
             now = monotonic()
             if now - last_send >= self._frame_interval:
-                annotated = annotate_status(frame, "calibrating", self._part)
+                annotated = annotate_calibration(frame, self._part, len(frames), CALIBRATION_FRAMES, aruco_seen)
                 self._send_frame(annotated)
                 last_send = now
+            if now - last_presence >= 2.0:
+                self._send_status(phase="calibrating", running=True)
+                last_presence = now
         return frames
 
     def _run_inspection_session(self) -> None:
@@ -297,10 +316,6 @@ class InspectionRunner:
                     phase = "calibrating"
                     continue
 
-                if self._drain_command("calibrate_aruco"):
-                    calibrate_aruco_ratio(frame)
-                    continue
-
                 mask = compute_foreground_mask(frame, background)
                 result = inspect_frame(frame, mask, self._part, self._inspection_view)
                 self._live_detections = (
@@ -319,10 +334,7 @@ class InspectionRunner:
                     event["shift"] = self._shift
                     if self._batch_no:
                         event["batchNo"] = self._batch_no
-                    snapshot = self._encode_jpeg(frame, encode_params)
-                    if snapshot is None:
-                        logger.error("Clean frame unavailable for capture; sending inspection without snapshot")
-                    self.http.send_inspection(event, snapshot)
+                    self._upload_executor.submit(self._upload_inspection, event, frame.copy(), encode_params)
 
                 display = (
                     result.frame
@@ -381,6 +393,7 @@ class InspectionRunner:
 
     def close(self) -> None:
         self.shutdown()
+        self._upload_executor.shutdown(wait=False)
         self.video.stop()
         self.mqtt.stop(mode="clear" if self._delete_requested else "offline")
         self.http.close()

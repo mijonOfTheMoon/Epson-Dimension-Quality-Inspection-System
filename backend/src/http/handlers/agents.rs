@@ -31,7 +31,6 @@ pub enum AgentCommandBodyType {
     Start,
     Stop,
     Recalibrate,
-    CalibrateAruco,
 }
 
 impl AgentCommandBodyType {
@@ -40,7 +39,6 @@ impl AgentCommandBodyType {
             Self::Start => "start",
             Self::Stop => "stop",
             Self::Recalibrate => "recalibrate",
-            Self::CalibrateAruco => "calibrate_aruco",
         }
     }
 }
@@ -59,7 +57,6 @@ pub async fn command(
             AgentCommandBodyType::Start => AgentCommandType::Start,
             AgentCommandBodyType::Stop => AgentCommandType::Stop,
             AgentCommandBodyType::Recalibrate => AgentCommandType::Recalibrate,
-            AgentCommandBodyType::CalibrateAruco => AgentCommandType::CalibrateAruco,
         },
         command_id: Some(command_id.clone()),
         issued_at: Some(issued_at),

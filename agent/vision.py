@@ -20,6 +20,7 @@ TRACK_MAX_DISTANCE_PX = 120.0
 TRACK_FORGET_FRAMES = 6
 CAPTURE_TRIGGER_X_RATIO = 0.5
 CAPTURE_RETIRE_MARGIN_PX = 40.0
+TRIGGER_MIN_TRAVEL_RATIO = 0.2
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
@@ -57,24 +58,39 @@ class _CentroidTracker:
                 track = self._tracks[best]
                 matched[best] = True
                 new_cx = 0.5 * cx + 0.5 * track["cx"]
+                new_cy = 0.5 * cy + 0.5 * track["cy"]
                 track["vx"] = 0.5 * (new_cx - track["cx"]) + 0.5 * track["vx"]
                 track["cx"] = new_cx
-                track["cy"] = 0.5 * cy + 0.5 * track["cy"]
+                track["cy"] = new_cy
                 track["hits"] = min(track["hits"] + 1, TRACK_CONFIRM_FRAMES + 3)
                 track["missed"] = 0
+                dx = new_cx - track["entry_x"]
+                dy = new_cy - track["entry_y"]
                 confirmed = track["hits"] >= TRACK_CONFIRM_FRAMES
-                fired = confirmed and track["captured"] < 1.0 and new_cx >= line
+                fired = (
+                    confirmed
+                    and track["captured"] < 1.0
+                    and new_cx >= line
+                    and dx >= TRIGGER_MIN_TRAVEL_RATIO * float(frame_width)
+                    and dx >= abs(dy)
+                )
                 if fired:
                     track["captured"] = 1.0
                 results.append((confirmed, fired))
             else:
-                track = {"cx": float(cx), "cy": float(cy), "vx": 0.0, "hits": 1.0, "missed": 0.0, "captured": 0.0}
-                confirmed = TRACK_CONFIRM_FRAMES <= 1
-                fired = confirmed and float(cx) >= line
-                if fired:
-                    track["captured"] = 1.0
-                new_tracks.append(track)
-                results.append((confirmed, fired))
+                new_tracks.append(
+                    {
+                        "cx": float(cx),
+                        "cy": float(cy),
+                        "vx": 0.0,
+                        "entry_x": float(cx),
+                        "entry_y": float(cy),
+                        "hits": 1.0,
+                        "missed": 0.0,
+                        "captured": 0.0,
+                    }
+                )
+                results.append((False, False))
         for index, track in enumerate(self._tracks):
             if not matched[index]:
                 track["missed"] += 1
@@ -96,17 +112,34 @@ def reset_tracker() -> None:
 
 
 def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
-    """Hanya dieksekusi sekali saat ada trigger dari dashboard"""
     global current_ratio
     corners, ids, _ = ARUCO_DETECTOR.detectMarkers(frame)
     if ids is not None and len(corners) > 0:
-        cv2.aruco.drawDetectedMarkers(frame, corners, ids) # Opsional
         marker_corners = corners[0][0]
         dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
         if dist_px > 0:
             current_ratio = ARUCO_SIZE_MM / float(dist_px)
             return True
     return False
+
+
+def annotate_calibration(
+    frame: np.ndarray,
+    part: "PartSpec | None",
+    captured: int,
+    total: int,
+    aruco_detected: bool,
+) -> np.ndarray:
+    annotated = frame.copy()
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(annotated, f"KALIBRASI {captured}/{total}", (10, 28), font, 0.6, (0, 255, 255), 2)
+    status = "TERDETEKSI" if aruco_detected else "MARKER TIDAK TERLIHAT"
+    color = (0, 200, 0) if aruco_detected else (0, 0, 255)
+    cv2.putText(annotated, f"ArUco: {status}", (10, 54), font, 0.55, color, 2)
+    cv2.putText(annotated, f"Skala: {current_ratio:.4f} mm/px", (10, 80), font, 0.55, (255, 255, 0), 2)
+    if part is not None:
+        cv2.putText(annotated, f"{part.part_name} ({part.part_code})", (10, 106), font, 0.5, (200, 200, 200), 2)
+    return annotated
 
 
 def _normalize_kind(raw: dict[str, Any]) -> str:
@@ -298,14 +331,19 @@ def compute_foreground_mask(frame: np.ndarray, background: np.ndarray, threshold
     return mask
 
 
-def _boundary_gradient(grad_mag: np.ndarray, contour: np.ndarray, shape: tuple[int, int]) -> float:
-    outline = np.zeros(shape, dtype=np.uint8)
-    cv2.drawContours(outline, [contour], -1, 255, 2)
-    values = grad_mag[outline > 0]
+def _boundary_gradient(grad_mag: np.ndarray, contour: np.ndarray) -> float:
+    x, y, w_box, h_box = cv2.boundingRect(contour)
+    if w_box <= 0 or h_box <= 0:
+        return 0.0
+    roi = grad_mag[y:y + h_box, x:x + w_box]
+    outline = np.zeros((h_box, w_box), dtype=np.uint8)
+    shifted = contour - np.array([[x, y]])
+    cv2.drawContours(outline, [shifted], -1, 255, 2)
+    values = roi[outline > 0]
     return float(values.mean()) if values.size else 0.0
 
 
-def _passes_quality(contour: np.ndarray, grad_mag: np.ndarray, shape: tuple[int, int]) -> bool:
+def _passes_quality(contour: np.ndarray, grad_mag: np.ndarray) -> bool:
     area = cv2.contourArea(contour)
     if area <= MIN_CONTOUR_AREA:
         return False
@@ -318,7 +356,7 @@ def _passes_quality(contour: np.ndarray, grad_mag: np.ndarray, shape: tuple[int,
     extent = area / bbox_area if bbox_area > 0 else 0.0
     if extent < MIN_EXTENT:
         return False
-    if _boundary_gradient(grad_mag, contour, shape) < MIN_BOUNDARY_GRADIENT:
+    if _boundary_gradient(grad_mag, contour) < MIN_BOUNDARY_GRADIENT:
         return False
     return True
 
@@ -407,14 +445,19 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
 
     fg_area = int(cv2.countNonZero(mask))
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    grad_x = cv2.Sobel(gray_frame, cv2.CV_32F, 1, 0, ksize=3)
-    grad_y = cv2.Sobel(gray_frame, cv2.CV_32F, 0, 1, ksize=3)
-    grad_mag = cv2.magnitude(grad_x, grad_y)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    quality_contours = [c for c in contours if _passes_quality(c, grad_mag, gray_frame.shape)]
-    quality_contours.sort(key=cv2.contourArea, reverse=True)
-    ordered_contours = quality_contours[:12]
+    area_candidates = [c for c in contours if cv2.contourArea(c) > MIN_CONTOUR_AREA]
+
+    if area_candidates:
+        grad_x = cv2.Sobel(gray_frame, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray_frame, cv2.CV_32F, 0, 1, ksize=3)
+        grad_mag = cv2.magnitude(grad_x, grad_y)
+        quality_contours = [c for c in area_candidates if _passes_quality(c, grad_mag)]
+        quality_contours.sort(key=cv2.contourArea, reverse=True)
+        ordered_contours = quality_contours[:12]
+    else:
+        ordered_contours = []
 
     candidate_centroids: list[tuple[float, float]] = []
     for contour in ordered_contours:
