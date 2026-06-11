@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    Camera, CheckCircle, Hand, Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
+    Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
     RotateCcw, StopCircle, Trash2, Video, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
@@ -29,9 +29,7 @@
   const PHASE_LABELS: Record<StationPhase, { text: string; tone: string; icon: IconComponent }> = {
     idle: { text: 'Idle', tone: 'bg-slate-500/10 border border-slate-500/20 text-slate-500', icon: StopCircle },
     calibrating: { text: 'Kalibrasi', tone: 'bg-amber-500/10 border border-amber-500/20 text-amber-500', icon: RefreshCcw },
-    ready: { text: 'Siap', tone: 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500', icon: Hand },
-    stabilizing: { text: 'Deteksi', tone: 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-500', icon: Zap },
-    locked: { text: 'Terkunci', tone: 'bg-violet-500/10 border border-violet-500/20 text-violet-500', icon: CheckCircle },
+    ready: { text: 'Memindai', tone: 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500', icon: Zap },
   };
 
   function mergeStations(stations: StationStatusEvent[]): MergedStation[] {
@@ -144,10 +142,6 @@
 
   const setInspectionView = (stationId: string, view: DimensionView) => {
     inspectionView = { ...inspectionView, [stationId]: view };
-  };
-
-  const refreshInspectionsSoon = () => {
-    window.setTimeout(() => inspections.reload(), 1200);
   };
 
   const runCommand = async (
@@ -290,7 +284,7 @@
             {@const isBusy = busy[station.stationId]}
             {@const optimisticRunning = station.running || Boolean(pendingStart[station.stationId])}
             {@const phase = station.phase ?? (optimisticRunning ? 'calibrating' : 'idle')}
-            {@const phaseMeta = PHASE_LABELS[phase]}
+            {@const phaseMeta = PHASE_LABELS[phase] ?? PHASE_LABELS.idle}
             {@const PhaseIcon = phaseMeta.icon}
             {@const partCode = partCodeForStation(station)}
             {@const selectedPartType = partForCode(partCode)}
@@ -302,6 +296,12 @@
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
                 <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
+
+                {#if optimisticRunning && videoPlaying[station.stationId]}
+                  <div class="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-400/70 z-20 pointer-events-none">
+                    <span class="absolute top-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-indigo-500/80 text-white text-[9px] font-bold whitespace-nowrap">Trigger</span>
+                  </div>
+                {/if}
 
                 {#each detections as detection (detection.id)}
                   {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
@@ -424,34 +424,13 @@
                       </button>
                     </div>
                   {:else}
-                    <div class={isFocused ? 'grid grid-cols-[1.2fr_1fr_1fr_1fr] gap-2' : 'grid grid-cols-2 gap-2'}>
-                      <select
-                        disabled={!station.online || isBusy || !hasSideOrientation}
-                        value={view}
-                        onchange={(event) => setInspectionView(station.stationId, (event.currentTarget as HTMLSelectElement).value as DimensionView)}
-                        class="input text-xs font-semibold {isFocused ? '' : 'col-span-2'}"
-                      >
-                        <option value="top">Menghadap Kamera</option>
-                        <option value="side">Menyamping dari Kamera</option>
-                      </select>
-                      <button
-                        disabled={!station.online || isBusy || phase === 'calibrating'}
-                        onclick={() => runCommand(
-                          station.stationId,
-                          'Capture',
-                          () => api.captureNow(station.stationId, view),
-                          () => {
-                            refreshInspectionsSoon();
-                          },
-                        )}
-                        title="Simpan data inspeksi"
-                        class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
-                      >
-                        <Camera class="w-4 h-4" /> Capture
-                      </button>
+                    <div class="grid grid-cols-2 gap-2">
                       <button
                         disabled={!station.online || isBusy}
-                        onclick={() => runCommand(station.stationId, 'Kalibrasi', () => api.recalibrate(station.stationId))}
+                        onclick={() => runCommand(station.stationId, 'Kalibrasi', async () => {
+                          await api.recalibrate(station.stationId);
+                          await api.calibrateAruco(station.stationId);
+                        })}
                         class="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/10 active:scale-[0.98] transition-premium disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <RefreshCcw class="w-4 h-4 animate-in spin-in duration-300" /> Kalibrasi

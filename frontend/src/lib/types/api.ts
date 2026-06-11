@@ -2,9 +2,8 @@ export type InspectionStatus = 'OK' | 'NG';
 export type MeasurementStatus = InspectionStatus | 'UNREADABLE';
 export type UserRole = 'operator' | 'qc' | 'supervisor' | 'engineering' | 'admin' | 'vendor';
 export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shipped' | 'received';
-export type StationPhase = 'idle' | 'calibrating' | 'ready' | 'stabilizing' | 'locked';
-export type InspectionTrigger = 'manual';
-export type AgentCommandType = 'start' | 'stop' | 'capture' | 'recalibrate';
+export type StationPhase = 'idle' | 'calibrating' | 'ready';
+export type AgentCommandType = 'start' | 'stop' | 'recalibrate' | 'calibrate_aruco';
 export type DimensionView = 'top' | 'side';
 export type DimensionKind = 'width' | 'length' | 'diameter' | 'outer_diameter' | 'inner_diameter' | 'hole_diameter';
 
@@ -188,7 +187,6 @@ export interface InspectionCreatedEvent {
   confidenceScore: number;
   measurements: Measurement[];
   detections: ObjectDetection[];
-  trigger?: InspectionTrigger;
   frameObjectKey?: string;
   frameUrl?: string;
   frameUploadedAt?: string;

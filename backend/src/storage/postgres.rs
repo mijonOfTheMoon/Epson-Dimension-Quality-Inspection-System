@@ -193,15 +193,14 @@ impl PostgresStore {
         let detections = serde_json::to_value(&event.detections)?;
         let measurements = serde_json::to_value(&event.measurements)?;
         let timestamp = parse_timestamp(&event.timestamp)?;
-        let trigger = event.trigger.unwrap_or(InspectionTrigger::Manual);
 
         sqlx::query(
             r#"
             INSERT INTO inspections (
               event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
               operator_id, operator_name, status, confidence_score, measurements,
-              detections, trigger
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
+              detections
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)
             "#,
         )
         .bind(&event.event_id)
@@ -217,9 +216,6 @@ impl PostgresStore {
         .bind(event.confidence_score)
         .bind(measurements)
         .bind(detections)
-        .bind(match trigger {
-            InspectionTrigger::Manual => "manual",
-        })
         .execute(&mut **tx)
         .await?;
 
@@ -303,7 +299,7 @@ impl DataStore for PostgresStore {
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
                    operator_id, operator_name, status, confidence_score,
                    {payload_columns},
-                   trigger, frame_object_key, frame_uploaded_at
+                   frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE 1 = 1
             "#
@@ -339,7 +335,7 @@ impl DataStore for PostgresStore {
             r#"
             SELECT event_id, station_id, timestamp, part_id, part_name, part_code, vendor,
                    operator_id, operator_name, status, confidence_score, measurements,
-                   detections, trigger, frame_object_key, frame_uploaded_at
+                   detections, frame_object_key, frame_uploaded_at
             FROM inspections
             WHERE event_id = $1
             LIMIT 1
@@ -821,7 +817,6 @@ struct InspectionRow {
     confidence_score: f64,
     measurements: Value,
     detections: Value,
-    trigger: Option<String>,
     frame_object_key: Option<String>,
     frame_uploaded_at: Option<DateTime<Utc>>,
 }
@@ -926,10 +921,6 @@ fn map_inspection(row: InspectionRow) -> anyhow::Result<InspectionCreatedEvent> 
         confidence_score: row.confidence_score,
         measurements: serde_json::from_value(row.measurements).unwrap_or_default(),
         detections: serde_json::from_value(row.detections).unwrap_or_default(),
-        trigger: match row.trigger.as_deref() {
-            Some("manual") | None => row.trigger.as_ref().map(|_| InspectionTrigger::Manual),
-            Some(_) => None,
-        },
         frame_object_key: row.frame_object_key,
         frame_url: None,
         frame_uploaded_at: row.frame_uploaded_at.map(iso),

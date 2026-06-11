@@ -54,7 +54,8 @@ pub struct AgentVideoPayload {
 pub enum AgentCommandType {
     Start,
     Stop,
-    Capture,
     Recalibrate,
+    #[serde(rename = "calibrate_aruco")]
+    CalibrateAruco,
     Shutdown,
 }

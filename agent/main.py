@@ -23,15 +23,13 @@ from vision import (
     get_camera,
     inspect_frame,
     calibrate_aruco_ratio,
-    set_manual_ratio,
+    payload_from_detections,
+    reset_tracker,
 )
 
 STATUS_INTERVAL = 5.0
 CLAIM_WINDOW_SECONDS = 2.5
 CALIBRATION_FRAMES = 30
-FOREGROUND_AREA_THRESHOLD = 4000
-STABILITY_FRAMES = 5
-CLEAR_FRAMES = 10
 RESOURCE_RELEASE_TIMEOUT_SECONDS = 5.0
 
 logger = logging.getLogger(__name__)
@@ -61,7 +59,7 @@ def now_iso() -> str:
     return datetime.now(ZoneInfo("Asia/Jakarta")).isoformat()
 
 
-def build_inspection_event(config: AgentConfig, payload: InspectionPayload, trigger: str) -> dict[str, Any]:
+def build_inspection_event(config: AgentConfig, payload: InspectionPayload) -> dict[str, Any]:
     return {
         "eventId": str(uuid4()),
         "eventType": "inspection.created",
@@ -70,7 +68,6 @@ def build_inspection_event(config: AgentConfig, payload: InspectionPayload, trig
         "operatorId": "agent",
         "operatorName": "Vision Agent",
         "shift": "A",
-        "trigger": trigger,
         **payload.to_dict(),
     }
 
@@ -138,18 +135,11 @@ class InspectionRunner:
         elif kind == "shutdown":
             self._delete_requested = True
             self.shutdown()
-        elif kind in ("capture", "recalibrate", "calibrate_aruco"):
-            if kind == "capture":
-                view = str(command.get("inspectionView", self._inspection_view))
-                self._inspection_view = view if view in {"top", "side"} else self._inspection_view
+        elif kind in ("recalibrate", "calibrate_aruco"):
             try:
                 self._commands.put_nowait(command)
             except queue.Full:
                 pass
-        elif kind == "set_ratio":
-            new_ratio = command.get("ratio")
-            if isinstance(new_ratio, (int, float)):
-                set_manual_ratio(float(new_ratio))
 
     def _drain_command(self, kind: str) -> bool:
         drained = False
@@ -269,8 +259,6 @@ class InspectionRunner:
         self.video.start(video_track_name, self._on_video_ready)
         phase: Phase = "calibrating"
         background = None
-        stable_count = 0
-        clear_count = 0
         last_status = 0.0
         last_frame_sent = 0.0
         last_frame_ts = monotonic()
@@ -287,9 +275,8 @@ class InspectionRunner:
                         sleep(0.5)
                         continue
                     background = calibrate_background(frames)
+                    reset_tracker()
                     phase = "ready"
-                    stable_count = 0
-                    clear_count = 0
                     self._send_status(phase=phase, running=True)
                     self._drain_command("recalibrate")
                     continue
@@ -322,20 +309,11 @@ class InspectionRunner:
                     else []
                 )
 
-                manual_capture = self._drain_command("capture")
-                is_capture_event = manual_capture and result.inspection is not None
                 will_send_frame = now - last_frame_sent >= self._frame_interval
 
-                display = None
-                if is_capture_event or will_send_frame:
-                    display = (
-                        result.frame
-                        if result.inspection is not None
-                        else annotate_status(frame, phase, self._part)
-                    )
-
-                if is_capture_event:
-                    event = build_inspection_event(self.config, result.inspection, "manual")
+                if result.triggered:
+                    payload = payload_from_detections(self._part, result.triggered)
+                    event = build_inspection_event(self.config, payload)
                     event["operatorId"] = self._operator_id
                     event["operatorName"] = self._operator_name
                     event["shift"] = self._shift
@@ -343,35 +321,16 @@ class InspectionRunner:
                         event["batchNo"] = self._batch_no
                     snapshot = self._encode_jpeg(frame, encode_params)
                     if snapshot is None:
-                        logger.error("Clean_Frame unavailable for capture; sending inspection without snapshot")
+                        logger.error("Clean frame unavailable for capture; sending inspection without snapshot")
                     self.http.send_inspection(event, snapshot)
-                    phase = "locked"
-                    clear_count = 0
-                    stable_count = 0
-                    self._send_status(phase=phase, running=True, fps=fps)
 
-                elif phase == "ready":
-                    if result.inspection is not None and result.foreground_area >= FOREGROUND_AREA_THRESHOLD:
-                        stable_count += 1
-                        if stable_count >= STABILITY_FRAMES:
-                            phase = "locked"
-                            clear_count = 0
-                            stable_count = 0
-                            self._send_status(phase=phase, running=True, fps=fps)
-                    else:
-                        stable_count = 0
+                display = (
+                    result.frame
+                    if result.inspection is not None
+                    else annotate_status(frame, phase, self._part)
+                )
 
-                elif phase == "locked":
-                    if result.foreground_area < FOREGROUND_AREA_THRESHOLD:
-                        clear_count += 1
-                        if clear_count >= CLEAR_FRAMES:
-                            phase = "ready"
-                            clear_count = 0
-                            self._send_status(phase=phase, running=True, fps=fps)
-                    else:
-                        clear_count = 0
-
-                if will_send_frame and display is not None:
+                if will_send_frame:
                     self._send_frame(display)
                     last_frame_sent = now
                     self.mqtt.publish_presence(

@@ -26,12 +26,12 @@ pub struct AgentCommandBody {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum AgentCommandBodyType {
     Start,
     Stop,
-    Capture,
     Recalibrate,
+    CalibrateAruco,
 }
 
 impl AgentCommandBodyType {
@@ -39,8 +39,8 @@ impl AgentCommandBodyType {
         match self {
             Self::Start => "start",
             Self::Stop => "stop",
-            Self::Capture => "capture",
             Self::Recalibrate => "recalibrate",
+            Self::CalibrateAruco => "calibrate_aruco",
         }
     }
 }
@@ -58,8 +58,8 @@ pub async fn command(
         kind: match body.command {
             AgentCommandBodyType::Start => AgentCommandType::Start,
             AgentCommandBodyType::Stop => AgentCommandType::Stop,
-            AgentCommandBodyType::Capture => AgentCommandType::Capture,
             AgentCommandBodyType::Recalibrate => AgentCommandType::Recalibrate,
+            AgentCommandBodyType::CalibrateAruco => AgentCommandType::CalibrateAruco,
         },
         command_id: Some(command_id.clone()),
         issued_at: Some(issued_at),
@@ -105,8 +105,6 @@ pub async fn command(
                 ),
             });
         }
-    } else if matches!(body.command, AgentCommandBodyType::Capture) {
-        command.inspection_view = body.inspection_view;
     }
 
     let mqtt = state

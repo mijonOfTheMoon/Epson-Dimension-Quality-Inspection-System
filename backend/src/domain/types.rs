@@ -79,8 +79,6 @@ pub enum StationPhase {
     Idle,
     Calibrating,
     Ready,
-    Stabilizing,
-    Locked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -99,12 +97,6 @@ pub enum DimensionKind {
     OuterDiameter,
     InnerDiameter,
     HoleDiameter,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum InspectionTrigger {
-    #[serde(rename = "manual")]
-    Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,8 +159,6 @@ pub struct InspectionCreatedEvent {
     pub measurements: Vec<Measurement>,
     #[serde(default)]
     pub detections: Vec<ObjectDetection>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trigger: Option<InspectionTrigger>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_object_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

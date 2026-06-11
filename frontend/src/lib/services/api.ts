@@ -243,16 +243,16 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ command: 'stop' }) },
     );
   },
-  captureNow(stationId: string, inspectionView?: DimensionView) {
-    return request<AgentCommandResponse>(
-      `/api/agents/${encodeURIComponent(stationId)}/command`,
-      { method: 'POST', body: JSON.stringify({ command: 'capture', inspectionView }) },
-    );
-  },
   recalibrate(stationId: string) {
     return request<AgentCommandResponse>(
       `/api/agents/${encodeURIComponent(stationId)}/command`,
       { method: 'POST', body: JSON.stringify({ command: 'recalibrate' }) },
+    );
+  },
+  calibrateAruco(stationId: string) {
+    return request<AgentCommandResponse>(
+      `/api/agents/${encodeURIComponent(stationId)}/command`,
+      { method: 'POST', body: JSON.stringify({ command: 'calibrate_aruco' }) },
     );
   },
   createVideoViewerSession(stationId: string, sessionDescription: CloudflareSessionDescription) {

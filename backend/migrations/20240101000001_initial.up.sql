@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS inspections (
   confidence_score double precision NOT NULL,
   measurements jsonb NOT NULL,
   detections jsonb NOT NULL DEFAULT '[]'::jsonb,
-  trigger text,
   frame_object_key text,
   frame_uploaded_at timestamptz
 )

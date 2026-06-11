@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+import math
 
 import cv2
 import numpy as np
@@ -8,11 +9,91 @@ ARUCO_SIZE_MM = 20.00
 PIXEL_TO_MM_RATIO = 0.05
 MIN_CONTOUR_AREA = 1000
 
+ADAPTIVE_THRESHOLD_K = 4.0
+BASE_DIFF_THRESHOLD = 25
+MAX_DIFF_THRESHOLD = 90
+MIN_SOLIDITY = 0.55
+MIN_EXTENT = 0.30
+MIN_BOUNDARY_GRADIENT = 30.0
+TRACK_CONFIRM_FRAMES = 4
+TRACK_MAX_DISTANCE_PX = 120.0
+TRACK_FORGET_FRAMES = 6
+CAPTURE_TRIGGER_X_RATIO = 0.5
+CAPTURE_RETIRE_MARGIN_PX = 40.0
+
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
+_CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
 current_ratio = PIXEL_TO_MM_RATIO
+
+
+class _CentroidTracker:
+    def __init__(self) -> None:
+        self._tracks: list[dict[str, float]] = []
+
+    def reset(self) -> None:
+        self._tracks = []
+
+    def update(self, centroids: list[tuple[float, float]], frame_width: int) -> list[tuple[bool, bool]]:
+        line = CAPTURE_TRIGGER_X_RATIO * float(frame_width)
+        matched = [False] * len(self._tracks)
+        results: list[tuple[bool, bool]] = []
+        new_tracks: list[dict[str, float]] = []
+        for cx, cy in centroids:
+            best = -1
+            best_distance = TRACK_MAX_DISTANCE_PX
+            for index, track in enumerate(self._tracks):
+                if matched[index]:
+                    continue
+                predicted_x = track["cx"] + track["vx"]
+                distance = math.hypot(cx - predicted_x, cy - track["cy"])
+                if distance < best_distance:
+                    best_distance = distance
+                    best = index
+            if best >= 0:
+                track = self._tracks[best]
+                matched[best] = True
+                new_cx = 0.5 * cx + 0.5 * track["cx"]
+                track["vx"] = 0.5 * (new_cx - track["cx"]) + 0.5 * track["vx"]
+                track["cx"] = new_cx
+                track["cy"] = 0.5 * cy + 0.5 * track["cy"]
+                track["hits"] = min(track["hits"] + 1, TRACK_CONFIRM_FRAMES + 3)
+                track["missed"] = 0
+                confirmed = track["hits"] >= TRACK_CONFIRM_FRAMES
+                fired = confirmed and track["captured"] < 1.0 and new_cx >= line
+                if fired:
+                    track["captured"] = 1.0
+                results.append((confirmed, fired))
+            else:
+                track = {"cx": float(cx), "cy": float(cy), "vx": 0.0, "hits": 1.0, "missed": 0.0, "captured": 0.0}
+                confirmed = TRACK_CONFIRM_FRAMES <= 1
+                fired = confirmed and float(cx) >= line
+                if fired:
+                    track["captured"] = 1.0
+                new_tracks.append(track)
+                results.append((confirmed, fired))
+        for index, track in enumerate(self._tracks):
+            if not matched[index]:
+                track["missed"] += 1
+        self._tracks = [
+            track
+            for track in self._tracks
+            if track["missed"] <= TRACK_FORGET_FRAMES
+            and not (track["captured"] >= 1.0 and track["cx"] > line + CAPTURE_RETIRE_MARGIN_PX)
+        ]
+        self._tracks.extend(new_tracks)
+        return results
+
+
+_TRACKER = _CentroidTracker()
+
+
+def reset_tracker() -> None:
+    _TRACKER.reset()
+
 
 def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
     """Hanya dieksekusi sekali saat ada trigger dari dashboard"""
@@ -26,12 +107,6 @@ def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
             current_ratio = ARUCO_SIZE_MM / float(dist_px)
             return True
     return False
-
-def set_manual_ratio(new_ratio: float) -> None:
-    """Dieksekusi saat ada input angka rasio manual dari UI"""
-    global current_ratio
-    if new_ratio > 0:
-        current_ratio = float(new_ratio)
 
 
 def _normalize_kind(raw: dict[str, Any]) -> str:
@@ -181,6 +256,7 @@ class VisionResult:
     frame: np.ndarray
     foreground_area: int
     inspection: InspectionPayload | None = None
+    triggered: list[ObjectDetection] = field(default_factory=list)
 
 
 def get_camera(camera_index: int = 0) -> cv2.VideoCapture:
@@ -194,6 +270,7 @@ def get_camera(camera_index: int = 0) -> cv2.VideoCapture:
 
 def to_gray_blurred(frame: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = _CLAHE.apply(gray)
     return cv2.GaussianBlur(gray, (5, 5), 0)
 
 
@@ -201,15 +278,49 @@ def calibrate_background(frames: list[np.ndarray]) -> np.ndarray:
     if not frames:
         raise ValueError("Need at least 1 frame for calibration")
     stack = np.stack([to_gray_blurred(f).astype(np.float32) for f in frames], axis=0)
-    return np.mean(stack, axis=0).astype(np.uint8)
+    return np.median(stack, axis=0).astype(np.uint8)
 
 
-def compute_foreground_mask(frame: np.ndarray, background: np.ndarray, threshold: int = 25) -> np.ndarray:
+def compute_foreground_mask(frame: np.ndarray, background: np.ndarray, threshold: int = BASE_DIFF_THRESHOLD) -> np.ndarray:
     gray = to_gray_blurred(frame)
     diff = cv2.absdiff(gray, background)
-    _, mask = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
-    kernel = np.ones((5, 5), np.uint8)
-    return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    sample = diff[::3, ::3].reshape(-1).astype(np.float32)
+    median = float(np.median(sample))
+    mad = float(np.median(np.abs(sample - median)))
+    adaptive = median + ADAPTIVE_THRESHOLD_K * (1.4826 * mad)
+    effective = int(min(MAX_DIFF_THRESHOLD, max(threshold, adaptive)))
+
+    _, mask = cv2.threshold(diff, effective, 255, cv2.THRESH_BINARY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    return mask
+
+
+def _boundary_gradient(grad_mag: np.ndarray, contour: np.ndarray, shape: tuple[int, int]) -> float:
+    outline = np.zeros(shape, dtype=np.uint8)
+    cv2.drawContours(outline, [contour], -1, 255, 2)
+    values = grad_mag[outline > 0]
+    return float(values.mean()) if values.size else 0.0
+
+
+def _passes_quality(contour: np.ndarray, grad_mag: np.ndarray, shape: tuple[int, int]) -> bool:
+    area = cv2.contourArea(contour)
+    if area <= MIN_CONTOUR_AREA:
+        return False
+    hull_area = cv2.contourArea(cv2.convexHull(contour))
+    solidity = area / hull_area if hull_area > 0 else 0.0
+    if solidity < MIN_SOLIDITY:
+        return False
+    _, _, w_box, h_box = cv2.boundingRect(contour)
+    bbox_area = float(w_box * h_box)
+    extent = area / bbox_area if bbox_area > 0 else 0.0
+    if extent < MIN_EXTENT:
+        return False
+    if _boundary_gradient(grad_mag, contour, shape) < MIN_BOUNDARY_GRADIENT:
+        return False
+    return True
 
 
 def _calc_subpixel_offset(val_left: float, val_center: float, val_right: float) -> float:
@@ -293,29 +404,47 @@ def _measure_dimension(
 def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
 
     ratio = current_ratio
-    
+
     fg_area = int(cv2.countNonZero(mask))
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    grad_x = cv2.Sobel(gray_frame, cv2.CV_32F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(gray_frame, cv2.CV_32F, 0, 1, ksize=3)
+    grad_mag = cv2.magnitude(grad_x, grad_y)
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) <= MIN_CONTOUR_AREA:
+    quality_contours = [c for c in contours if _passes_quality(c, grad_mag, gray_frame.shape)]
+    quality_contours.sort(key=cv2.contourArea, reverse=True)
+    ordered_contours = quality_contours[:12]
+
+    candidate_centroids: list[tuple[float, float]] = []
+    for contour in ordered_contours:
+        moments = cv2.moments(contour)
+        x, y, w_box, h_box = cv2.boundingRect(contour)
+        cx = moments["m10"] / moments["m00"] if moments["m00"] else x + w_box / 2.0
+        cy = moments["m01"] / moments["m00"] if moments["m00"] else y + h_box / 2.0
+        candidate_centroids.append((cx, cy))
+
+    results = _TRACKER.update(candidate_centroids, frame.shape[1])
+    confirmed_pairs = [
+        (contour, fired) for contour, (confirmed, fired) in zip(ordered_contours, results) if confirmed
+    ]
+
+    if not confirmed_pairs:
         return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
+
+    ordered_contours = [contour for contour, _ in confirmed_pairs]
+    fired_flags = [fired for _, fired in confirmed_pairs]
 
     result_frame = frame.copy()
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
     detections: list[ObjectDetection] = []
+    triggered: list[ObjectDetection] = []
     active_view = inspection_view if inspection_view in {"top", "side"} else "top"
     active_specs = [spec for spec in part.dimensions if spec.view == active_view]
 
-    ordered_contours = sorted(
-        [contour for contour in contours if cv2.contourArea(contour) > MIN_CONTOUR_AREA],
-        key=cv2.contourArea,
-        reverse=True,
-    )[:12]
-
     used_ids: set[str] = set()
 
-    for index, contour in enumerate(ordered_contours, start=1):
+    for index, (contour, fired_flag) in enumerate(zip(ordered_contours, fired_flags), start=1):
         x, y, w_box, h_box = cv2.boundingRect(contour)
         moments = cv2.moments(contour)
         cx = int(moments["m10"] / moments["m00"]) if moments["m00"] else x + w_box // 2
@@ -419,6 +548,8 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
             measurements=measurements,
         )
         detections.append(detection)
+        if fired_flag:
+            triggered.append(detection)
 
         cv2.circle(result_frame, (cx, cy), 3, (0, 255, 255), -1)
         cv2.circle(result_frame, (int(circle_x), int(circle_y)), int(radius_px), color, 2)
@@ -448,7 +579,27 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         measurements=measurements,
         detections=detections,
     )
-    return VisionResult(frame=result_frame, foreground_area=fg_area, inspection=inspection)
+    return VisionResult(frame=result_frame, foreground_area=fg_area, inspection=inspection, triggered=triggered)
+
+
+def payload_from_detections(part: PartSpec, detections: list[ObjectDetection]) -> InspectionPayload:
+    measurements = [measurement for detection in detections for measurement in detection.measurements]
+    status = "OK" if all(detection.status == "OK" for detection in detections) else "NG"
+    confidence = (
+        round(sum(detection.confidenceScore for detection in detections) / len(detections), 2)
+        if detections
+        else 0.0
+    )
+    return InspectionPayload(
+        partName=part.part_name,
+        partCode=part.part_code,
+        partId=part.part_id,
+        vendor=part.vendor,
+        status=status,
+        confidenceScore=confidence,
+        measurements=measurements,
+        detections=detections,
+    )
 
 
 def annotate_status(frame: np.ndarray, phase: str, part: PartSpec | None) -> np.ndarray:
