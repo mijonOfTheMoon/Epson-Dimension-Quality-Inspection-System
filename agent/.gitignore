@@ -15,4 +15,5 @@ agent_buffer.jsonl
 *.mov
 captures/
 outputs/
+calibration_state.json
 .env

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
+import json
 import math
+import os
 
 import cv2
 import numpy as np
@@ -34,7 +36,31 @@ ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 _CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-current_ratio = PIXEL_TO_MM_RATIO
+CALIBRATION_STATE_PATH = os.environ.get("CALIBRATION_STATE_PATH") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "calibration_state.json"
+)
+
+
+def _load_persisted_ratio() -> float:
+    try:
+        with open(CALIBRATION_STATE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        ratio = float(data["pixelToMmRatio"])
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return PIXEL_TO_MM_RATIO
+    return ratio if ratio > 0 else PIXEL_TO_MM_RATIO
+
+
+def save_persisted_ratio() -> bool:
+    try:
+        with open(CALIBRATION_STATE_PATH, "w", encoding="utf-8") as handle:
+            json.dump({"pixelToMmRatio": current_ratio}, handle)
+    except OSError:
+        return False
+    return True
+
+
+current_ratio = _load_persisted_ratio()
 
 
 class _CentroidTracker:
@@ -156,7 +182,8 @@ def annotate_calibration(
     status = "TERDETEKSI" if aruco_detected else "MARKER TIDAK TERLIHAT"
     color = (0, 200, 0) if aruco_detected else (0, 0, 255)
     cv2.putText(annotated, f"ArUco: {status}", (10, 54), font, 0.55, color, 2)
-    cv2.putText(annotated, f"Skala: {current_ratio:.4f} mm/px", (10, 80), font, 0.55, (255, 255, 0), 2)
+    scale_suffix = "" if aruco_detected else " (terakhir)"
+    cv2.putText(annotated, f"Skala: {current_ratio:.4f} mm/px{scale_suffix}", (10, 80), font, 0.55, (255, 255, 0), 2)
     if part is not None:
         cv2.putText(annotated, f"{part.part_name} ({part.part_code})", (10, 106), font, 0.5, (200, 200, 200), 2)
     return annotated
@@ -268,6 +295,7 @@ class ObjectDetection:
     status: str
     confidenceScore: float
     measurements: list[Measurement]
+    shape: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -277,6 +305,7 @@ class ObjectDetection:
             "status": self.status,
             "confidenceScore": self.confidenceScore,
             "measurements": [measurement.to_dict() for measurement in self.measurements],
+            "shape": self.shape,
         }
 
 
@@ -312,12 +341,20 @@ class VisionResult:
     triggered: list[ObjectDetection] = field(default_factory=list)
 
 
-def get_camera(camera_index: int = 0) -> cv2.VideoCapture:
+def get_camera(camera_index: int = 0, fps: int = 0, width: int = 0, height: int = 0) -> cv2.VideoCapture:
     cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
     if not cap.isOpened():
         cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
         raise RuntimeError("Kamera tidak ditemukan")
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    if width > 0:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
+    if height > 0:
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+    if fps > 0:
+        cap.set(cv2.CAP_PROP_FPS, float(fps))
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 
 
@@ -379,21 +416,6 @@ def _passes_quality(contour: np.ndarray, grad_mag: np.ndarray) -> bool:
     if _boundary_gradient(grad_mag, contour) < MIN_BOUNDARY_GRADIENT:
         return False
     return True
-
-
-def _calc_subpixel_offset(val_left: float, val_center: float, val_right: float) -> float:
-    denominator = 2.0 * (val_left - 2.0 * val_center + val_right)
-    if denominator == 0:
-        return 0.0
-    return (val_left - val_right) / denominator
-
-
-def _refine_edge_1d(image_gray: np.ndarray, rough_x: int, rough_y: int) -> float:
-    h, w = image_gray.shape
-    if rough_x <= 0 or rough_x >= w - 1:
-        return float(rough_x)
-    roi = image_gray[rough_y, rough_x - 1: rough_x + 2].astype(np.float32)
-    return float(rough_x) + _calc_subpixel_offset(float(roi[0]), float(roi[1]), float(roi[2]))
 
 
 def _status_for(value: float, spec: DimensionSpec) -> str:
@@ -498,12 +520,14 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
     ordered_contours = [contour for contour, _ in confirmed_pairs]
     fired_flags = [fired for _, fired in confirmed_pairs]
 
-    result_frame = frame.copy()
-
     detections: list[ObjectDetection] = []
     triggered: list[ObjectDetection] = []
     active_view = inspection_view if inspection_view in {"top", "side"} else "top"
     active_specs = [spec for spec in part.dimensions if spec.view == active_view]
+    active_spec_kinds = {spec.kind for spec in active_specs}
+    circle_kinds = {"diameter", "outer_diameter", "inner_diameter", "hole_diameter"}
+    frame_w = frame.shape[1]
+    frame_h = frame.shape[0]
 
     used_ids: set[str] = set()
 
@@ -514,16 +538,31 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         cy = int(moments["m01"] / moments["m00"]) if moments["m00"] else y + h_box // 2
         (circle_x, circle_y), radius_px = cv2.minEnclosingCircle(contour)
 
-        (_, _), (rect_w, rect_h), _ = cv2.minAreaRect(contour)
-        long_side_px = max(0.0, max(float(rect_w), float(rect_h)))
+        rect = cv2.minAreaRect(contour)
+        (_, _), (rect_w, rect_h), _ = rect
+        long_side_px = max(float(rect_w), float(rect_h))
+        short_side_px = min(float(rect_w), float(rect_h))
+        box_points = cv2.boxPoints(rect)
 
-        mid_y = y + (h_box // 2)
-        precise_x_left = _refine_edge_1d(gray_frame, x, mid_y)
-        precise_x_right = _refine_edge_1d(gray_frame, x + w_box, mid_y)
-        refined_width_px = precise_x_right - precise_x_left
+        if active_spec_kinds & circle_kinds and not (active_spec_kinds & {"width", "length"}):
+            shape_payload: dict[str, Any] = {
+                "type": "circle",
+                "cx": round(float(circle_x) / frame_w * 100, 2),
+                "cy": round(float(circle_y) / frame_h * 100, 2),
+                "rx": round(float(radius_px) / frame_w * 100, 2),
+                "ry": round(float(radius_px) / frame_h * 100, 2),
+            }
+        else:
+            shape_payload = {
+                "type": "rect",
+                "points": [
+                    [round(float(px) / frame_w * 100, 2), round(float(py) / frame_h * 100, 2)]
+                    for px, py in box_points
+                ],
+            }
 
         diameter_mm = round(float(radius_px * 2 * ratio), 3)
-        width_mm = round(refined_width_px * ratio, 3)
+        width_mm = round(short_side_px * ratio, 3)
         length_mm = round(long_side_px * ratio, 3)
         hole_mm = _hole_diameter_mm(mask, contour, ratio)
 
@@ -588,7 +627,6 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
             ))
 
         status = "OK" if detection_ok else "NG"
-        color = (0, 255, 0) if status == "OK" else (0, 0, 255)
         cell_x = max(0, min(9, int((cx / max(frame.shape[1], 1)) * 10)))
         cell_y = max(0, min(9, int((cy / max(frame.shape[0], 1)) * 10)))
         detection_id = f"obj-{cell_x}-{cell_y}"
@@ -609,16 +647,11 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
             status=status,
             confidenceScore=_confidence_for_measurements(measurements),
             measurements=measurements,
+            shape=shape_payload,
         )
         detections.append(detection)
         if fired_flag:
             triggered.append(detection)
-
-        cv2.circle(result_frame, (cx, cy), 3, (0, 255, 255), -1)
-        cv2.circle(result_frame, (int(circle_x), int(circle_y)), int(radius_px), color, 2)
-        cv2.rectangle(result_frame, (x, y), (x + w_box, y + h_box), color, 2)
-        cv2.putText(result_frame, detection.id, (x, max(20, y - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
     if not detections:
         return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
@@ -626,11 +659,6 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
     measurements = [measurement for detection in detections for measurement in detection.measurements]
     status = "OK" if all(detection.status == "OK" for detection in detections) else "NG"
     confidence = round(sum(detection.confidenceScore for detection in detections) / len(detections), 2)
-
-    cv2.putText(result_frame, f"STATUS: {status} | OBJECTS: {len(detections)}", (10, result_frame.shape[0] - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0) if status == "OK" else (0, 0, 255), 2)
-    cv2.putText(result_frame, f"{part.part_name} ({part.part_code})", (10, 28),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
     inspection = InspectionPayload(
         partName=part.part_name,
@@ -642,7 +670,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         measurements=measurements,
         detections=detections,
     )
-    return VisionResult(frame=result_frame, foreground_area=fg_area, inspection=inspection, triggered=triggered)
+    return VisionResult(frame=frame, foreground_area=fg_area, inspection=inspection, triggered=triggered)
 
 
 def payload_from_detections(part: PartSpec, detections: list[ObjectDetection]) -> InspectionPayload:
@@ -663,12 +691,3 @@ def payload_from_detections(part: PartSpec, detections: list[ObjectDetection]) -
         measurements=measurements,
         detections=detections,
     )
-
-
-def annotate_status(frame: np.ndarray, phase: str, part: PartSpec | None) -> np.ndarray:
-    annotated = frame.copy()
-    label = f"{phase.upper()}"
-    if part is not None:
-        label += f" | {part.part_name} ({part.part_code})"
-    cv2.putText(annotated, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-    return annotated

@@ -51,7 +51,7 @@ impl IngestionService {
             return Ok(None);
         }
 
-        let mut first_saved = entries
+        let first_saved = entries
             .iter()
             .find(|entry| saved_ids.contains(&entry.event_id))
             .cloned()
@@ -59,20 +59,27 @@ impl IngestionService {
 
         if let (Some(jpeg), Some(object_store)) = (snapshot, self.object_store.clone()) {
             let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
-            upload_with_retry(&object_store, &key, jpeg, 3).await?;
-            let updated = self.store.mark_frame_uploaded(&saved_ids, &key).await?;
-            if let Some(IngestEvent::Inspection(inspection)) = &mut first_saved {
-                inspection.frame_object_key = Some(key.clone());
-                inspection.frame_uploaded_at = Some(chrono::Utc::now().to_rfc3339());
-            }
-            tracing::info!(
-                %parent_event_id,
-                %station_id,
-                %key,
-                updated,
-                expected = saved_ids.len(),
-                "frame uploaded from agent HTTP ingest"
-            );
+            let store = self.store.clone();
+            let saved_for_upload = saved_ids.clone();
+            tokio::spawn(async move {
+                if let Err(error) = upload_with_retry(&object_store, &key, jpeg, 3).await {
+                    tracing::error!(%station_id, %key, %error, "async frame upload failed");
+                    return;
+                }
+                match store.mark_frame_uploaded(&saved_for_upload, &key).await {
+                    Ok(updated) => tracing::info!(
+                        %parent_event_id,
+                        %station_id,
+                        %key,
+                        updated,
+                        expected = saved_for_upload.len(),
+                        "frame uploaded from agent HTTP ingest"
+                    ),
+                    Err(error) => {
+                        tracing::error!(%parent_event_id, %key, %error, "mark frame uploaded failed")
+                    }
+                }
+            });
         }
 
         Ok(first_saved)

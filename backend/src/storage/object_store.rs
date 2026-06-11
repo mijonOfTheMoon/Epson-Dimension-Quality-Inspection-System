@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use aws_sdk_s3::config::Credentials;
+use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
@@ -12,6 +12,7 @@ use crate::config::ObjectStoreConfig;
 #[derive(Clone)]
 pub struct R2Store {
     client: Client,
+    presign_client: Client,
     bucket: String,
     signed_url_ttl: Duration,
     upload_timeout: Duration,
@@ -24,22 +25,83 @@ impl R2Store {
             config.secret_access_key.clone(),
             None,
             None,
-            "cloudflare-r2",
+            "diminspect-object-store",
         );
-        let endpoint = format!("https://{}.r2.cloudflarestorage.com", config.account_id);
+        let endpoint = config.endpoint.clone().unwrap_or_else(|| {
+            format!(
+                "https://{}.r2.cloudflarestorage.com",
+                config.account_id.clone().unwrap_or_default()
+            )
+        });
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .endpoint_url(endpoint)
             .credentials_provider(credentials)
-            .region("auto")
+            .region(Region::new(config.region.clone()))
             .load()
             .await;
 
-        Ok(Self {
-            client: Client::new(&sdk_config),
+        let client = Self::build_client(&sdk_config, &endpoint, config.force_path_style);
+        let presign_client = match &config.public_endpoint {
+            Some(public) if public != &endpoint => {
+                Self::build_client(&sdk_config, public, config.force_path_style)
+            }
+            _ => client.clone(),
+        };
+
+        let store = Self {
+            client,
+            presign_client,
             bucket: config.bucket.clone(),
             signed_url_ttl: config.signed_url_ttl,
             upload_timeout: config.upload_timeout,
-        })
+        };
+
+        if config.force_path_style {
+            store.ensure_bucket().await;
+        }
+
+        Ok(store)
+    }
+
+    fn build_client(
+        sdk_config: &aws_config::SdkConfig,
+        endpoint: &str,
+        force_path_style: bool,
+    ) -> Client {
+        let s3_config = aws_sdk_s3::config::Builder::from(sdk_config)
+            .endpoint_url(endpoint)
+            .force_path_style(force_path_style)
+            .build();
+        Client::from_conf(s3_config)
+    }
+
+    async fn ensure_bucket(&self) {
+        for _ in 0..10u32 {
+            match self.bucket_exists().await {
+                Ok(true) => return,
+                Ok(false) => {
+                    if self
+                        .client
+                        .create_bucket()
+                        .bucket(&self.bucket)
+                        .send()
+                        .await
+                        .is_ok()
+                    {
+                        return;
+                    }
+                }
+                Err(_) => {}
+            }
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+        tracing::warn!(bucket = %self.bucket, "object store bucket not ready after retries");
+    }
+
+    async fn bucket_exists(&self) -> anyhow::Result<bool> {
+        match self.client.head_bucket().bucket(&self.bucket).send().await {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 
     pub async fn put_jpeg(&self, key: &str, bytes: Bytes) -> anyhow::Result<()> {
@@ -54,8 +116,8 @@ impl R2Store {
                 .send(),
         )
         .await
-        .context("R2 upload timed out")?
-        .context("R2 upload failed")?;
+        .context("object store upload timed out")?
+        .context("object store upload failed")?;
 
         Ok(())
     }
@@ -67,7 +129,7 @@ impl R2Store {
             .key(key)
             .send()
             .await
-            .context("R2 delete failed")?;
+            .context("object store delete failed")?;
 
         Ok(())
     }
@@ -87,7 +149,7 @@ impl R2Store {
                 if service_error.is_not_found() {
                     Ok(false)
                 } else {
-                    Err(anyhow::Error::new(service_error).context("R2 head failed"))
+                    Err(anyhow::Error::new(service_error).context("object store head failed"))
                 }
             }
         }
@@ -96,13 +158,13 @@ impl R2Store {
     pub async fn signed_get_url(&self, key: &str) -> anyhow::Result<String> {
         let presigning = PresigningConfig::expires_in(self.signed_url_ttl)?;
         let request = self
-            .client
+            .presign_client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
             .presigned(presigning)
             .await
-            .context("R2 presign failed")?;
+            .context("object store presign failed")?;
 
         Ok(request.uri().to_string())
     }

@@ -51,6 +51,10 @@ export interface BoundingBox {
   height: number;
 }
 
+export type DetectionShape =
+  | { type: 'rect'; points: [number, number][] }
+  | { type: 'circle'; cx: number; cy: number; rx: number; ry: number };
+
 export interface ObjectDetection {
   id: string;
   label: string;
@@ -58,6 +62,7 @@ export interface ObjectDetection {
   status: InspectionStatus;
   confidenceScore: number;
   measurements: Measurement[];
+  shape?: DetectionShape;
 }
 
 export interface InspectionResult {
@@ -113,6 +118,12 @@ export interface MqttWsInfo {
   username: string;
   password: string;
   presenceTopic: string;
+}
+
+export type VideoTransport = 'ws' | 'cloudflare';
+
+export interface RealtimeConfig {
+  videoTransport: VideoTransport;
 }
 
 export type ShareChannel = 'telegram' | 'email' | 'discord' | 'whatsapp';

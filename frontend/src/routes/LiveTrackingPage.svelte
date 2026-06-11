@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import {
     Maximize2, Minimize2, MoreVertical, Play, RefreshCcw,
     RotateCcw, StopCircle, Trash2, Video, Zap,
   } from 'lucide-svelte';
   import CloudflareVideo from '$lib/components/CloudflareVideo.svelte';
+  import WsVideo from '$lib/components/WsVideo.svelte';
   import { useInspections } from '$lib/hooks/useInspections.svelte';
   import { useParts } from '$lib/hooks/useParts.svelte';
   import { useStations } from '$lib/hooks/useStations.svelte';
@@ -12,7 +14,7 @@
   import { isSelected, measurementStatusLabel, nextSelection, resolveSelection, selectionPresent } from '$lib/utils/selection';
   import type { StationDetectionGroup } from '$lib/utils/selection';
   import type {
-    DimensionView, ObjectDetection, PartType, StationPhase, StationStatusEvent,
+    DimensionView, ObjectDetection, PartType, StationPhase, StationStatusEvent, VideoTransport,
   } from '$lib/types/api';
 
   interface MergedStation {
@@ -54,6 +56,12 @@
 
   let busy = $state<Record<string, boolean>>({});
   let toast = $state<{ text: string; tone: 'info' | 'error' } | null>(null);
+  let videoTransport = $state<VideoTransport>('cloudflare');
+
+  onMount(async () => {
+    const config = await api.getRealtimeConfig();
+    videoTransport = config.videoTransport;
+  });
   let selectedPart = $state<Record<string, string>>({});
   let inspectionView = $state<Record<string, DimensionView>>({});
   let pendingStart = $state<Record<string, boolean>>({});
@@ -295,7 +303,11 @@
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
               <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
-                <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
+                {#if videoTransport === 'ws'}
+                  <WsVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
+                {:else}
+                  <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
+                {/if}
 
                 {#if optimisticRunning && videoPlaying[station.stationId]}
                   <div class="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-400/70 z-20 pointer-events-none">
@@ -303,19 +315,46 @@
                   </div>
                 {/if}
 
+                {#if detections.length > 0}
+                  <svg class="absolute inset-0 w-full h-full z-20 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    {#each detections as detection (detection.id)}
+                      {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
+                      {@const shape = detection.shape}
+                      {@const stroke = selected ? '#ffffff' : (detection.status === 'OK' ? '#34d399' : '#fb7185')}
+                      {@const sw = selected ? 2.5 : 1.5}
+                      {#if shape?.type === 'circle'}
+                        <ellipse cx={shape.cx} cy={shape.cy} rx={shape.rx} ry={shape.ry} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
+                      {:else if shape?.type === 'rect'}
+                        <polygon points={shape.points.map((p) => p.join(',')).join(' ')} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
+                      {:else}
+                        <rect x={detection.bbox.x} y={detection.bbox.y} width={detection.bbox.width} height={detection.bbox.height} fill="none" stroke={stroke} stroke-width={sw} vector-effect="non-scaling-stroke" />
+                      {/if}
+                    {/each}
+                  </svg>
+                {/if}
+
                 {#each detections as detection (detection.id)}
                   {@const selected = isSelected(selectedDetectionKey, station.stationId, detection.id)}
                   {@const isOK = detection.status === 'OK'}
-                  <button
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      selectedDetectionKey = nextSelection({ stationId: station.stationId, detectionId: detection.id });
-                    }}
-                    class="absolute bg-transparent transition-all border-2 {selected ? 'ring-2 ring-white scale-[1.02] z-30' : 'z-20'} {isOK ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
+                  <div
+                    class="absolute {selected ? 'z-30' : 'z-20'}"
                     style="left: {detection.bbox.x}%; top: {detection.bbox.y}%; width: {detection.bbox.width}%; height: {detection.bbox.height}%;"
-                    title={`${detection.label} - Klik untuk statistik`}
-                    aria-label={detection.label}
-                  ></button>
+                  >
+                    <button
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        selectedDetectionKey = nextSelection({ stationId: station.stationId, detectionId: detection.id });
+                      }}
+                      class="absolute inset-0 bg-transparent cursor-pointer"
+                      title={`${detection.label} - Klik untuk statistik`}
+                      aria-label={detection.label}
+                    ></button>
+                    <span
+                      class="absolute left-0 bottom-full mb-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap shadow-md pointer-events-none {isOK ? 'bg-emerald-500/90 text-white' : 'bg-rose-500/90 text-white'}"
+                    >
+                      {detection.label} &middot; {detection.status} &middot; {detection.confidenceScore}%
+                    </span>
+                  </div>
                 {/each}
 
                 <div class="absolute top-3.5 left-3.5 flex flex-col gap-1.5 z-20">
@@ -330,6 +369,12 @@
                     <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-md inline-flex items-center gap-1 {phaseMeta.tone}">
                       <PhaseIcon class="w-3.5 h-3.5" />
                       {phaseMeta.text}
+                    </span>
+                  {/if}
+                  {#if optimisticRunning && detections.length > 0}
+                    {@const allOk = detections.every((d) => d.status === 'OK')}
+                    <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-md {allOk ? 'bg-emerald-500/90 text-white border border-emerald-400/20' : 'bg-rose-500/90 text-white border border-rose-400/20'}">
+                      {allOk ? 'OK' : 'NG'} &middot; {detections.length} OBJEK
                     </span>
                   {/if}
                 </div>

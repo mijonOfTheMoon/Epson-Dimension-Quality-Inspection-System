@@ -2,11 +2,30 @@ use axum::extract::{Extension, State};
 use axum::Json;
 use serde::Serialize;
 
+use crate::config::VideoTransport;
 use crate::error::{AppError, AppResult};
 use crate::http::router::CurrentUser;
 use crate::http::AppState;
 
 use super::require_auth;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeConfigInfo {
+    pub video_transport: &'static str,
+}
+
+pub async fn config(
+    State(state): State<AppState>,
+    Extension(current): Extension<CurrentUser>,
+) -> AppResult<Json<RealtimeConfigInfo>> {
+    require_auth(&current)?;
+    let video_transport = match state.config.video_transport {
+        VideoTransport::Ws => "ws",
+        VideoTransport::Cloudflare => "cloudflare",
+    };
+    Ok(Json(RealtimeConfigInfo { video_transport }))
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +51,11 @@ pub async fn mqtt_config(
     } else {
         ("ws", 8083)
     };
+    let host = state
+        .config
+        .mqtt_ws_host
+        .clone()
+        .unwrap_or_else(|| mqtt.host.clone());
     let username = state
         .config
         .mqtt_ws_username
@@ -43,7 +67,7 @@ pub async fn mqtt_config(
         .clone()
         .unwrap_or_else(|| mqtt.password.clone());
     Ok(Json(MqttWsInfo {
-        url: format!("{scheme}://{}:{port}/mqtt", mqtt.host),
+        url: format!("{scheme}://{host}:{port}/mqtt"),
         username,
         password,
         presence_topic: format!("{}/stations/+/presence", mqtt.topic_prefix),

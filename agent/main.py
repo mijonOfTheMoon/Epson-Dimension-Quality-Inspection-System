@@ -11,14 +11,14 @@ from zoneinfo import ZoneInfo
 
 import cv2
 
-from config import FRAME_FPS, FRAME_QUALITY, AgentConfig, load_config
+from config import FRAME_FPS, FRAME_QUALITY, CAMERA_WIDTH, CAMERA_HEIGHT, AgentConfig, load_config
 from http_client import BackendHttpClient
 from mqtt_link import MqttLink
 from webrtc_publisher import WebRTCPublisher
+from ws_video import WsVideoPublisher
 from vision import (
     InspectionPayload,
     PartSpec,
-    annotate_status,
     calibrate_background,
     compute_foreground_mask,
     get_camera,
@@ -27,6 +27,7 @@ from vision import (
     annotate_calibration,
     payload_from_detections,
     reset_tracker,
+    save_persisted_ratio,
 )
 
 STATUS_INTERVAL = 5.0
@@ -37,6 +38,40 @@ RESOURCE_RELEASE_TIMEOUT_SECONDS = 5.0
 logger = logging.getLogger(__name__)
 
 Phase = str
+
+
+class CameraStream:
+    def __init__(self, index: int, fps: int, width: int, height: int) -> None:
+        self._cap = get_camera(index, fps, width, height)
+        self._latest: cv2.Mat | None = None
+        self._seq = 0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="camera-capture", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            ok, frame = self._cap.read()
+            if not ok:
+                sleep(0.005)
+                continue
+            flipped = cv2.flip(frame, 1)
+            with self._lock:
+                self._latest = flipped
+                self._seq += 1
+
+    def read(self) -> tuple[int, cv2.Mat | None]:
+        with self._lock:
+            return self._seq, self._latest
+
+    def release(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+        try:
+            self._cap.release()
+        except Exception:
+            pass
 
 
 def configure_logging(level_name: str) -> None:
@@ -93,9 +128,15 @@ class InspectionRunner:
         self._offline_sent = threading.Event()
         self._delete_requested = False
         self._frame_interval = 1.0 / FRAME_FPS
+        self._presence_interval = 0.1
+        self._calibrating = threading.Event()
         self.http = BackendHttpClient(config)
         self.mqtt = MqttLink(config, self._enqueue_command)
-        self.video = WebRTCPublisher(config, FRAME_FPS)
+        self.video = (
+            WsVideoPublisher(config, FRAME_FPS)
+            if config.video_transport == "ws"
+            else WebRTCPublisher(config, FRAME_FPS)
+        )
         self._upload_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload")
 
     def start(self) -> None:
@@ -232,20 +273,20 @@ class InspectionRunner:
             video_track_name=track_name,
         )
 
-    def _capture_calibration(self, cap: cv2.VideoCapture) -> list[cv2.Mat]:
+    def _capture_calibration(self, cam: "CameraStream") -> list[cv2.Mat]:
         frames: list[cv2.Mat] = []
         aruco_seen = False
         last_send = 0.0
         last_presence = 0.0
+        last_seq = -1
         while len(frames) < CALIBRATION_FRAMES and not self._stop.is_set() and self._running.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                sleep(self._frame_interval)
+            seq, frame = cam.read()
+            if frame is None or seq == last_seq:
+                sleep(0.005)
                 continue
-            raw_frame = frame
-            frame = cv2.flip(frame, 1)
+            last_seq = seq
             frames.append(frame)
-            if calibrate_aruco_ratio(raw_frame):
+            if calibrate_aruco_ratio(frame):
                 aruco_seen = True
             now = monotonic()
             if now - last_send >= self._frame_interval:
@@ -255,7 +296,29 @@ class InspectionRunner:
             if now - last_presence >= 2.0:
                 self._send_status(phase="calibrating", running=True)
                 last_presence = now
+        if aruco_seen:
+            save_persisted_ratio()
         return frames
+
+    def _stream_loop(self, cam: "CameraStream", stop: threading.Event) -> None:
+        interval = 1.0 / max(FRAME_FPS, 1)
+        last_sent = 0.0
+        last_seq = -1
+        while not stop.is_set() and not self._stop.is_set():
+            if self._calibrating.is_set():
+                sleep(0.01)
+                continue
+            now = monotonic()
+            if now - last_sent < interval:
+                sleep(0.001)
+                continue
+            seq, frame = cam.read()
+            if frame is None or seq == last_seq:
+                sleep(0.001)
+                continue
+            last_seq = seq
+            self._send_frame(frame)
+            last_sent = now
 
     def _run_inspection_session(self) -> None:
         if self._part is None:
@@ -264,7 +327,7 @@ class InspectionRunner:
             return
 
         try:
-            cap = get_camera(self.config.camera_index)
+            cam = CameraStream(self.config.camera_index, FRAME_FPS, CAMERA_WIDTH, CAMERA_HEIGHT)
         except RuntimeError:
             self._running.clear()
             self._send_status(phase="idle", running=False)
@@ -280,31 +343,45 @@ class InspectionRunner:
         phase: Phase = "calibrating"
         background = None
         last_status = 0.0
-        last_frame_sent = 0.0
+        last_presence = 0.0
+        last_seq = -1
         last_frame_ts = monotonic()
         fps = 0.0
         self._live_detections = []
+        stream_stop = threading.Event()
+        stream_thread: threading.Thread | None = None
 
         try:
             while not self._stop.is_set() and self._running.is_set():
                 if phase == "calibrating":
+                    self._calibrating.set()
                     self._live_detections = []
                     self._send_status(phase="calibrating", running=True)
-                    frames = self._capture_calibration(cap)
+                    frames = self._capture_calibration(cam)
                     if len(frames) < CALIBRATION_FRAMES // 2:
                         sleep(0.5)
                         continue
                     background = calibrate_background(frames)
                     reset_tracker()
                     phase = "ready"
+                    self._calibrating.clear()
                     self._send_status(phase=phase, running=True)
                     self._drain_command("recalibrate")
+                    if stream_thread is None:
+                        stream_thread = threading.Thread(
+                            target=self._stream_loop,
+                            args=(cam, stream_stop),
+                            name="video-stream",
+                            daemon=True,
+                        )
+                        stream_thread.start()
                     continue
 
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frame = cv2.flip(frame, 1)
+                seq, frame = cam.read()
+                if frame is None or seq == last_seq:
+                    sleep(0.002)
+                    continue
+                last_seq = seq
 
                 now = monotonic()
                 elapsed = now - last_frame_ts
@@ -325,8 +402,6 @@ class InspectionRunner:
                     else []
                 )
 
-                will_send_frame = now - last_frame_sent >= self._frame_interval
-
                 if result.triggered:
                     payload = payload_from_detections(self._part, result.triggered)
                     event = build_inspection_event(self.config, payload)
@@ -337,15 +412,8 @@ class InspectionRunner:
                         event["batchNo"] = self._batch_no
                     self._upload_executor.submit(self._upload_inspection, event, frame.copy(), encode_params)
 
-                display = (
-                    result.frame
-                    if result.inspection is not None
-                    else annotate_status(frame, phase, self._part)
-                )
-
-                if will_send_frame:
-                    self._send_frame(display)
-                    last_frame_sent = now
+                if now - last_presence >= self._presence_interval:
+                    last_presence = now
                     self.mqtt.publish_presence(
                         online=True,
                         running=True,
@@ -362,6 +430,10 @@ class InspectionRunner:
                     last_status = now
 
         finally:
+            self._calibrating.clear()
+            stream_stop.set()
+            if stream_thread is not None:
+                stream_thread.join(timeout=2.0)
             camera_reserve = min(1.0, RESOURCE_RELEASE_TIMEOUT_SECONDS)
             video_timeout = max(0.0, RESOURCE_RELEASE_TIMEOUT_SECONDS - camera_reserve)
             release_deadline = monotonic() + RESOURCE_RELEASE_TIMEOUT_SECONDS
@@ -369,7 +441,7 @@ class InspectionRunner:
             self._video_session_id = None
             self._video_track_name = None
             camera_timeout = max(camera_reserve, release_deadline - monotonic())
-            self._release_with_timeout("camera", cap.release, camera_timeout)
+            self._release_with_timeout("camera", cam.release, camera_timeout)
             if self._stop.is_set():
                 self._send_offline_status()
             else:

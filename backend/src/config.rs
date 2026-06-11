@@ -13,9 +13,16 @@ pub enum NodeEnv {
     Production,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoTransport {
+    Ws,
+    Cloudflare,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub node_env: NodeEnv,
+    pub video_transport: VideoTransport,
     pub host: String,
     pub port: u16,
     pub log_level: String,
@@ -30,6 +37,7 @@ pub struct Config {
     pub bcrypt_rounds: u32,
     pub agent_token: String,
     pub mqtt: Option<MqttConfig>,
+    pub mqtt_ws_host: Option<String>,
     pub mqtt_ws_username: Option<String>,
     pub mqtt_ws_password: Option<String>,
     pub cloudflare_realtime: Option<CloudflareRealtimeConfig>,
@@ -91,7 +99,11 @@ pub struct CloudflareRealtimeConfig {
 #[derive(Debug, Clone)]
 pub struct ObjectStoreConfig {
     pub bucket: String,
-    pub account_id: String,
+    pub account_id: Option<String>,
+    pub endpoint: Option<String>,
+    pub public_endpoint: Option<String>,
+    pub region: String,
+    pub force_path_style: bool,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub signed_url_ttl: Duration,
@@ -124,15 +136,18 @@ impl Config {
             return Err(anyhow!("AGENT_TOKEN must contain at least 8 characters"));
         }
         let mqtt = mqtt_config(&node_env)?;
+        let mqtt_ws_host = optional_env("MQTT_WS_HOST");
         let mqtt_ws_username = optional_env("MQTT_WS_USERNAME");
         let mqtt_ws_password = optional_env("MQTT_WS_PASSWORD");
         let cloudflare_realtime = cloudflare_realtime_config()?;
+        let video_transport = video_transport_config(&cloudflare_realtime)?;
         let object_store = object_store_config()?;
         let share = share_config();
         let timezone = validate_timezone(env_or("APP_TIMEZONE", "Asia/Jakarta"))?;
 
         Ok(Self {
             node_env,
+            video_transport,
             host: env_or("HOST", "0.0.0.0"),
             port: parse_env("PORT", 4000)?,
             log_level: env_or("LOG_LEVEL", "info"),
@@ -150,6 +165,7 @@ impl Config {
             bcrypt_rounds: parse_env("BCRYPT_ROUNDS", 10)?,
             agent_token,
             mqtt,
+            mqtt_ws_host,
             mqtt_ws_username,
             mqtt_ws_password,
             cloudflare_realtime,
@@ -203,6 +219,25 @@ fn mqtt_config(node_env: &NodeEnv) -> anyhow::Result<Option<MqttConfig>> {
     }))
 }
 
+fn video_transport_config(
+    cloudflare: &Option<CloudflareRealtimeConfig>,
+) -> anyhow::Result<VideoTransport> {
+    match std::env::var("VIDEO_TRANSPORT") {
+        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "ws" | "websocket" => Ok(VideoTransport::Ws),
+            "cloudflare" | "cloudflare-realtime" => Ok(VideoTransport::Cloudflare),
+            other => Err(anyhow!(
+                "VIDEO_TRANSPORT must be ws or cloudflare, got {other}"
+            )),
+        },
+        Err(_) => Ok(if cloudflare.is_some() {
+            VideoTransport::Cloudflare
+        } else {
+            VideoTransport::Ws
+        }),
+    }
+}
+
 fn cloudflare_realtime_config() -> anyhow::Result<Option<CloudflareRealtimeConfig>> {
     if !parse_bool_env("CLOUDFLARE_REALTIME_ENABLED", false)? {
         return Ok(None);
@@ -231,7 +266,16 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
             "OBJECT_STORE_BUCKET must not be empty when OBJECT_STORE_ENABLED=true"
         ));
     }
-    let account_id = require_env("OBJECT_STORE_ACCOUNT_ID")?;
+    let endpoint = optional_env("OBJECT_STORE_ENDPOINT");
+    let public_endpoint = optional_env("OBJECT_STORE_PUBLIC_ENDPOINT");
+    let account_id = optional_env("OBJECT_STORE_ACCOUNT_ID");
+    if endpoint.is_none() && account_id.is_none() {
+        return Err(anyhow!(
+            "OBJECT_STORE_ACCOUNT_ID or OBJECT_STORE_ENDPOINT is required when OBJECT_STORE_ENABLED=true"
+        ));
+    }
+    let region = env_or("OBJECT_STORE_REGION", "auto");
+    let force_path_style = parse_bool_env("OBJECT_STORE_FORCE_PATH_STYLE", false)?;
     let access_key_id = require_env("OBJECT_STORE_ACCESS_KEY_ID")?;
     let secret_access_key = require_env("OBJECT_STORE_SECRET_ACCESS_KEY")?;
 
@@ -241,6 +285,10 @@ fn object_store_config() -> anyhow::Result<Option<ObjectStoreConfig>> {
     Ok(Some(ObjectStoreConfig {
         bucket,
         account_id,
+        endpoint,
+        public_endpoint,
+        region,
+        force_path_style,
         access_key_id,
         secret_access_key,
         signed_url_ttl: Duration::from_secs(signed_url_ttl),

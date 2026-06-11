@@ -23,6 +23,7 @@ use crate::ingestion::IngestionService;
 use crate::mqtt::MqttService;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
+use crate::video_ws::VideoHub;
 
 pub fn build_router(
     config: Config,
@@ -38,6 +39,7 @@ pub fn build_router(
         .map(Arc::new);
     let auth = Arc::new(AuthService::new(config.clone(), store.clone()));
     let ingestion = Arc::new(IngestionService::new(store.clone(), object_store.clone()));
+    let video_hub = Arc::new(VideoHub::new());
 
     let state = AppState {
         config: config.clone(),
@@ -47,6 +49,7 @@ pub fn build_router(
         mqtt,
         cloudflare_realtime,
         object_store,
+        video_hub,
     };
 
     Router::new()
@@ -102,6 +105,14 @@ pub fn build_router(
             post(handlers::video::viewer_session),
         )
         .route(
+            "/api/video/stations/{stationId}/publish",
+            get(handlers::video::publish_ws),
+        )
+        .route(
+            "/api/video/stations/{stationId}/watch",
+            get(handlers::video::watch_ws),
+        )
+        .route(
             "/api/video/cloudflare/sessions/{sessionId}/tracks/pull",
             post(handlers::video::pull_track),
         )
@@ -111,6 +122,7 @@ pub fn build_router(
         )
         .route("/api/quality-records", get(handlers::quality_records::list))
         .route("/api/realtime/mqtt", get(handlers::realtime::mqtt_config))
+        .route("/api/realtime/config", get(handlers::realtime::config))
         .route("/api/share/channels", get(handlers::share::channels))
         .route("/api/share/recap", post(handlers::share::recap))
         .route(

@@ -9,6 +9,7 @@ import type {
   MqttWsInfo,
   PartType,
   QualityTrackingRecord,
+  RealtimeConfig,
   RequestStatus,
   ShareRecapRequest,
   ShareRecapResult,
@@ -52,6 +53,15 @@ export function getErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError) return error.message;
   if (error instanceof Error) return error.message;
   return 'Backend tidak tersedia';
+}
+
+export function videoWatchSocketUrl(stationId: string): string {
+  const origin = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+  const url = new URL(`/api/video/stations/${encodeURIComponent(stationId)}/watch`, origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = tokenStorage.get();
+  if (token) url.searchParams.set('token', token);
+  return url.toString();
 }
 
 export const POLLING_TIMEOUT_MS = 30000;
@@ -200,6 +210,13 @@ export const api = {
       return await request<MqttWsInfo>('/api/realtime/mqtt');
     } catch {
       return null;
+    }
+  },
+  async getRealtimeConfig(): Promise<RealtimeConfig> {
+    try {
+      return await request<RealtimeConfig>('/api/realtime/config');
+    } catch {
+      return { videoTransport: 'cloudflare' };
     }
   },
   async getShareChannels(): Promise<string[]> {

@@ -11,6 +11,7 @@ use crate::ingestion::IngestionService;
 use crate::mqtt::MqttService;
 use crate::storage::object_store::R2Store;
 use crate::storage::postgres::PostgresStore;
+use crate::video_ws::VideoHub;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -21,4 +22,5 @@ pub struct AppState {
     pub mqtt: Option<Arc<MqttService>>,
     pub cloudflare_realtime: Option<Arc<CloudflareRealtimeClient>>,
     pub object_store: Option<Arc<R2Store>>,
+    pub video_hub: Arc<VideoHub>,
 }

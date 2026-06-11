@@ -6,8 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FRAME_FPS = 8
-FRAME_QUALITY = 62
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+FRAME_FPS = _int_env("FRAME_FPS", 30)
+FRAME_QUALITY = _int_env("FRAME_QUALITY", 62)
+CAMERA_WIDTH = _int_env("CAMERA_WIDTH", 1280)
+CAMERA_HEIGHT = _int_env("CAMERA_HEIGHT", 720)
 
 
 @dataclass(frozen=True)
@@ -17,6 +28,7 @@ class AgentConfig:
     camera_index: int
     backend_http_url: str
     agent_token: str
+    video_transport: str
     mqtt_host: str
     mqtt_port: int
     mqtt_username: str
@@ -36,6 +48,7 @@ def load_config() -> AgentConfig:
         camera_index=int(os.getenv("CAMERA_INDEX", "0")),
         backend_http_url=os.getenv("BACKEND_HTTP_URL", "http://localhost:4000"),
         agent_token=os.getenv("AGENT_TOKEN", "change-me-agent-shared-token"),
+        video_transport=os.getenv("VIDEO_TRANSPORT", "ws").strip().lower() or "ws",
         mqtt_host=os.getenv("MQTT_HOST", ""),
         mqtt_port=int(os.getenv("MQTT_PORT", "8883")),
         mqtt_username=os.getenv("MQTT_USERNAME", ""),

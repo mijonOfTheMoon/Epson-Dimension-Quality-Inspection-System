@@ -1,6 +1,10 @@
-use axum::extract::{Extension, Path, State};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast::error::RecvError;
 use uuid::Uuid;
 
 use crate::cloudflare::SessionDescription;
@@ -9,6 +13,75 @@ use crate::http::router::CurrentUser;
 use crate::http::AppState;
 
 use super::{require_auth, APP_ROLES};
+
+#[derive(Deserialize)]
+pub struct VideoSocketQuery {
+    pub token: Option<String>,
+}
+
+pub async fn publish_ws(
+    State(state): State<AppState>,
+    Path(station_id): Path<String>,
+    Query(query): Query<VideoSocketQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if query.token.as_deref() != Some(state.config.agent_token.as_str()) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    ws.on_upgrade(move |socket| handle_publish(socket, state, station_id))
+}
+
+async fn handle_publish(mut socket: WebSocket, state: AppState, station_id: String) {
+    let sender = state.video_hub.sender(&station_id);
+    while let Some(Ok(message)) = socket.recv().await {
+        match message {
+            Message::Binary(data) => {
+                let _ = sender.send(data);
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+}
+
+pub async fn watch_ws(
+    State(state): State<AppState>,
+    Path(station_id): Path<String>,
+    Query(query): Query<VideoSocketQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let resolved = state
+        .auth
+        .resolve_user(query.token.as_deref())
+        .await
+        .ok()
+        .flatten();
+    if resolved.is_none() {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    ws.on_upgrade(move |socket| handle_watch(socket, state, station_id))
+}
+
+async fn handle_watch(mut socket: WebSocket, state: AppState, station_id: String) {
+    let mut receiver = state.video_hub.subscribe(&station_id);
+    loop {
+        tokio::select! {
+            frame = receiver.recv() => match frame {
+                Ok(bytes) => {
+                    if socket.send(Message::Binary(bytes)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break,
+            },
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                _ => {}
+            },
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

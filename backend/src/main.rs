@@ -10,6 +10,7 @@ mod mqtt;
 mod realtime;
 mod share;
 mod storage;
+mod video_ws;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
