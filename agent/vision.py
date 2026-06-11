@@ -14,16 +14,24 @@ ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 current_ratio = PIXEL_TO_MM_RATIO
 
-def update_dynamic_ratio(frame: np.ndarray) -> float:
+def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
+    """Hanya dieksekusi sekali saat ada trigger dari dashboard"""
     global current_ratio
     corners, ids, _ = ARUCO_DETECTOR.detectMarkers(frame)
     if ids is not None and len(corners) > 0:
-        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+        cv2.aruco.drawDetectedMarkers(frame, corners, ids) # Opsional
         marker_corners = corners[0][0]
         dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
         if dist_px > 0:
             current_ratio = ARUCO_SIZE_MM / float(dist_px)
-    return current_ratio
+            return True
+    return False
+
+def set_manual_ratio(new_ratio: float) -> None:
+    """Dieksekusi saat ada input angka rasio manual dari UI"""
+    global current_ratio
+    if new_ratio > 0:
+        current_ratio = float(new_ratio)
 
 
 def _normalize_kind(raw: dict[str, Any]) -> str:
@@ -284,8 +292,8 @@ def _measure_dimension(
 
 def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
 
-    ratio = update_dynamic_ratio(frame)
-
+    ratio = current_ratio
+    
     fg_area = int(cv2.countNonZero(mask))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) <= MIN_CONTOUR_AREA:
