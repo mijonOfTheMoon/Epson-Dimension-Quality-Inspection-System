@@ -24,6 +24,12 @@ TRIGGER_MIN_TRAVEL_RATIO = 0.2
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+ARUCO_PARAMS.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+ARUCO_PARAMS.adaptiveThreshWinSizeMin = 3
+ARUCO_PARAMS.adaptiveThreshWinSizeMax = 23
+ARUCO_PARAMS.adaptiveThreshWinSizeStep = 10
+ARUCO_PARAMS.minMarkerPerimeterRate = 0.03
+ARUCO_PARAMS.maxMarkerPerimeterRate = 4.0
 ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 _CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -64,15 +70,16 @@ class _CentroidTracker:
                 track["cy"] = new_cy
                 track["hits"] = min(track["hits"] + 1, TRACK_CONFIRM_FRAMES + 3)
                 track["missed"] = 0
-                dx = new_cx - track["entry_x"]
+                signed_travel = new_cx - track["entry_x"]
                 dy = new_cy - track["entry_y"]
+                crossed_line = (track["entry_x"] - line) * (new_cx - line) < 0.0
                 confirmed = track["hits"] >= TRACK_CONFIRM_FRAMES
                 fired = (
                     confirmed
                     and track["captured"] < 1.0
-                    and new_cx >= line
-                    and dx >= TRIGGER_MIN_TRAVEL_RATIO * float(frame_width)
-                    and dx >= abs(dy)
+                    and crossed_line
+                    and abs(signed_travel) >= TRIGGER_MIN_TRAVEL_RATIO * float(frame_width)
+                    and abs(signed_travel) >= abs(dy)
                 )
                 if fired:
                     track["captured"] = 1.0
@@ -85,6 +92,7 @@ class _CentroidTracker:
                         "vx": 0.0,
                         "entry_x": float(cx),
                         "entry_y": float(cy),
+                        "entry_side": 1.0 if (float(cx) - line) >= 0.0 else -1.0,
                         "hits": 1.0,
                         "missed": 0.0,
                         "captured": 0.0,
@@ -98,7 +106,7 @@ class _CentroidTracker:
             track
             for track in self._tracks
             if track["missed"] <= TRACK_FORGET_FRAMES
-            and not (track["captured"] >= 1.0 and track["cx"] > line + CAPTURE_RETIRE_MARGIN_PX)
+            and not (track["captured"] >= 1.0 and (track["cx"] - line) * (-track["entry_side"]) > CAPTURE_RETIRE_MARGIN_PX)
         ]
         self._tracks.extend(new_tracks)
         return results
@@ -113,7 +121,19 @@ def reset_tracker() -> None:
 
 def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
     global current_ratio
-    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(frame)
+    if frame.ndim == 3:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = frame
+    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(gray)
+    if ids is not None and len(corners) > 0:
+        marker_corners = corners[0][0]
+        dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
+        if dist_px > 0:
+            current_ratio = ARUCO_SIZE_MM / float(dist_px)
+            return True
+    flipped_gray = cv2.flip(gray, 1)
+    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(flipped_gray)
     if ids is not None and len(corners) > 0:
         marker_corners = corners[0][0]
         dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
@@ -444,12 +464,12 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
     ratio = current_ratio
 
     fg_area = int(cv2.countNonZero(mask))
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     area_candidates = [c for c in contours if cv2.contourArea(c) > MIN_CONTOUR_AREA]
 
     if area_candidates:
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         grad_x = cv2.Sobel(gray_frame, cv2.CV_32F, 1, 0, ksize=3)
         grad_y = cv2.Sobel(gray_frame, cv2.CV_32F, 0, 1, ksize=3)
         grad_mag = cv2.magnitude(grad_x, grad_y)

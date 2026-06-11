@@ -242,9 +242,10 @@ class InspectionRunner:
             if not ret:
                 sleep(self._frame_interval)
                 continue
+            raw_frame = frame
             frame = cv2.flip(frame, 1)
             frames.append(frame)
-            if calibrate_aruco_ratio(frame):
+            if calibrate_aruco_ratio(raw_frame):
                 aruco_seen = True
             now = monotonic()
             if now - last_send >= self._frame_interval:
