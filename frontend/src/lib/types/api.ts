@@ -5,7 +5,7 @@ export type RequestStatus = 'not_requested' | 'requested' | 'in_progress' | 'shi
 export type StationPhase = 'idle' | 'calibrating' | 'ready';
 export type AgentCommandType = 'start' | 'stop' | 'recalibrate';
 export type DimensionView = 'top' | 'side';
-export type DimensionKind = 'width' | 'length' | 'diameter' | 'outer_diameter' | 'inner_diameter' | 'hole_diameter';
+export type DimensionKind = 'width' | 'length' | 'diameter' | 'inner_diameter';
 
 export interface User {
   id: string;
@@ -58,6 +58,7 @@ export interface ObjectDetection {
   status: InspectionStatus;
   confidenceScore: number;
   measurements: Measurement[];
+  polygon: [number, number][];
 }
 
 export interface InspectionResult {
@@ -113,6 +114,7 @@ export interface MqttWsInfo {
   username: string;
   password: string;
   presenceTopic: string;
+  inspectionTopic: string;
 }
 
 export type VideoTransport = 'ws' | 'cloudflare';

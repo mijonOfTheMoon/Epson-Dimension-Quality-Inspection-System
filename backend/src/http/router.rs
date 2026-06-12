@@ -38,7 +38,11 @@ pub fn build_router(
         .map(CloudflareRealtimeClient::new)
         .map(Arc::new);
     let auth = Arc::new(AuthService::new(config.clone(), store.clone()));
-    let ingestion = Arc::new(IngestionService::new(store.clone(), object_store.clone()));
+    let ingestion = Arc::new(IngestionService::new(
+        store.clone(),
+        object_store.clone(),
+        mqtt.clone(),
+    ));
     let video_hub = Arc::new(VideoHub::new());
 
     let state = AppState {
@@ -99,6 +103,10 @@ pub fn build_router(
         .route(
             "/api/agent/inspections",
             post(handlers::agent_ingest::inspection),
+        )
+        .route(
+            "/api/agent/inspections/frame",
+            post(handlers::agent_ingest::inspection_frame),
         )
         .route(
             "/api/video/stations/{stationId}/viewer-session",

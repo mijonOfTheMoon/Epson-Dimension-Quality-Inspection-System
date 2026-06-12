@@ -5,6 +5,7 @@ export interface OverlayBox {
   label: string;
   status: InspectionStatus;
   bbox: BoundingBox;
+  polygon: [number, number][];
 }
 
 export type OverlayResult =
@@ -42,6 +43,7 @@ export function resolveEntryOverlay(detection: ObjectDetection | null | undefine
       label: detection.id,
       status: detection.status,
       bbox: detection.bbox,
+      polygon: Array.isArray(detection.polygon) ? detection.polygon : [],
     },
   };
 }

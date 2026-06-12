@@ -34,6 +34,7 @@ pub struct MqttWsInfo {
     pub username: String,
     pub password: String,
     pub presence_topic: String,
+    pub inspection_topic: String,
 }
 
 pub async fn mqtt_config(
@@ -71,5 +72,6 @@ pub async fn mqtt_config(
         username,
         password,
         presence_topic: format!("{}/stations/+/presence", mqtt.topic_prefix),
+        inspection_topic: format!("{}/stations/+/inspection", mqtt.topic_prefix),
     }))
 }

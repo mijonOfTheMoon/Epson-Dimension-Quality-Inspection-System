@@ -15,6 +15,9 @@ const INSPECTION_FIELD: &str = "inspection";
 const EVENT_FIELD: &str = "event";
 const SNAPSHOT_FIELD: &str = "snapshot";
 const FRAME_FIELD: &str = "frame";
+const PARENT_EVENT_FIELD: &str = "parentEventId";
+const STATION_FIELD: &str = "stationId";
+const CAPTURED_AT_FIELD: &str = "capturedAt";
 
 pub async fn inspection(
     State(state): State<AppState>,
@@ -57,6 +60,52 @@ pub async fn inspection(
             })?),
         )),
     }
+}
+
+pub async fn inspection_frame(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> AppResult<StatusCode> {
+    require_agent_token(&state, &headers)?;
+
+    let mut parent_event_id: Option<String> = None;
+    let mut station_id: Option<String> = None;
+    let mut captured_at: Option<String> = None;
+    let mut snapshot: Option<Bytes> = None;
+    while let Some(field) = multipart.next_field().await.map_err(bad_request)? {
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            PARENT_EVENT_FIELD => {
+                parent_event_id = Some(field.text().await.map_err(bad_request)?);
+            }
+            STATION_FIELD => {
+                station_id = Some(field.text().await.map_err(bad_request)?);
+            }
+            CAPTURED_AT_FIELD => {
+                captured_at = Some(field.text().await.map_err(bad_request)?);
+            }
+            SNAPSHOT_FIELD | FRAME_FIELD => {
+                snapshot = Some(field.bytes().await.map_err(bad_request)?);
+            }
+            _ => {}
+        }
+    }
+
+    let parent_event_id = parent_event_id
+        .ok_or_else(|| AppError::BadRequest("multipart field `parentEventId` wajib diisi".into()))?;
+    let station_id = station_id
+        .ok_or_else(|| AppError::BadRequest("multipart field `stationId` wajib diisi".into()))?;
+    let captured_at = captured_at
+        .ok_or_else(|| AppError::BadRequest("multipart field `capturedAt` wajib diisi".into()))?;
+    let snapshot = snapshot
+        .ok_or_else(|| AppError::BadRequest("multipart field `snapshot` wajib diisi".into()))?;
+
+    state
+        .ingestion
+        .attach_frame(&parent_event_id, &station_id, &captured_at, snapshot)
+        .await?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 fn require_agent_token(state: &AppState, headers: &HeaderMap) -> AppResult<()> {

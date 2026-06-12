@@ -116,6 +116,28 @@ impl PostgresStore {
         Ok(result.rows_affected())
     }
 
+    pub async fn mark_frame_uploaded_by_parent(
+        &self,
+        parent_event_id: &str,
+        key: &str,
+    ) -> anyhow::Result<u64> {
+        let pattern = format!("{}-%", parent_event_id.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let result = sqlx::query(
+            r#"
+            UPDATE inspections
+            SET frame_object_key = $1,
+                frame_uploaded_at = now()
+            WHERE event_id LIKE $2
+            "#,
+        )
+        .bind(key)
+        .bind(pattern)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     async fn seed_static_data(&self) -> anyhow::Result<()> {
         for user in super::seed::USERS {
             let hashed = hash(user.password, self.bcrypt_rounds)?;
@@ -1013,9 +1035,7 @@ fn parse_kind(value: &str, name: &str) -> DimensionKind {
         "width" => DimensionKind::Width,
         "length" => DimensionKind::Length,
         "diameter" => DimensionKind::Diameter,
-        "outer_diameter" => DimensionKind::OuterDiameter,
         "inner_diameter" => DimensionKind::InnerDiameter,
-        "hole_diameter" => DimensionKind::HoleDiameter,
         _ => infer_kind(name),
     }
 }
@@ -1024,9 +1044,7 @@ fn infer_kind(name: &str) -> DimensionKind {
     let lower = name.to_ascii_lowercase();
     if lower.contains("inner") || lower.contains("hole") {
         DimensionKind::InnerDiameter
-    } else if lower.contains("outer") {
-        DimensionKind::OuterDiameter
-    } else if lower.contains("diam") {
+    } else if lower.contains("diam") || lower.contains("outer") {
         DimensionKind::Diameter
     } else if lower.contains("length") || lower.contains("height") || lower.contains("panjang") {
         DimensionKind::Length

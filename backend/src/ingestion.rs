@@ -7,18 +7,25 @@ use crate::domain::*;
 use crate::storage::object_store::{upload_with_retry, R2Store};
 use crate::storage::postgres::PostgresStore;
 use crate::storage::DataStore;
+use crate::mqtt::MqttService;
 
 #[derive(Clone)]
 pub struct IngestionService {
     store: Arc<PostgresStore>,
     object_store: Option<Arc<R2Store>>,
+    mqtt: Option<Arc<MqttService>>,
 }
 
 impl IngestionService {
-    pub fn new(store: Arc<PostgresStore>, object_store: Option<Arc<R2Store>>) -> Self {
+    pub fn new(
+        store: Arc<PostgresStore>,
+        object_store: Option<Arc<R2Store>>,
+        mqtt: Option<Arc<MqttService>>,
+    ) -> Self {
         Self {
             store,
             object_store,
+            mqtt,
         }
     }
 
@@ -57,6 +64,23 @@ impl IngestionService {
             .cloned()
             .map(|entry| IngestEvent::Inspection(Box::new(entry)));
 
+        if let Some(mqtt) = &self.mqtt {
+            let payloads: Vec<Vec<u8>> = entries
+                .iter()
+                .filter(|entry| saved_ids.contains(&entry.event_id))
+                .filter_map(|entry| serde_json::to_vec(entry).ok())
+                .collect();
+            if !payloads.is_empty() {
+                let mqtt = mqtt.clone();
+                let station = station_id.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = mqtt.publish_inspections(&station, payloads).await {
+                        tracing::warn!(%station, %error, "failed to publish inspection over MQTT");
+                    }
+                });
+            }
+        }
+
         if let (Some(jpeg), Some(object_store)) = (snapshot, self.object_store.clone()) {
             let key = build_frame_key(&station_id, &parent_event_id, &captured_at);
             let store = self.store.clone();
@@ -83,6 +107,23 @@ impl IngestionService {
         }
 
         Ok(first_saved)
+    }
+
+    pub async fn attach_frame(
+        &self,
+        parent_event_id: &str,
+        station_id: &str,
+        captured_at: &str,
+        jpeg: Bytes,
+    ) -> anyhow::Result<()> {
+        let Some(object_store) = self.object_store.clone() else {
+            return Ok(());
+        };
+        let key = build_frame_key(station_id, parent_event_id, captured_at);
+        upload_with_retry(&object_store, &key, jpeg, 3).await?;
+        let updated = self.store.mark_frame_uploaded_by_parent(parent_event_id, &key).await?;
+        tracing::info!(%parent_event_id, %station_id, %key, updated, "frame attached from agent");
+        Ok(())
     }
 }
 

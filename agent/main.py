@@ -5,6 +5,7 @@ import threading
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from statistics import median
 from time import monotonic, sleep
 from typing import Any
 from uuid import uuid4
@@ -12,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import cv2
 
-from config import FRAME_FPS, FRAME_QUALITY, CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, AgentConfig, load_config
+from config import FRAME_FPS, FRAME_QUALITY, CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, UPLOAD_WORKERS, AgentConfig, load_config
 from http_client import BackendHttpClient
 from mqtt_link import MqttLink
 from webrtc_publisher import WebRTCPublisher
@@ -23,7 +24,8 @@ from vision import (
     compute_object_mask,
     get_camera,
     inspect_frame,
-    calibrate_aruco_ratio,
+    measure_aruco_ratio,
+    set_calibrated_ratio,
     annotate_calibration,
     payload_from_detections,
     render_overlay,
@@ -139,7 +141,7 @@ class InspectionRunner:
             if config.video_transport == "ws"
             else WebRTCPublisher(config, FRAME_FPS)
         )
-        self._upload_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload")
+        self._upload_executor = ThreadPoolExecutor(max_workers=UPLOAD_WORKERS, thread_name_prefix="upload")
 
     def start(self) -> None:
         self.mqtt.start()
@@ -254,13 +256,13 @@ class InspectionRunner:
         return buffer.tobytes() if ok else None
 
     def _upload_inspection(self, event: dict[str, Any], frame: cv2.Mat, encode_params: list[int]) -> None:
+        if not self.http.send_inspection_event(event):
+            return
         snapshot = self._encode_jpeg(frame, encode_params)
         if snapshot is None:
-            logger.error("Clean frame unavailable for capture; sending inspection without snapshot")
-        try:
-            self.http.send_inspection(event, snapshot)
-        except Exception as exc:
-            logger.error("Inspection upload failed: %s", exc)
+            logger.error("Clean frame unavailable for capture; record saved without snapshot")
+            return
+        self.http.upload_frame(event["eventId"], event["stationId"], event["timestamp"], snapshot)
 
     def _on_video_ready(self, session_id: str, track_name: str) -> None:
         self._video_session_id = session_id
@@ -278,6 +280,7 @@ class InspectionRunner:
 
     def _capture_calibration(self, cam: "CameraStream") -> list[cv2.Mat]:
         frames: list[cv2.Mat] = []
+        ratios: list[float] = []
         aruco_seen = False
         last_send = 0.0
         last_presence = 0.0
@@ -289,7 +292,9 @@ class InspectionRunner:
                 continue
             last_seq = seq
             frames.append(frame)
-            if calibrate_aruco_ratio(frame):
+            ratio = measure_aruco_ratio(frame)
+            if ratio is not None:
+                ratios.append(ratio)
                 aruco_seen = True
             now = monotonic()
             if now - last_send >= self._frame_interval:
@@ -299,7 +304,8 @@ class InspectionRunner:
             if now - last_presence >= 2.0:
                 self._send_status(phase="calibrating", running=True)
                 last_presence = now
-        if aruco_seen:
+        if ratios:
+            set_calibrated_ratio(median(ratios))
             save_persisted_ratio()
         return frames
 

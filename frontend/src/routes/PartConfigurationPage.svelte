@@ -10,9 +10,7 @@
     width: 'Lebar',
     length: 'Panjang',
     diameter: 'Diameter',
-    outer_diameter: 'Diameter luar',
     inner_diameter: 'Diameter dalam',
-    hole_diameter: 'Diameter lubang',
   };
 
   const VIEW_LABELS: Record<DimensionView, string> = {

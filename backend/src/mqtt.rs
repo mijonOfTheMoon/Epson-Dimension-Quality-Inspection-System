@@ -61,6 +61,48 @@ impl MqttService {
         )
     }
 
+    pub fn inspection_topic(&self, station_id: &str) -> String {
+        format!(
+            "{}/stations/{}/inspection",
+            self.config.topic_prefix,
+            safe_topic_segment(station_id)
+        )
+    }
+
+    pub async fn publish_inspections(
+        &self,
+        station_id: &str,
+        payloads: Vec<Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if payloads.is_empty() {
+            return Ok(());
+        }
+        let topic = self.inspection_topic(station_id);
+        let expected = payloads.len();
+        let (client, mut eventloop) = self.client("inspection");
+        for payload in payloads {
+            client
+                .publish(topic.clone(), QoS::AtLeastOnce, false, payload)
+                .await
+                .context("failed to enqueue MQTT inspection")?;
+        }
+
+        let mut acked = 0usize;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while acked < expected && Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match tokio::time::timeout(remaining, eventloop.poll()).await {
+                Ok(Ok(Event::Incoming(Packet::PubAck(_)))) => acked += 1,
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    return Err(anyhow!(error).context("failed while publishing MQTT inspection"))
+                }
+                Err(_) => break,
+            }
+        }
+        Ok(())
+    }
+
     pub async fn retained_presence(
         &self,
         station_id: &str,

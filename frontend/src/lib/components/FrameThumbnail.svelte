@@ -6,11 +6,13 @@
     initialUrl,
     className = '',
     alt,
+    onAspect,
   }: {
     eventId: string;
     initialUrl: string;
     className?: string;
     alt?: string;
+    onAspect?: (ratio: number) => void;
   } = $props();
 
   let refreshedUrl = $state<string | null>(null);
@@ -25,6 +27,13 @@
     attempted = false;
     failed = false;
   });
+
+  const handleLoad = (event: Event) => {
+    const img = event.currentTarget as HTMLImageElement;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      onAspect?.(img.naturalWidth / img.naturalHeight);
+    }
+  };
 
   const handleError = async () => {
     if (attempted) {
@@ -49,6 +58,7 @@
   <img
     {src}
     onerror={handleError}
+    onload={handleLoad}
     loading="lazy"
     alt={alt ?? `Frame inspeksi ${eventId}`}
     class="rounded-lg border border-[var(--border)] {className}"

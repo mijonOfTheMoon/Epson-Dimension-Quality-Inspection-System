@@ -11,7 +11,6 @@ use crate::cloudflare::SessionDescription;
 use crate::error::{AppError, AppResult};
 use crate::http::router::CurrentUser;
 use crate::http::AppState;
-use crate::video_ws::FrameMessage;
 
 use super::{require_auth, APP_ROLES};
 
@@ -37,10 +36,7 @@ async fn handle_publish(mut socket: WebSocket, state: AppState, station_id: Stri
     while let Some(Ok(message)) = socket.recv().await {
         match message {
             Message::Binary(data) => {
-                let _ = sender.send(FrameMessage::Binary(data));
-            }
-            Message::Text(text) => {
-                let _ = sender.send(FrameMessage::Text(text.to_string()));
+                let _ = sender.send(data);
             }
             Message::Close(_) => break,
             _ => {}
@@ -71,13 +67,8 @@ async fn handle_watch(mut socket: WebSocket, state: AppState, station_id: String
     loop {
         tokio::select! {
             message = receiver.recv() => match message {
-                Ok(FrameMessage::Binary(bytes)) => {
+                Ok(bytes) => {
                     if socket.send(Message::Binary(bytes)).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(FrameMessage::Text(text)) => {
-                    if socket.send(Message::Text(text.into())).await.is_err() {
                         break;
                     }
                 }

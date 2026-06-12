@@ -94,9 +94,7 @@ pub enum DimensionKind {
     Width,
     Length,
     Diameter,
-    OuterDiameter,
     InnerDiameter,
-    HoleDiameter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +132,8 @@ pub struct ObjectDetection {
     pub status: InspectionStatus,
     pub confidence_score: f64,
     pub measurements: Vec<Measurement>,
+    #[serde(default)]
+    pub polygon: Vec<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

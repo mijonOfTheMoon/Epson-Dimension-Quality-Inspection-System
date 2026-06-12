@@ -29,6 +29,7 @@
 
   let detailState = $state<Record<string, DetailLoadState>>({});
   let details = $state<Record<string, any>>({});
+  let detailAspect = $state<Record<string, number>>({});
   let shareOpen = $state(false);
 
   const dispatchDetail = (id: string, event: DetailLoadEvent) => {
@@ -441,9 +442,38 @@
                       <div class="flex flex-col lg:flex-row gap-4 items-start">
                         {#if detail.frameUrl}
                           {@const overlay = resolveEntryOverlay(detail.detections[0])}
-                          <div class="w-full lg:w-1/2 lg:shrink-0 relative aspect-video rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black">
-                            <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-full object-contain block" />
+                          <div
+                            class="w-full lg:w-1/2 lg:shrink-0 relative {detailAspect[detail.id] ? '' : 'aspect-video'} rounded-2xl overflow-hidden shadow-lg border border-[var(--border)] bg-black"
+                            style={detailAspect[detail.id] ? `aspect-ratio: ${detailAspect[detail.id]};` : ''}
+                          >
+                            <FrameThumbnail eventId={detail.id} initialUrl={detail.frameUrl} className="w-full h-full object-contain block" onAspect={(r) => { if (detailAspect[detail.id] !== r) detailAspect = { ...detailAspect, [detail.id]: r }; }} />
                             {#if overlay.positioned}
+                              {#if overlay.box.polygon.length >= 3}
+                                <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                  <polygon
+                                    points={overlay.box.polygon.map((p) => `${p[0]},${p[1]}`).join(' ')}
+                                    fill="none"
+                                    stroke="rgba(0,0,0,0.65)"
+                                    stroke-width="4.5"
+                                    stroke-linejoin="round"
+                                    vector-effect="non-scaling-stroke"
+                                  />
+                                  <polygon
+                                    points={overlay.box.polygon.map((p) => `${p[0]},${p[1]}`).join(' ')}
+                                    fill="none"
+                                    stroke={overlay.box.status === 'OK' ? '#34d399' : '#fb7185'}
+                                    stroke-width="2.5"
+                                    stroke-linejoin="round"
+                                    vector-effect="non-scaling-stroke"
+                                  />
+                                </svg>
+                                <span
+                                  class="absolute px-2 py-0.5 bg-slate-900/90 text-white text-[9px] font-bold rounded-lg border border-slate-700/20 whitespace-nowrap shadow-md pointer-events-none"
+                                  style="left: {overlay.box.bbox.x}%; top: calc({overlay.box.bbox.y}% - 1.5rem);"
+                                >
+                                  {overlay.box.scanId}
+                                </span>
+                              {:else}
                               <div
                                 class="absolute pointer-events-none border-2 {overlay.box.status === 'OK' ? 'border-emerald-400 bbox-ok' : 'border-rose-400 bbox-ng'}"
                                 style="left: {overlay.box.bbox.x}%; top: {overlay.box.bbox.y}%; width: {overlay.box.bbox.width}%; height: {overlay.box.bbox.height}%;"
@@ -452,6 +482,7 @@
                                   {overlay.box.scanId}
                                 </span>
                               </div>
+                              {/if}
                             {:else}
                               <div class="absolute bottom-0 inset-x-0 px-3 py-2 bg-slate-900/80 text-amber-300 text-[10px] font-bold tracking-wide text-center backdrop-blur-sm">
                                 Bounding box tidak dapat diposisikan

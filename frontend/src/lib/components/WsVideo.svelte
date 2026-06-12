@@ -10,9 +10,10 @@
     running: boolean;
     onPlayingChange?: (playing: boolean) => void;
     onDetections?: (detections: ObjectDetection[]) => void;
+    onAspect?: (ratio: number) => void;
   }
 
-  let { stationId, online, running, onPlayingChange, onDetections }: Props = $props();
+  let { stationId, online, running, onPlayingChange, onDetections, onAspect }: Props = $props();
 
   let imgEl = $state<HTMLImageElement | null>(null);
   let message = $state('Kamera Siap - Konfigurasi lalu klik Mulai');
@@ -120,6 +121,12 @@
     untrack(() => connect(sid, on, run));
   });
 
+  const handleLoad = () => {
+    if (imgEl && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+      onAspect?.(imgEl.naturalWidth / imgEl.naturalHeight);
+    }
+  };
+
   $effect(() => {
     return () => { untrack(teardown); };
   });
@@ -130,6 +137,7 @@
     bind:this={imgEl}
     alt={`Live stream ${stationId}`}
     class="w-full h-full object-contain"
+    onload={handleLoad}
   />
 {:else}
   <div class="text-slate-500 text-xs flex flex-col items-center select-none font-medium px-6 text-center">

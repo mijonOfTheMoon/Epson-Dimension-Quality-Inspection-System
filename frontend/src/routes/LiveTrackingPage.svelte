@@ -50,7 +50,7 @@
     return [...map.values()].sort((a, b) => a.stationId.localeCompare(b.stationId));
   }
 
-  const inspections = useInspections(40, 10000, 30000);
+  const inspections = useInspections(40, 15000, 30000, false, true);
   const stations = useStations();
   const parts = useParts();
 
@@ -58,6 +58,7 @@
   let toast = $state<{ text: string; tone: 'info' | 'error' } | null>(null);
   let videoTransport = $state<VideoTransport>('cloudflare');
   let wsDetections = $state<Record<string, ObjectDetection[]>>({});
+  let wsAspect = $state<Record<string, number>>({});
 
   const setWsDetections = (stationId: string, detections: ObjectDetection[]) => {
     wsDetections = { ...wsDetections, [stationId]: detections };
@@ -306,11 +307,15 @@
             {@const hasSideOrientation = partSupportsSideOrientation(selectedPartType)}
             {@const view = viewForStation(station.stationId, selectedPartType)}
             {@const detections = liveStationIds.has(station.stationId) && videoPlaying[station.stationId] ? (videoTransport === 'ws' ? (wsDetections[station.stationId] ?? []) : station.detections) : []}
+            {@const videoAspect = videoTransport === 'ws' ? wsAspect[station.stationId] : undefined}
 
             <div class="border border-[var(--border)] rounded-2xl overflow-hidden flex flex-col bg-slate-50/30 dark:bg-slate-900/10 shadow-sm relative group/stream">
-              <div class="aspect-video bg-slate-950 flex items-center justify-center relative {isFocused ? 'min-h-[480px]' : ''} overflow-hidden">
+              <div
+                class="bg-slate-950 flex items-center justify-center relative {videoAspect ? '' : 'aspect-video'} {isFocused && !videoAspect ? 'min-h-[480px]' : ''} overflow-hidden"
+                style={videoAspect ? `aspect-ratio: ${videoAspect};` : ''}
+              >
                 {#if videoTransport === 'ws'}
-                  <WsVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} onDetections={(d) => setWsDetections(station.stationId, d)} />
+                  <WsVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} onDetections={(d) => setWsDetections(station.stationId, d)} onAspect={(r) => { if (wsAspect[station.stationId] !== r) wsAspect = { ...wsAspect, [station.stationId]: r }; }} />
                 {:else}
                   <CloudflareVideo stationId={station.stationId} online={station.online} running={optimisticRunning} onPlayingChange={(p) => { videoPlaying = { ...videoPlaying, [station.stationId]: p }; }} />
                 {/if}

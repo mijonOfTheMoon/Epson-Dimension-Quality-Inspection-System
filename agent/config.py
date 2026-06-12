@@ -20,6 +20,7 @@ FRAME_QUALITY = _int_env("FRAME_QUALITY", 62)
 CAMERA_WIDTH = _int_env("CAMERA_WIDTH", 0)
 CAMERA_HEIGHT = _int_env("CAMERA_HEIGHT", 0)
 CAMERA_FPS = _int_env("CAMERA_FPS", 0)
+UPLOAD_WORKERS = _int_env("UPLOAD_WORKERS", 3)
 
 
 @dataclass(frozen=True)

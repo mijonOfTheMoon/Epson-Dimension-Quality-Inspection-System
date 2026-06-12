@@ -34,9 +34,7 @@
     { value: 'width', label: 'Lebar' },
     { value: 'length', label: 'Panjang' },
     { value: 'diameter', label: 'Diameter' },
-    { value: 'outer_diameter', label: 'Diameter luar' },
     { value: 'inner_diameter', label: 'Diameter dalam' },
-    { value: 'hole_diameter', label: 'Diameter lubang' },
   ];
 
   const VIEW_OPTIONS: { value: DimensionView; label: string }[] = [

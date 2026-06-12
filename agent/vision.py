@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 import json
@@ -11,9 +12,23 @@ ARUCO_SIZE_MM = 20.00
 PIXEL_TO_MM_RATIO = 0.05
 MIN_CONTOUR_AREA = 1500
 
-CANNY_LOW = 40
-CANNY_HIGH = 120
-TRACK_CONFIRM_FRAMES = 4
+CANNY_SIGMA = 0.33
+BILATERAL_DIAMETER = 7
+BILATERAL_SIGMA_COLOR = 50
+BILATERAL_SIGMA_SPACE = 50
+SMOOTH_WINDOW = 7
+STATUS_HYSTERESIS_FRAMES = 3
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+TRACK_CONFIRM_FRAMES = _int_env("TRACK_CONFIRM_FRAMES", 6)
 TRACK_MAX_DISTANCE_PX = 120.0
 TRACK_FORGET_FRAMES = 6
 CAPTURE_TRIGGER_X_RATIO = 0.5
@@ -57,17 +72,28 @@ def save_persisted_ratio() -> bool:
 current_ratio = _load_persisted_ratio()
 
 
+def set_calibrated_ratio(value: float) -> None:
+    global current_ratio
+    if value and value > 0:
+        current_ratio = float(value)
+
+
 class _CentroidTracker:
     def __init__(self) -> None:
         self._tracks: list[dict[str, float]] = []
+        self._next_id = 1
 
     def reset(self) -> None:
         self._tracks = []
+        self._next_id = 1
 
-    def update(self, centroids: list[tuple[float, float]], frame_width: int) -> list[tuple[bool, bool]]:
+    def alive_ids(self) -> set[int]:
+        return {int(track["id"]) for track in self._tracks}
+
+    def update(self, centroids: list[tuple[float, float]], frame_width: int) -> list[tuple[int, bool, bool]]:
         line = CAPTURE_TRIGGER_X_RATIO * float(frame_width)
         matched = [False] * len(self._tracks)
-        results: list[tuple[bool, bool]] = []
+        results: list[tuple[int, bool, bool]] = []
         new_tracks: list[dict[str, float]] = []
         for cx, cy in centroids:
             best = -1
@@ -103,10 +129,13 @@ class _CentroidTracker:
                 )
                 if fired:
                     track["captured"] = 1.0
-                results.append((confirmed, fired))
+                results.append((int(track["id"]), confirmed, fired))
             else:
+                track_id = self._next_id
+                self._next_id += 1
                 new_tracks.append(
                     {
+                        "id": float(track_id),
                         "cx": float(cx),
                         "cy": float(cy),
                         "vx": 0.0,
@@ -118,7 +147,7 @@ class _CentroidTracker:
                         "captured": 0.0,
                     }
                 )
-                results.append((False, False))
+                results.append((track_id, False, False))
         for index, track in enumerate(self._tracks):
             if not matched[index]:
                 track["missed"] += 1
@@ -132,35 +161,87 @@ class _CentroidTracker:
         return results
 
 
+class _MeasurementStabilizer:
+    def __init__(self) -> None:
+        self._store: dict[int, dict[str, Any]] = {}
+
+    def reset(self) -> None:
+        self._store = {}
+
+    def prune(self, alive_ids: set[int]) -> None:
+        self._store = {key: value for key, value in self._store.items() if key in alive_ids}
+
+    def smooth(self, track_id: int, samples: dict[str, float | None]) -> dict[str, float | None]:
+        entry = self._store.setdefault(track_id, {})
+        windows = entry.setdefault("windows", {})
+        last = entry.setdefault("last", {})
+        out: dict[str, float | None] = {}
+        for key, value in samples.items():
+            if value is None:
+                out[key] = last.get(key)
+                continue
+            window = windows.get(key)
+            if window is None:
+                window = deque(maxlen=SMOOTH_WINDOW)
+                windows[key] = window
+            window.append(float(value))
+            smoothed = float(np.median(window))
+            last[key] = smoothed
+            out[key] = smoothed
+        return out
+
+    def classify(self, track_id: int, raw_ok: bool) -> bool:
+        entry = self._store.setdefault(track_id, {})
+        stable = entry.get("status_stable")
+        if stable is None:
+            entry["status_stable"] = raw_ok
+            entry["status_pending"] = raw_ok
+            entry["status_count"] = 0
+            return raw_ok
+        if raw_ok == stable:
+            entry["status_pending"] = raw_ok
+            entry["status_count"] = 0
+            return stable
+        if entry.get("status_pending") == raw_ok:
+            entry["status_count"] = entry.get("status_count", 0) + 1
+        else:
+            entry["status_pending"] = raw_ok
+            entry["status_count"] = 1
+        if entry["status_count"] >= STATUS_HYSTERESIS_FRAMES:
+            entry["status_stable"] = raw_ok
+            entry["status_count"] = 0
+            return raw_ok
+        return stable
+
+
 _TRACKER = _CentroidTracker()
+_STABILIZER = _MeasurementStabilizer()
 
 
 def reset_tracker() -> None:
     _TRACKER.reset()
+    _STABILIZER.reset()
 
 
-def calibrate_aruco_ratio(frame: np.ndarray) -> bool:
-    global current_ratio
+def measure_aruco_ratio(frame: np.ndarray) -> float | None:
     if frame.ndim == 3:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     else:
         gray = frame
-    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(gray)
-    if ids is not None and len(corners) > 0:
-        marker_corners = corners[0][0]
-        dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
-        if dist_px > 0:
-            current_ratio = ARUCO_SIZE_MM / float(dist_px)
-            return True
-    flipped_gray = cv2.flip(gray, 1)
-    corners, ids, _ = ARUCO_DETECTOR.detectMarkers(flipped_gray)
-    if ids is not None and len(corners) > 0:
-        marker_corners = corners[0][0]
-        dist_px = np.linalg.norm(marker_corners[0] - marker_corners[1])
-        if dist_px > 0:
-            current_ratio = ARUCO_SIZE_MM / float(dist_px)
-            return True
-    return False
+    for candidate in (gray, cv2.flip(gray, 1)):
+        corners, ids, _ = ARUCO_DETECTOR.detectMarkers(candidate)
+        if ids is not None and len(corners) > 0:
+            marker_corners = corners[0][0]
+            sides = [
+                float(np.linalg.norm(marker_corners[i] - marker_corners[(i + 1) % 4]))
+                for i in range(4)
+            ]
+            valid = [side for side in sides if side > 0]
+            if valid:
+                avg_side = sum(valid) / len(valid)
+                if avg_side > 0:
+                    return ARUCO_SIZE_MM / avg_side
+    return None
 
 
 def annotate_calibration(
@@ -171,30 +252,45 @@ def annotate_calibration(
     aruco_detected: bool,
 ) -> np.ndarray:
     annotated = frame.copy()
+    h, w = annotated.shape[:2]
+    scale = max(0.8, w / 900.0)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(annotated, f"KALIBRASI {captured}/{total}", (10, 28), font, 0.6, (0, 255, 255), 2)
+    line_gap = int(46 * scale)
+    panel_h = line_gap * (4 if part is not None else 3) + int(24 * scale)
+    overlay = annotated.copy()
+    cv2.rectangle(overlay, (0, 0), (w, panel_h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.55, annotated, 0.45, 0.0, annotated)
+
+    def put(text: str, line: int, font_scale: float, color: tuple[int, int, int]) -> None:
+        y = line_gap * (line + 1)
+        cv2.putText(annotated, text, (int(18 * scale), y), font, font_scale, (0, 0, 0), int(6 * scale), cv2.LINE_AA)
+        cv2.putText(annotated, text, (int(18 * scale), y), font, font_scale, color, max(2, int(2 * scale)), cv2.LINE_AA)
+
+    put(f"KALIBRASI {captured}/{total}", 0, 1.15 * scale, (0, 255, 255))
     status = "TERDETEKSI" if aruco_detected else "MARKER TIDAK TERLIHAT"
-    color = (0, 200, 0) if aruco_detected else (0, 0, 255)
-    cv2.putText(annotated, f"ArUco: {status}", (10, 54), font, 0.55, color, 2)
+    status_color = (0, 220, 0) if aruco_detected else (0, 80, 255)
+    put(f"ArUco: {status}", 1, 0.9 * scale, status_color)
     scale_suffix = "" if aruco_detected else " (terakhir)"
-    cv2.putText(annotated, f"Skala: {current_ratio:.4f} mm/px{scale_suffix}", (10, 80), font, 0.55, (255, 255, 0), 2)
+    put(f"Skala: {current_ratio:.4f} mm/px{scale_suffix}", 2, 0.9 * scale, (255, 255, 0))
     if part is not None:
-        cv2.putText(annotated, f"{part.part_name} ({part.part_code})", (10, 106), font, 0.5, (200, 200, 200), 2)
+        put(f"{part.part_name} ({part.part_code})", 3, 0.8 * scale, (220, 220, 220))
     return annotated
 
 
 def _normalize_kind(raw: dict[str, Any]) -> str:
     explicit = str(raw.get("kind", "")).strip().lower()
-    if explicit in {"width", "length", "diameter", "outer_diameter", "inner_diameter", "hole_diameter"}:
+    if explicit == "outer_diameter":
+        return "diameter"
+    if explicit == "hole_diameter":
+        return "inner_diameter"
+    if explicit in {"width", "length", "diameter", "inner_diameter"}:
         return explicit
 
     name = str(raw.get("name", "")).strip().lower()
-    if "inner" in name or "inside" in name:
+    if "inner" in name or "inside" in name or "hole" in name or "lubang" in name:
         return "inner_diameter"
-    if "hole" in name or "lubang" in name:
-        return "hole_diameter"
     if "outer" in name or "outside" in name:
-        return "outer_diameter"
+        return "diameter"
     if "diam" in name:
         return "diameter"
     if "length" in name or "panjang" in name:
@@ -289,6 +385,7 @@ class ObjectDetection:
     status: str
     confidenceScore: float
     measurements: list[Measurement]
+    polygon: list[list[float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -298,6 +395,7 @@ class ObjectDetection:
             "status": self.status,
             "confidenceScore": self.confidenceScore,
             "measurements": [measurement.to_dict() for measurement in self.measurements],
+            "polygon": self.polygon,
         }
 
 
@@ -327,8 +425,6 @@ class InspectionPayload:
 
 @dataclass
 class VisionResult:
-    frame: np.ndarray
-    foreground_area: int
     inspection: InspectionPayload | None = None
     triggered: list[ObjectDetection] = field(default_factory=list)
     overlay: list[dict[str, Any]] = field(default_factory=list)
@@ -339,7 +435,7 @@ def render_overlay(frame: np.ndarray, items: list[dict[str, Any]]) -> np.ndarray
     font = cv2.FONT_HERSHEY_SIMPLEX
     for item in items:
         color = (0, 255, 0) if item["ok"] else (0, 0, 255)
-        cv2.drawContours(out, [item["box"]], 0, color, 2)
+        cv2.drawContours(out, [item["outline"]], -1, color, 2)
         cx, cy = item["center"]
         cv2.circle(out, (cx, cy), 4, (0, 0, 255), -1)
         cv2.putText(out, item["label"], (cx - 40, max(16, cy - 14)), font, 0.5, color, 2)
@@ -365,10 +461,17 @@ def get_camera(camera_index: int = 0, fps: int = 0, width: int = 0, height: int 
 
 def compute_object_mask(frame: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, CANNY_LOW, CANNY_HIGH)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    filtered = cv2.bilateralFilter(gray, BILATERAL_DIAMETER, BILATERAL_SIGMA_COLOR, BILATERAL_SIGMA_SPACE)
+    median = float(np.median(filtered))
+    lower = int(max(0.0, (1.0 - CANNY_SIGMA) * median))
+    upper = int(min(255.0, (1.0 + CANNY_SIGMA) * median))
+    if upper <= lower:
+        upper = lower + 1
+    edges = cv2.Canny(filtered, lower, upper, L2gradient=True)
+    kernel_fine = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    kernel_link = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_fine, iterations=2)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_link, iterations=1)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     mask = np.zeros(gray.shape, dtype=np.uint8)
     for contour in contours:
@@ -395,30 +498,79 @@ def _confidence_for_measurements(measurements: list["Measurement"]) -> float:
     return round((sum(scores) / len(scores)) * 100.0, 2)
 
 
-def _hole_diameter_mm(mask: np.ndarray, contour: np.ndarray, ratio: float) -> float | None:
+def _hole_diameter_px(gray: np.ndarray, contour: np.ndarray) -> float | None:
     x, y, w_box, h_box = cv2.boundingRect(contour)
     if w_box <= 0 or h_box <= 0:
         return None
 
-    crop_mask = mask[y:y + h_box, x:x + w_box]
     local_contour = contour.copy()
     local_contour[:, :, 0] -= x
     local_contour[:, :, 1] -= y
+    body = np.zeros((h_box, w_box), dtype=np.uint8)
+    cv2.drawContours(body, [local_contour], -1, 255, -1)
+    eroded = cv2.erode(body, np.ones((5, 5), np.uint8), iterations=1)
 
-    filled = np.zeros((h_box, w_box), dtype=np.uint8)
-    cv2.drawContours(filled, [local_contour], -1, 255, -1)
-    holes = cv2.bitwise_and(filled, cv2.bitwise_not(crop_mask))
-    kernel = np.ones((3, 3), np.uint8)
-    holes = cv2.morphologyEx(holes, cv2.MORPH_OPEN, kernel)
+    roi = gray[y:y + h_box, x:x + w_box]
+    samples = roi[eroded > 0]
+    if samples.size == 0:
+        return None
+    mean_intensity = float(samples.mean())
+    std_intensity = float(samples.std())
+    threshold = max(25.0, 2.0 * std_intensity)
 
-    hole_contours, _ = cv2.findContours(holes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    deviation = cv2.absdiff(roi, np.full_like(roi, int(round(mean_intensity))))
+    hole_bin = ((deviation.astype(np.float32) > threshold) & (eroded > 0)).astype(np.uint8) * 255
+    hole_bin = cv2.morphologyEx(hole_bin, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+
+    hole_contours, _ = cv2.findContours(hole_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     readable = [hole for hole in hole_contours if cv2.contourArea(hole) > MIN_CONTOUR_AREA * 0.05]
     if not readable:
         return None
 
     largest = max(readable, key=cv2.contourArea)
     (_, _), radius_px = cv2.minEnclosingCircle(largest)
-    return round(float(radius_px * 2 * ratio), 3)
+    return float(radius_px * 2)
+
+
+def _refine_dimensions(
+    gray: np.ndarray,
+    raw_box: np.ndarray,
+    rect_w: float,
+    rect_h: float,
+) -> tuple[float, float]:
+    if rect_w <= 0 or rect_h <= 0:
+        return rect_w, rect_h
+    h_img, w_img = gray.shape[:2]
+    pts = raw_box.astype(np.float32)
+    pts[:, 0] = np.clip(pts[:, 0], 0.0, float(w_img - 1))
+    pts[:, 1] = np.clip(pts[:, 1], 0.0, float(h_img - 1))
+    corners = pts.reshape(-1, 1, 2).copy()
+    try:
+        cv2.cornerSubPix(
+            gray,
+            corners,
+            (5, 5),
+            (-1, -1),
+            (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.01),
+        )
+    except cv2.error:
+        return rect_w, rect_h
+    refined = corners.reshape(-1, 2)
+    side_a = (
+        float(np.linalg.norm(refined[0] - refined[1]))
+        + float(np.linalg.norm(refined[2] - refined[3]))
+    ) / 2.0
+    side_b = (
+        float(np.linalg.norm(refined[1] - refined[2]))
+        + float(np.linalg.norm(refined[3] - refined[0]))
+    ) / 2.0
+    if side_a <= 0 or side_b <= 0:
+        return rect_w, rect_h
+    aligned = abs(side_a - rect_w) + abs(side_b - rect_h)
+    swapped = abs(side_a - rect_h) + abs(side_b - rect_w)
+    if aligned <= swapped:
+        return side_a, side_b
+    return side_b, side_a
 
 
 def _measure_dimension(
@@ -433,9 +585,9 @@ def _measure_dimension(
         return width_mm
     if spec.kind == "length":
         return length_mm
-    if spec.kind in {"diameter", "outer_diameter"}:
+    if spec.kind == "diameter":
         return diameter_mm
-    if spec.kind in {"inner_diameter", "hole_diameter"}:
+    if spec.kind == "inner_diameter":
         return hole_diameter_mm
     return width_mm
 
@@ -443,8 +595,7 @@ def _measure_dimension(
 def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspection_view: str = "top") -> VisionResult:
 
     ratio = current_ratio
-
-    fg_area = int(cv2.countNonZero(mask))
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     area_candidates = [c for c in contours if cv2.contourArea(c) > MIN_CONTOUR_AREA]
@@ -459,41 +610,72 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         candidate_centroids.append((cx, cy))
 
     results = _TRACKER.update(candidate_centroids, frame.shape[1])
+    _STABILIZER.prune(_TRACKER.alive_ids())
     confirmed_pairs = [
-        (contour, fired) for contour, (confirmed, fired) in zip(ordered_contours, results) if confirmed
+        (contour, track_id, fired)
+        for contour, (track_id, confirmed, fired) in zip(ordered_contours, results)
+        if confirmed
     ]
 
     if not confirmed_pairs:
-        return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
-
-    ordered_contours = [contour for contour, _ in confirmed_pairs]
-    fired_flags = [fired for _, fired in confirmed_pairs]
+        return VisionResult(inspection=None)
 
     detections: list[ObjectDetection] = []
     triggered: list[ObjectDetection] = []
     overlay: list[dict[str, Any]] = []
     active_view = inspection_view if inspection_view in {"top", "side"} else "top"
     active_specs = [spec for spec in part.dimensions if spec.view == active_view]
+    needs_hole = any(spec.kind == "inner_diameter" for spec in active_specs)
 
-    used_ids: set[str] = set()
-
-    for index, (contour, fired_flag) in enumerate(zip(ordered_contours, fired_flags), start=1):
-        x, y, w_box, h_box = cv2.boundingRect(contour)
-        moments = cv2.moments(contour)
-        cx = int(moments["m10"] / moments["m00"]) if moments["m00"] else x + w_box // 2
-        cy = int(moments["m01"] / moments["m00"]) if moments["m00"] else y + h_box // 2
-        (_, _), radius_px = cv2.minEnclosingCircle(contour)
-
+    for index, (contour, track_id, fired_flag) in enumerate(confirmed_pairs, start=1):
+        (raw_cx, raw_cy), radius_px = cv2.minEnclosingCircle(contour)
         rect = cv2.minAreaRect(contour)
-        (_, _), (rect_w, rect_h), _ = rect
-        long_side_px = max(float(rect_w), float(rect_h))
-        short_side_px = min(float(rect_w), float(rect_h))
-        box_points = cv2.boxPoints(rect).astype(np.intp)
+        (rect_cx, rect_cy), (rect_w, rect_h), rect_angle = rect
+        raw_box = cv2.boxPoints(rect)
+        w_ref, h_ref = _refine_dimensions(gray, raw_box, float(rect_w), float(rect_h))
+        hole_px = _hole_diameter_px(gray, contour) if needs_hole else None
 
-        diameter_mm = round(float(radius_px * 2 * ratio), 3)
+        epsilon = 0.01 * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        outline = approx.reshape(-1, 2)
+        frame_w = float(frame.shape[1])
+        frame_h = float(frame.shape[0])
+        polygon = [
+            [round(float(px) / frame_w * 100.0, 2), round(float(py) / frame_h * 100.0, 2)]
+            for px, py in outline
+        ]
+
+        smoothed = _STABILIZER.smooth(track_id, {
+            "cx": float(rect_cx),
+            "cy": float(rect_cy),
+            "w": w_ref,
+            "h": h_ref,
+            "angle": float(rect_angle),
+            "radius": float(radius_px),
+            "hole": hole_px,
+        })
+
+        s_cx = smoothed["cx"] if smoothed["cx"] is not None else float(raw_cx)
+        s_cy = smoothed["cy"] if smoothed["cy"] is not None else float(raw_cy)
+        s_w = smoothed["w"] if smoothed["w"] is not None else float(rect_w)
+        s_h = smoothed["h"] if smoothed["h"] is not None else float(rect_h)
+        s_angle = smoothed["angle"] if smoothed["angle"] is not None else float(rect_angle)
+        s_radius = smoothed["radius"] if smoothed["radius"] is not None else float(radius_px)
+        s_hole = smoothed["hole"]
+
+        box_points = cv2.boxPoints(((s_cx, s_cy), (s_w, s_h), s_angle)).astype(np.intp)
+        x, y, w_box, h_box = cv2.boundingRect(box_points)
+        x = max(0, x)
+        y = max(0, y)
+        cx = int(round(s_cx))
+        cy = int(round(s_cy))
+
+        long_side_px = max(s_w, s_h)
+        short_side_px = min(s_w, s_h)
+        diameter_mm = round(s_radius * 2 * ratio, 3)
         width_mm = round(short_side_px * ratio, 3)
         length_mm = round(long_side_px * ratio, 3)
-        hole_mm = _hole_diameter_mm(mask, contour, ratio)
+        hole_mm = round(s_hole * ratio, 3) if s_hole is not None else None
 
         measurements: list[Measurement] = []
         detection_ok = True
@@ -555,17 +737,10 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
                 status="OK",
             ))
 
-        status = "OK" if detection_ok else "NG"
-        cell_x = max(0, min(9, int((cx / max(frame.shape[1], 1)) * 10)))
-        cell_y = max(0, min(9, int((cy / max(frame.shape[0], 1)) * 10)))
-        detection_id = f"obj-{cell_x}-{cell_y}"
-        dedupe = 1
-        while detection_id in used_ids:
-            dedupe += 1
-            detection_id = f"obj-{cell_x}-{cell_y}-{dedupe}"
-        used_ids.add(detection_id)
+        stable_ok = _STABILIZER.classify(track_id, detection_ok)
+        status = "OK" if stable_ok else "NG"
         detection = ObjectDetection(
-            id=detection_id,
+            id=f"obj-{track_id}",
             label=f"{part.part_code} #{index}",
             bbox=BoundingBox(
                 x=round((x / frame.shape[1]) * 100, 2),
@@ -576,19 +751,20 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
             status=status,
             confidenceScore=_confidence_for_measurements(measurements),
             measurements=measurements,
+            polygon=polygon,
         )
         detections.append(detection)
         if fired_flag:
             triggered.append(detection)
         overlay.append({
-            "box": box_points,
+            "outline": approx,
             "center": (cx, cy),
             "ok": status == "OK",
             "label": detection.label,
         })
 
     if not detections:
-        return VisionResult(frame=frame, foreground_area=fg_area, inspection=None)
+        return VisionResult(inspection=None)
 
     measurements = [measurement for detection in detections for measurement in detection.measurements]
     status = "OK" if all(detection.status == "OK" for detection in detections) else "NG"
@@ -604,7 +780,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         measurements=measurements,
         detections=detections,
     )
-    return VisionResult(frame=frame, foreground_area=fg_area, inspection=inspection, triggered=triggered, overlay=overlay)
+    return VisionResult(inspection=inspection, triggered=triggered, overlay=overlay)
 
 
 def payload_from_detections(part: PartSpec, detections: list[ObjectDetection]) -> InspectionPayload:
