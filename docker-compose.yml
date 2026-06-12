@@ -86,12 +86,12 @@ services:
       JWT_EXPIRES_IN: "7d"
       BCRYPT_ROUNDS: 10
       VIDEO_TRANSPORT: "${VIDEO_TRANSPORT:-ws}"
-      MQTT_HOST: "${MQTT_HOST:-emqx}"
-      MQTT_PORT: "${MQTT_PORT:-1883}"
+      MQTT_HOST: emqx
+      MQTT_PORT: "1883"
       MQTT_USERNAME: "${MQTT_USERNAME:-diminspect}"
       MQTT_PASSWORD: "${MQTT_PASSWORD:-diminspect}"
       MQTT_TOPIC_PREFIX: "${MQTT_TOPIC_PREFIX:-diminspect/development}"
-      MQTT_USE_TLS: "${MQTT_USE_TLS:-false}"
+      MQTT_USE_TLS: "false"
       MQTT_WS_HOST: "${MQTT_WS_HOST:-localhost}"
       MQTT_RETAINED_PRESENCE_TIMEOUT_MS: "${MQTT_RETAINED_PRESENCE_TIMEOUT_MS:-2000}"
       CLOUDFLARE_REALTIME_ENABLED: "${CLOUDFLARE_REALTIME_ENABLED:-false}"
