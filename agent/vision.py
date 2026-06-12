@@ -635,14 +635,17 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         w_ref, h_ref = _refine_dimensions(gray, raw_box, float(rect_w), float(rect_h))
         hole_px = _hole_diameter_px(gray, contour) if needs_hole else None
 
-        epsilon = 0.01 * cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, epsilon, True)
-        outline = approx.reshape(-1, 2)
+        contour_pts = contour.reshape(-1, 2)
+        max_outline_points = 80
+        if len(contour_pts) > max_outline_points:
+            idx = np.linspace(0, len(contour_pts) - 1, max_outline_points).astype(np.intp)
+            contour_pts = contour_pts[idx]
+        outline = contour_pts.reshape(-1, 1, 2).astype(np.int32)
         frame_w = float(frame.shape[1])
         frame_h = float(frame.shape[0])
         polygon = [
             [round(float(px) / frame_w * 100.0, 2), round(float(py) / frame_h * 100.0, 2)]
-            for px, py in outline
+            for px, py in contour_pts
         ]
 
         smoothed = _STABILIZER.smooth(track_id, {
@@ -757,7 +760,7 @@ def inspect_frame(frame: np.ndarray, mask: np.ndarray, part: PartSpec, inspectio
         if fired_flag:
             triggered.append(detection)
         overlay.append({
-            "outline": approx,
+            "outline": outline,
             "center": (cx, cy),
             "ok": status == "OK",
             "label": detection.label,
