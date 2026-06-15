@@ -8,7 +8,16 @@ import os
 import cv2
 import numpy as np
 
-ARUCO_SIZE_MM = 20.00
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+ARUCO_SIZE_MM = _float_env("ARUCO_SIZE_MM", 18.0)
 PIXEL_TO_MM_RATIO = 0.05
 MIN_CONTOUR_AREA = 1500
 
