@@ -12,10 +12,8 @@ ARUCO_SIZE_MM = 20.00
 PIXEL_TO_MM_RATIO = 0.05
 MIN_CONTOUR_AREA = 1500
 
-CANNY_SIGMA = 0.33
-BILATERAL_DIAMETER = 7
-BILATERAL_SIGMA_COLOR = 50
-BILATERAL_SIGMA_SPACE = 50
+CANNY_LOW = 40
+CANNY_HIGH = 120
 SMOOTH_WINDOW = 7
 STATUS_HYSTERESIS_FRAMES = 3
 
@@ -461,17 +459,10 @@ def get_camera(camera_index: int = 0, fps: int = 0, width: int = 0, height: int 
 
 def compute_object_mask(frame: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    filtered = cv2.bilateralFilter(gray, BILATERAL_DIAMETER, BILATERAL_SIGMA_COLOR, BILATERAL_SIGMA_SPACE)
-    median = float(np.median(filtered))
-    lower = int(max(0.0, (1.0 - CANNY_SIGMA) * median))
-    upper = int(min(255.0, (1.0 + CANNY_SIGMA) * median))
-    if upper <= lower:
-        upper = lower + 1
-    edges = cv2.Canny(filtered, lower, upper, L2gradient=True)
-    kernel_fine = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    kernel_link = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_fine, iterations=2)
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_link, iterations=1)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, CANNY_LOW, CANNY_HIGH)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     mask = np.zeros(gray.shape, dtype=np.uint8)
     for contour in contours:
