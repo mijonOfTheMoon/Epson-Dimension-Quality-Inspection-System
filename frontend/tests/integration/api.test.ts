@@ -96,4 +96,79 @@ describe("api service request pipeline", () => {
 
     await expect(api.deletePart("part-1")).resolves.toBeUndefined();
   });
+
+  it("creates a part with a JSON payload", async () => {
+    const input = {
+      partName: "Bracket",
+      partCode: "BRK-1",
+      vendor: "Acme",
+      dimensions: [],
+    };
+    fetchMock.mockResolvedValue(jsonResponse({ id: "p1", ...input }));
+
+    const created = await api.createPart(input);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/parts");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify(input));
+    expect(created.id).toBe("p1");
+  });
+
+  it("patches a quality record status", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "q1", status: "shipped" }));
+
+    await api.updateQualityStatus("q1", "shipped");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/quality-records/q1/status");
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe(JSON.stringify({ status: "shipped" }));
+  });
+
+  it("normalizes a single inspection detail", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        eventId: "e9",
+        partName: "Bracket",
+        partCode: "BRK-1",
+        status: "NG",
+        stationId: "s2",
+        timestamp: "2024-02-02T10:00:00Z",
+        confidenceScore: 0.42,
+      }),
+    );
+
+    const detail = await api.getInspectionDetail("e9");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/inspections/e9");
+    expect(detail.id).toBe("e9");
+    expect(detail.status).toBe("NG");
+    expect(detail.confidenceScore).toBe(0.42);
+    expect(detail.detections).toEqual([]);
+  });
+
+  it("falls back to an empty channel list when share discovery fails", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
+
+    await expect(api.getShareChannels()).resolves.toEqual([]);
+  });
+
+  it("falls back to the cloudflare transport when realtime config fails", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(api.getRealtimeConfig()).resolves.toEqual({ videoTransport: "cloudflare" });
+  });
+
+  it("uploads an avatar as multipart form data without a JSON content type", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ objectKey: "avatars/u1.jpg" }));
+
+    await api.uploadAvatar(new Blob(["binary"], { type: "image/jpeg" }));
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/users/avatar");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect((init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+  });
 });
