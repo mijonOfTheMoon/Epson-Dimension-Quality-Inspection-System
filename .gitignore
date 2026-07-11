@@ -27,3 +27,6 @@ data/
 .docker-data/
 .codex-notes/
 .kiro/
+docs/
+*.docx
+.vscode
