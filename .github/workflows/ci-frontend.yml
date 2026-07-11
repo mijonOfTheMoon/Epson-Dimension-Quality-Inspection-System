@@ -37,7 +37,7 @@ jobs:
         working-directory: frontend
         run: npx --yes tsc --noEmit
 
-  unit-test:
+  unit:
     name: Unit Test
     runs-on: ubuntu-latest
 
@@ -60,10 +60,10 @@ jobs:
         working-directory: frontend
         run: npx --yes vitest@3.2.4 run --dir src
 
-  integration-test:
+  integration:
     name: Integration Test
     runs-on: ubuntu-latest
-    needs: [ code-static-analysis, unit-test ]
+    needs: [ analysis, unit ]
 
     steps:
       - name: Checkout
@@ -84,10 +84,10 @@ jobs:
         working-directory: frontend
         run: npx --yes vitest@3.2.4 run --dir tests/integration
 
-  end-to-end-test:
+  e2e:
     name: End to End Test
     runs-on: ubuntu-latest
-    needs: [ integration-test ]
+    needs: [ integration ]
 
     steps:
       - name: Checkout
