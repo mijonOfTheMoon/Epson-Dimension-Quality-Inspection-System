@@ -10,7 +10,7 @@
 #   PROJECT_ID: ${{ vars.PROJECT_ID }}
 #   REGION: ${{ vars.REGION }}
 #   SERVICE: ${{ vars.SERVICE }}
-#   WORKLOAD_IDENTITY_PROVIDER: '${{ secrets.IDENTITY_PROVIDER }}
+#   WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.IDENTITY_PROVIDER }}
 
 # jobs:
 #   build-and-run:
