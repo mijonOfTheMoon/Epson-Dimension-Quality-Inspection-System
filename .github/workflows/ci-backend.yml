@@ -1,13 +1,10 @@
 # name: CI Backend
 
 # on:
-#   push:
-#     branches: [ "main" ]
-#     paths:
-#       - backend/**
 #   pull_request:
 #     paths:
 #       - backend/**
+#   workflow_call:
 
 # env:
 #   CARGO_TERM_COLOR: always
