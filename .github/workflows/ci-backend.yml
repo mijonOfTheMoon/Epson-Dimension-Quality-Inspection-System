@@ -2,14 +2,12 @@
 
 # on:
 #   push:
-#     branches: [ "dev" ]
+#     branches: [ "test" ]
 #     paths:
 #       - backend/**
-#       - .github/workflows/ci-backend.yml
 #   pull_request:
 #     paths:
 #       - backend/**
-#       - .github/workflows/ci-backend.yml
 
 # env:
 #   CARGO_TERM_COLOR: always

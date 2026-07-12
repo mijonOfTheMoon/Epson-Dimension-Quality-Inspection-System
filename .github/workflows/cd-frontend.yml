@@ -5,13 +5,12 @@ on:
     branches: [ "main" ]
     paths:
       - 'frontend/**'
-      - '.github/workflows/frontend.yml'
 
 env:
-  PROJECT_ID: 'development-and-operations'
-  REGION: 'asia-southeast1'
-  SERVICE: 'diminspect-fe'
-  WORKLOAD_IDENTITY_PROVIDER: 'projects/985223039758/locations/global/workloadIdentityPools/github/providers/diminspect-capstone'
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  REGION: ${{ vars.REGION }}
+  SERVICE: ${{ vars.SERVICE }}
+  WORKLOAD_IDENTITY_PROVIDER: '${{ secrets.IDENTITY_PROVIDER }}
 
 jobs:
   build-and-run:
