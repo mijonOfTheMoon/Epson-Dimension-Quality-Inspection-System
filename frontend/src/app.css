@@ -5,7 +5,6 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
