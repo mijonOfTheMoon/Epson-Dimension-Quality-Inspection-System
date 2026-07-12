@@ -1,24 +1,18 @@
-# name: 'Build and Deploy Backend to Cloud Run'
+# name: Build and Deploy Backend to Cloud Run
 
 # on:
 #   push:
 #     branches: [ "main" ]
 #     paths:
-#       - 'backend/**'
-
-# env:
-#   PROJECT_ID: ${{ vars.PROJECT_ID }}
-#   REGION: ${{ vars.REGION }}
-#   SERVICE: ${{ vars.SERVICE }}
-#   WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.IDENTITY_PROVIDER }}
+#       - backend/**
 
 # jobs:
 #   build-and-run:
-#     runs-on: 'ubuntu-latest'
+#     runs-on: ubuntu-latest
 
 #     permissions:
-#       contents: 'read'
-#       id-token: 'write'
+#       contents: read
+#       id-token: write
 
 #     steps:
 #       - name: Checkout
@@ -40,7 +34,7 @@
 #         id: meta
 #         uses: docker/metadata-action@v5.8.0
 #         with:
-#           images: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.SERVICE }}
+#           images: ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.BACKEND_SERVICE }}
 
 #       - name: Build and push
 #         id: build-and-push
@@ -51,16 +45,16 @@
 #           tags: ${{ steps.meta.outputs.tags }}
 #           labels: ${{ steps.meta.outputs.labels }}
 
-#       - id: 'auth'
-#         name: 'Authenticate to Google Cloud'
-#         uses: 'google-github-actions/auth@v2.1.10'
+#       - id: auth
+#         name: Authenticate to Google Cloud
+#         uses: google-github-actions/auth@v2.1.10
 #         with:
-#           project_id: '${{ env.PROJECT_ID }}'
-#           workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+#           project_id: ${{ vars.PROJECT_ID }}
+#           workload_identity_provider: ${{ secrets.IDENTITY_PROVIDER }}
 
 #       - name: 'Deploy Backend to Cloud Run'
 #         uses: 'google-github-actions/deploy-cloudrun@v2.7.3'
 #         with:
-#           service: '${{ env.SERVICE }}'
-#           region: '${{ env.REGION }}'
-#           image: '${{ vars.DOCKERHUB_USERNAME }}/${{ env.SERVICE }}@${{ steps.build-and-push.outputs.digest }}'
+#           service: ${{ vars.BACKEND_SERVICE }}
+#           region: ${{ vars.REGION }}
+#           image: ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.BACKEND_SERVICE }}@${{ steps.build-and-push.outputs.digest }}
