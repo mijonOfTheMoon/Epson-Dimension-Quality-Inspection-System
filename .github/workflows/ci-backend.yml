@@ -1,0 +1,161 @@
+# name: CI Backend
+
+# on:
+#   push:
+#     branches: [ "main" ]
+#     paths:
+#       - backend/**
+#   pull_request:
+#     paths:
+#       - backend/**
+
+# env:
+#   CARGO_TERM_COLOR: always
+#   RUST_TOOLCHAIN: 1.91.0
+
+# jobs:
+#   code-static-analysis:
+#     name: Code Static Analysis Inspection
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v5.0.0
+
+#       - name: Install Rust toolchain
+#         uses: dtolnay/rust-toolchain@1.91.0
+#         with:
+#           components: rustfmt, clippy
+
+#       - name: Cache Cargo artifacts
+#         uses: Swatinem/rust-cache@v2.7.3
+#         with:
+#           workspaces: backend
+
+#       - name: Check formatting
+#         working-directory: backend
+#         run: cargo fmt --all --check
+
+#       - name: Run Clippy
+#         working-directory: backend
+#         run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+#   unit-test:
+#     name: Unit Test
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v5.0.0
+
+#       - name: Install Rust toolchain
+#         uses: dtolnay/rust-toolchain@1.91.0
+
+#       - name: Cache Cargo artifacts
+#         uses: Swatinem/rust-cache@v2.7.3
+#         with:
+#           workspaces: backend
+
+#       - name: Run unit tests
+#         working-directory: backend
+#         run: cargo test --lib --bins --locked
+
+#   integration-test:
+#     name: Integration Test
+#     runs-on: ubuntu-latest
+#     needs: [ code-static-analysis, unit-test ]
+
+#     services:
+#       postgres:
+#         image: postgres:17-alpine
+#         env:
+#           POSTGRES_USER: diminspect
+#           POSTGRES_PASSWORD: diminspect
+#           POSTGRES_DB: diminspect
+#         ports:
+#           - 5432:5432
+#         options: >-
+#           --health-cmd "pg_isready -U diminspect"
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
+
+#     env:
+#       NODE_ENV: test
+#       DATABASE_URL: postgresql://diminspect:diminspect@localhost:5432/diminspect
+#       DATABASE_SSL: false
+#       JWT_SECRET: ci-integration-secret-value-please-change
+#       AGENT_TOKEN: ci-integration-agent-token
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v5.0.0
+
+#       - name: Install Rust toolchain
+#         uses: dtolnay/rust-toolchain@1.91.0
+
+#       - name: Cache Cargo artifacts
+#         uses: Swatinem/rust-cache@v2.7.3
+#         with:
+#           workspaces: backend
+
+#       - name: Run integration tests
+#         working-directory: backend
+#         run: cargo test --tests --locked
+
+#   end-to-end-test:
+#     name: End to End Test
+#     runs-on: ubuntu-latest
+#     needs: [ integration-test ]
+
+#     services:
+#       postgres:
+#         image: postgres:17-alpine
+#         env:
+#           POSTGRES_USER: diminspect
+#           POSTGRES_PASSWORD: diminspect
+#           POSTGRES_DB: diminspect
+#         ports:
+#           - 5432:5432
+#         options: >-
+#           --health-cmd "pg_isready -U diminspect"
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
+
+#     env:
+#       NODE_ENV: test
+#       HOST: 127.0.0.1
+#       PORT: 4000
+#       DATABASE_URL: postgresql://diminspect:diminspect@localhost:5432/diminspect
+#       DATABASE_SSL: false
+#       DATABASE_POOL_MAX: 2
+#       JWT_SECRET: ci-end-to-end-secret-value-please-change
+#       AGENT_TOKEN: ci-end-to-end-agent-token
+#       VIDEO_TRANSPORT: ws
+#       CLOUDFLARE_REALTIME_ENABLED: false
+#       OBJECT_STORE_ENABLED: false
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v5.0.0
+
+#       - name: Install Rust toolchain
+#         uses: dtolnay/rust-toolchain@1.91.0
+
+#       - name: Cache Cargo artifacts
+#         uses: Swatinem/rust-cache@v2.7.3
+#         with:
+#           workspaces: backend
+
+#       - name: Build release binary
+#         working-directory: backend
+#         run: cargo build --release --locked
+
+#       - name: Run end to end smoke test
+#         working-directory: backend
+#         run: |
+#           ./target/release/diminspect-backend &
+#           SERVER_PID=$!
+#           curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:4000/health
+#           kill "$SERVER_PID"
